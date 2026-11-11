@@ -25,3 +25,15 @@ test('non-429 responses are returned without an unnecessary retry', async () => 
   assert.equal(response.status, 200);
   assert.equal(calls, 1);
 });
+
+
+test('the shared lane never exceeds three concurrent upstream requests', async () => {
+  let active = 0, peak = 0;
+  await Promise.all(Array.from({ length: 12 }, (_, index) => youtubeFetch(`https://youtube.test/${index}`, {}, async () => {
+    active++; peak = Math.max(peak, active);
+    await new Promise(resolve => setTimeout(resolve, 8));
+    active--;
+    return new Response('ok', { status: 200 });
+  })));
+  assert.equal(peak, 3);
+});
