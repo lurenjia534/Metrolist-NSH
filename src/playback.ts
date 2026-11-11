@@ -1,0 +1,534 @@
+import { AudioPlayer, batch, computed, effect, host, platform, signal } from "nsh";
+import type { ListenEvent, RemotePlaybackState, RepeatMode, StreamInfo, Track } from "./model";
+
+export const queue = signal<Track[]>([]);
+export const queueTitle = signal("");
+export const currentIndex = signal(-1);
+export const currentTrack = computed(() => queue()[currentIndex()]);
+export const playing = signal(false);
+export const buffering = signal(false);
+export const position = signal(0);
+export const duration = signal(0);
+export const bufferedPosition = signal(0);
+export const volume = signal(0.7);
+export const rate = signal(1);
+export const shuffle = signal(false);
+export const repeat = signal<RepeatMode>("off");
+export const sleepUntil = signal<number | null>(null);
+export const playbackError = signal("");
+export const playbackErrorCode = signal("");
+export const streamInfo = signal<StreamInfo | null>(null);
+export const radioLoading = signal(false);
+export const radioError = signal("");
+export const syncingRemote = signal(false);
+export const remoteControlled = signal(false);
+
+interface PlaybackOptions {
+  resolveStream: (track: Track) => Promise<StreamInfo>;
+  autoRadio?: () => boolean;
+  fetchRadio?: (track: Track) => Promise<Track[]>;
+  onTrack?: (track: Track) => void;
+  onListen?: (track: Track, event: ListenEvent) => void;
+  onError?: (message: string) => void;
+  onQueueChange?: () => void;
+  onPreferences?: () => void;
+}
+let options: PlaybackOptions;
+type SourceControl = Pick<AudioPlayer, "play" | "pause" | "seek" | "dispose" | "volume" | "rate">;
+let player: SourceControl | undefined;
+let loadId = 0;
+let playRequested = false;
+let sourceStarted = false;
+let nativeState = "idle";
+let sleepTimer: ReturnType<typeof setTimeout> | undefined;
+let shuffleBag: number[] = [];
+let visited: number[] = [];
+let queueGeneration = 0;
+let radioPromise: Promise<Track[]> | undefined;
+let listening: { track: Track; event: ListenEvent; reported: number } | undefined;
+let lastPosition = 0;
+let savedPosition = 0;
+
+export interface NativeAudioState {
+  requestId: number;
+  state: "idle" | "loading" | "playing" | "paused" | "ended";
+  position: number;
+  duration: number;
+  bufferedPosition: number;
+  playing: boolean;
+  buffering: boolean;
+  playWhenReady: boolean;
+  discontinuity?: boolean;
+  volume?: number;
+  rate?: number;
+  error?: string;
+  errorCode?: string;
+  track?: Track;
+  source?: StreamInfo;
+}
+
+function nativeCommand(name: string, data: Record<string, unknown> = {}) {
+  return host.call<void>(`app.audio.${name}`, data);
+}
+
+/** Android owns the decoder and its buffered media in the foreground service. */
+class AndroidSource implements SourceControl {
+  play() { return nativeCommand("play"); }
+  pause() { void nativeCommand("pause").catch(reportError); }
+  seek(value: number) { void nativeCommand("seek", { position: value }).catch(reportError); }
+  dispose() { /* Switching tracks reuses the native engine through audio.open. */ }
+  get volume() { return volume(); }
+  set volume(value: number) { void nativeCommand("settings", { volume: value }).catch(reportError); }
+  get rate() { return rate(); }
+  set rate(value: number) { void nativeCommand("settings", { rate: value }).catch(reportError); }
+}
+
+function errorText(reason: unknown) { return reason && typeof reason === "object" && "message" in reason ? String(reason.message) : String(reason); }
+function surfaceError(reason: unknown) { options.onError?.(errorText(reason)); }
+function reportError(reason: unknown) {
+  const code = reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "failed";
+  playRequested = false;
+  batch(() => { playbackErrorCode.set(code); playbackError.set(code === "not-allowed" ? "点按播放以开始音频" : errorText(reason)); buffering.set(false); playing.set(false); });
+  updateMediaSession();
+  if (code !== "not-allowed") surfaceError(reason);
+}
+
+export function initPlayback(configuration: PlaybackOptions) {
+  options = configuration;
+  if (platform.os === "android") {
+    host.on("audio.state", (payload: unknown) => receiveNativeState(payload as NativeAudioState));
+    effect(() => {
+      const controlled = remoteControlled();
+      void nativeCommand("settings", { remoteControlled: controlled }).catch(surfaceError);
+    });
+  }
+  if (platform.os === "web" || platform.os === "android") host.on("media.command", (payload: unknown) => {
+    if (remoteControlled()) return;
+    const event = payload as { action: "play" | "pause" | "previous" | "next" | "seek"; value?: number };
+    switch (event.action) {
+      case "play": if (!playRequested) void resumePlayback(); break;
+      case "pause": pause(); break;
+      case "previous": previous(); break;
+      case "next": void next(); break;
+      case "seek": seek(event.value ?? 0); break;
+    }
+  });
+}
+
+function updateMediaSession() {
+  if (platform.os === "web") void host.call("app.playback", {
+    playing: playing(), buffering: buffering(), position: position(), duration: duration(), rate: rate(),
+  }).catch(surfaceError);
+}
+function changed() { options?.onQueueChange?.(); }
+function flushListening() {
+  if (!listening || listening.event.seconds === listening.reported) return;
+  options.onListen?.(listening.track, { ...listening.event });
+  listening.reported = listening.event.seconds;
+}
+function startListening(track: Track) {
+  const now = Date.now();
+  listening = { track, event: { id: `${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`, trackId: track.id, startedAt: now, seconds: 0 }, reported: 0 };
+}
+function resetShuffle() {
+  shuffleBag = queue().map((_, index) => index).filter((index) => index !== currentIndex());
+  for (let i = shuffleBag.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffleBag[i], shuffleBag[j]] = [shuffleBag[j], shuffleBag[i]];
+  }
+}
+function resetRadio() {
+  queueGeneration++;
+  radioPromise = undefined;
+  batch(() => { radioLoading.set(false); radioError.set(""); });
+}
+function releaseSource(stopNative = false) {
+  flushListening();
+  ++loadId;
+  if (platform.os === "android" && player) {
+    if (stopNative) void nativeCommand("stop").catch(surfaceError);
+    else player.pause();
+  }
+  player?.dispose();
+  player = undefined;
+  sourceStarted = false;
+  nativeState = "idle";
+  batch(() => { playing.set(false); buffering.set(false); bufferedPosition.set(0); streamInfo.set(null); });
+}
+
+function receiveProgress(seconds: number, total: number) {
+  const elapsed = seconds - lastPosition;
+  if (playing() && !buffering() && elapsed > 0 && listening) listening.event.seconds += elapsed / rate();
+  lastPosition = seconds;
+  batch(() => {
+    position.set(seconds);
+    if (Number.isFinite(total) && total > 0) duration.set(total);
+  });
+  if (listening && listening.event.seconds - listening.reported >= 10) flushListening();
+  if (Math.abs(position() - savedPosition) >= 10) { savedPosition = position(); changed(); }
+}
+
+function receiveNativeState(event: NativeAudioState) {
+  if (!player || event.requestId !== loadId) return;
+  if (event.error) { reportError({ message: event.error, code: event.errorCode || "failed" }); return; }
+  const previousState = nativeState;
+  const previousIntent = playRequested;
+  nativeState = event.state;
+  if (event.discontinuity) lastPosition = event.position;
+  receiveProgress(event.position, event.duration);
+  playRequested = event.playWhenReady;
+  batch(() => {
+    playing.set(event.playing);
+    buffering.set(event.buffering && event.playWhenReady);
+    bufferedPosition.set(event.bufferedPosition);
+  });
+  if (event.state === "idle") {
+    player = undefined;
+    sourceStarted = false;
+    streamInfo.set(null);
+    flushListening();
+    changed();
+    return;
+  }
+  if (event.playing && !sourceStarted) finishPlaybackStart();
+  if (!event.playWhenReady && previousIntent) { flushListening(); changed(); }
+  if (event.state === "ended" && previousState !== "ended") { flushListening(); void advance(true); }
+}
+
+/** Reconnect after loading the saved queue; the service's position is authoritative. */
+export async function reconnectNativePlayback() {
+  if (platform.os !== "android") return;
+  const request = loadId;
+  const snapshot = await host.call<NativeAudioState | null>("app.audio.snapshot");
+  if (!snapshot?.track || request !== loadId || player) return;
+  const track = snapshot.track;
+  let index = currentTrack()?.id === track.id ? currentIndex() : queue().findIndex(item => item.id === track.id);
+  const items = [...queue()];
+  if (index < 0) { index = items.length; items.push(track); }
+  else items[index] = track;
+  loadId = snapshot.requestId;
+  player = new AndroidSource();
+  sourceStarted = true;
+  nativeState = "idle";
+  lastPosition = snapshot.position;
+  savedPosition = snapshot.position;
+  startListening(track);
+  batch(() => {
+    queue.set(items); currentIndex.set(index); streamInfo.set(snapshot.source || null);
+    if (snapshot.volume !== undefined) volume.set(snapshot.volume);
+    if (snapshot.rate !== undefined) rate.set(snapshot.rate);
+  });
+  receiveNativeState(snapshot);
+  options.onTrack?.(track);
+  changed();
+}
+
+async function loadCurrent(startAt = 0, continueSession = false) {
+  let track = currentTrack();
+  if (!track) return;
+  releaseSource();
+  const request = loadId;
+  playRequested = true;
+  lastPosition = startAt;
+  savedPosition = startAt;
+  if (!continueSession || listening?.track.id !== track.id) startListening(track);
+  batch(() => { position.set(startAt); duration.set(track.duration); buffering.set(true); playbackError.set(""); playbackErrorCode.set(""); });
+  changed();
+  try {
+    const source = await options.resolveStream(track);
+    if (request !== loadId) return;
+    track = {
+      ...track, title: source.title || track.title, artist: source.artist || track.artist,
+      artwork: source.artwork || track.artwork, duration: source.duration || track.duration,
+    };
+    const selected = currentIndex();
+    batch(() => {
+      streamInfo.set(source);
+      duration.set(track.duration);
+      queue.update((items) => items.map((item, index) => index === selected ? track : item));
+    });
+    if (listening) listening.track = track;
+    if (platform.os === "android") {
+      player = new AndroidSource();
+      await nativeCommand("open", {
+        requestId: request, track, url: source.url, headers: source.headers || {},
+        mimeType: source.mimeType, formatId: source.formatId, expiresAt: source.expiresAt,
+        cacheKey: source.cacheKey || (track.source === "youtube" ? `${track.id}:${source.formatId || source.quality || "audio"}` : source.url),
+        position: startAt, volume: volume(), rate: rate(), playWhenReady: playRequested,
+        remoteControlled: remoteControlled(),
+      });
+      return;
+    }
+    const audio = new AudioPlayer(source.url, { volume: volume(), rate: rate() });
+    player = audio;
+    audio.on("load", (event) => {
+      if (request === loadId && Number.isFinite(event.duration)) duration.set(event.duration);
+    });
+    audio.on("progress", (event) => {
+      if (request !== loadId) return;
+      receiveProgress(event.currentTime, event.duration);
+      updateMediaSession();
+    });
+    audio.on("buffer", (event) => { if (request === loadId) buffering.set(event.buffering); });
+    audio.on("error", (event) => { if (request === loadId) reportError(event); });
+    audio.on("end", () => { if (request === loadId) { flushListening(); void advance(true); } });
+    if (startAt > 0) audio.seek(startAt);
+    await audio.play();
+    if (request !== loadId || !playRequested) return;
+    finishPlaybackStart();
+  } catch (reason) { if (request === loadId) reportError(reason); }
+}
+
+function finishPlaybackStart() {
+  batch(() => { playing.set(true); buffering.set(false); playbackError.set(""); playbackErrorCode.set(""); });
+  if (!sourceStarted) {
+    sourceStarted = true;
+    const track = currentTrack()!;
+    if (platform.os === "web") void host.call("app.metadata", track).catch(surfaceError);
+    options.onTrack?.(track);
+    if (!remoteControlled() && options.autoRadio?.() && repeat() === "off" && queue().length - currentIndex() <= 3) void extendRadio();
+  }
+  updateMediaSession();
+}
+
+export function playList(items: Track[], index = 0, title = "") {
+  if (!items.length) return;
+  resetRadio();
+  batch(() => { queue.set([...items]); currentIndex.set(index); queueTitle.set(title); });
+  visited = [];
+  resetShuffle();
+  return loadCurrent();
+}
+export function playTrack(track: Track, items?: Track[]) {
+  const list = items?.length ? items : [track];
+  const index = list.findIndex((item) => item.id === track.id);
+  return playList(index < 0 ? [track, ...list] : list, Math.max(0, index));
+}
+export function playAt(index: number) {
+  if (index < 0 || index >= queue().length) return;
+  if (currentIndex() >= 0 && index !== currentIndex()) visited.push(currentIndex());
+  currentIndex.set(index);
+  shuffleBag = shuffleBag.filter((item) => item !== index);
+  return loadCurrent();
+}
+export async function resumePlayback() {
+  if (!currentTrack() || playRequested) return;
+  playRequested = true;
+  if (!player || (playbackError() && playbackErrorCode() !== "not-allowed")) { await loadCurrent(position(), true); return; }
+  const request = loadId;
+  buffering.set(true);
+  try {
+    await player.play();
+    if (request !== loadId || !playRequested || platform.os === "android") return;
+    finishPlaybackStart();
+  } catch (reason) { if (request === loadId) reportError(reason); }
+}
+export async function togglePlay() {
+  if (playRequested || playing()) pause();
+  else await resumePlayback();
+}
+export function pause() {
+  playRequested = false;
+  flushListening();
+  if (!player) releaseSource();
+  else player.pause();
+  batch(() => { playing.set(false); buffering.set(false); });
+  updateMediaSession();
+  changed();
+}
+export async function reloadPlayback() {
+  if (!currentTrack()) return;
+  if (playRequested || playing()) await loadCurrent(position(), true);
+  else { releaseSource(true); updateMediaSession(); changed(); }
+}
+export function retryPlayback() { return playbackErrorCode() === "not-allowed" ? resumePlayback() : loadCurrent(position(), true); }
+
+export function extendRadio(): Promise<Track[]> {
+  if (radioPromise) return radioPromise;
+  const track = currentTrack();
+  if (!track || track.source !== "youtube" || !options.fetchRadio) return Promise.resolve([]);
+  const generation = queueGeneration;
+  batch(() => { radioLoading.set(true); radioError.set(""); });
+  radioPromise = (async () => {
+    try {
+      const result = await options.fetchRadio!(track);
+      if (generation !== queueGeneration) return [];
+      const ids = new Set(queue().map((item) => item.id));
+      const incoming = result.filter((item) => { if (ids.has(item.id)) return false; ids.add(item.id); return true; });
+      const start = queue().length;
+      queue.update((items) => [...items, ...incoming]);
+      shuffleBag.push(...incoming.map((_, index) => start + index));
+      changed();
+      return incoming;
+    } catch (reason) {
+      if (generation === queueGeneration) radioError.set(errorText(reason));
+      return [];
+    } finally {
+      if (generation === queueGeneration) { radioLoading.set(false); radioPromise = undefined; }
+    }
+  })();
+  return radioPromise;
+}
+
+async function advance(ended: boolean) {
+  if (!queue().length) return;
+  if (ended && remoteControlled()) { pause(); return; }
+  if (ended && repeat() === "one") {
+    startListening(currentTrack()!);
+    seek(0);
+    playRequested = false;
+    await resumePlayback();
+    return;
+  }
+  const generation = queueGeneration;
+  const request = loadId;
+  if (repeat() === "off" && options.autoRadio?.() && (shuffle() ? !shuffleBag.length : currentIndex() + 1 >= queue().length)) {
+    await extendRadio();
+    if (generation !== queueGeneration || request !== loadId || !playRequested) return;
+  }
+  let index: number;
+  if (shuffle()) {
+    if (!shuffleBag.length && repeat() === "all") resetShuffle();
+    index = shuffleBag.pop() ?? (repeat() === "all" ? currentIndex() : -1);
+  } else {
+    index = currentIndex() + 1;
+    if (index >= queue().length) index = repeat() === "all" ? 0 : -1;
+  }
+  if (index < 0) { pause(); return; }
+  await playAt(index);
+}
+export function next() { return advance(false); }
+export function previous() {
+  if (position() > 3) { seek(0); return; }
+  const from = currentIndex();
+  const index = shuffle() ? visited.pop() : from - 1;
+  if (index === undefined || index < 0) { seek(0); return; }
+  if (shuffle()) { shuffleBag = shuffleBag.filter((item) => item !== index); shuffleBag.push(from); }
+  currentIndex.set(index);
+  return loadCurrent();
+}
+export function seek(seconds: number) {
+  const value = Math.max(0, Math.min(seconds, duration() || seconds));
+  lastPosition = value;
+  position.set(value);
+  player?.seek(value);
+  updateMediaSession();
+  changed();
+}
+export function setVolume(value: number) {
+  volume.set(value);
+  if (player) player.volume = value;
+  options?.onPreferences?.();
+}
+export function setRate(value: number) {
+  rate.set(value);
+  if (player) player.rate = value;
+  updateMediaSession();
+  options?.onPreferences?.();
+}
+export function toggleShuffle() { shuffle.update((value) => !value); resetShuffle(); options?.onPreferences?.(); }
+export function cycleRepeat() {
+  repeat.set(repeat() === "off" ? "all" : repeat() === "all" ? "one" : "off");
+  options?.onPreferences?.();
+}
+export function addToQueue(track: Track) {
+  const index = queue().length;
+  queue.update((items) => [...items, track]);
+  if (currentIndex() < 0) currentIndex.set(0);
+  else shuffleBag.splice(Math.floor(Math.random() * (shuffleBag.length + 1)), 0, index);
+  changed();
+}
+export function playNext(track: Track) {
+  const index = currentIndex() + 1;
+  queue.update((items) => [...items.slice(0, index), track, ...items.slice(index)]);
+  shuffleBag = shuffleBag.map((item) => item >= index ? item + 1 : item);
+  visited = visited.map((item) => item >= index ? item + 1 : item);
+  if (currentIndex() < 0) currentIndex.set(0);
+  else shuffleBag.push(index);
+  changed();
+}
+export function removeFromQueue(index: number) {
+  const selected = currentIndex();
+  const resume = playRequested || playing();
+  const items = queue().filter((_, i) => i !== index);
+  if (!items.length) { clearQueue(); return; }
+  batch(() => { queue.set(items); currentIndex.set(index < selected ? selected - 1 : Math.min(selected, items.length - 1)); });
+  const remap = (list: number[]) => list.filter((item) => item !== index).map((item) => item > index ? item - 1 : item);
+  shuffleBag = remap(shuffleBag).filter((item) => item !== currentIndex());
+  visited = remap(visited);
+  if (index === selected) {
+    if (resume) void loadCurrent();
+    else {
+      releaseSource(true);
+      listening = undefined;
+      batch(() => { position.set(0); duration.set(currentTrack()?.duration ?? 0); playbackError.set(""); playbackErrorCode.set(""); });
+      updateMediaSession();
+    }
+  }
+  changed();
+}
+export function moveQueue(from: number, to: number) {
+  if (from === to || from < 0 || to < 0 || from >= queue().length || to >= queue().length) return;
+  const items = [...queue()];
+  items.splice(to, 0, items.splice(from, 1)[0]);
+  const remap = (index: number) => index === from ? to : from < index && to >= index ? index - 1 : from > index && to <= index ? index + 1 : index;
+  batch(() => { queue.set(items); currentIndex.set(remap(currentIndex())); });
+  shuffleBag = shuffleBag.map(remap);
+  visited = visited.map(remap);
+  changed();
+}
+export function clearQueue() {
+  playRequested = false;
+  resetRadio();
+  releaseSource();
+  if (platform.os === "android") void nativeCommand("stop").catch(surfaceError);
+  listening = undefined;
+  batch(() => { queue.set([]); queueTitle.set(""); currentIndex.set(-1); position.set(0); duration.set(0); playbackError.set(""); playbackErrorCode.set(""); });
+  visited = [];
+  shuffleBag = [];
+  updateMediaSession();
+  changed();
+}
+export function restoreQueue(items: Track[], index: number, seconds = 0, title = "") {
+  playRequested = false;
+  resetRadio();
+  releaseSource();
+  listening = undefined;
+  batch(() => {
+    queue.set(items); queueTitle.set(title); currentIndex.set(items.length ? Math.min(index, items.length - 1) : -1);
+    position.set(seconds); duration.set(currentTrack()?.duration ?? 0); playbackError.set(""); playbackErrorCode.set("");
+  });
+  visited = [];
+  resetShuffle();
+}
+export async function applyRemoteState(state: RemotePlaybackState) {
+  syncingRemote.set(true);
+  try {
+    const sameTrack = currentTrack()?.id === state.queue[state.index]?.id && !!player;
+    resetRadio();
+    batch(() => {
+      queue.set([...state.queue]); currentIndex.set(state.index); queueTitle.set(state.title || "一起听");
+      if (state.shuffle !== undefined) shuffle.set(state.shuffle);
+      if (state.repeat !== undefined) repeat.set(state.repeat);
+    });
+    resetShuffle();
+    visited = [];
+    if (sameTrack) {
+      seek(state.position);
+      if (state.playing) await resumePlayback(); else pause();
+    } else if (state.playing) await loadCurrent(state.position);
+    else {
+      playRequested = false;
+      releaseSource(true);
+      listening = undefined;
+      batch(() => { position.set(state.position); duration.set(currentTrack()?.duration ?? 0); });
+      updateMediaSession();
+    }
+    changed();
+  } finally { syncingRemote.set(false); }
+}
+export function setSleepTimer(minutes: number) {
+  if (sleepTimer !== undefined) clearTimeout(sleepTimer);
+  sleepUntil.set(minutes > 0 ? Date.now() + minutes * 60000 : null);
+  sleepTimer = minutes > 0 ? setTimeout(() => { pause(); sleepUntil.set(null); sleepTimer = undefined; }, minutes * 60000) : undefined;
+}

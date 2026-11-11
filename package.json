@@ -1,0 +1,16 @@
+{
+  "name": "metrolist-nsh",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "license": "GPL-3.0-only",
+  "description": "Metrolist, reimagined in Native Shell for desktop, mobile and the web.",
+  "scripts": {
+    "dev": "node --use-env-proxy --max-http-header-size=65536 server/dev.mjs",
+    "build": "node scripts/build.mjs",
+    "check": "nsh check",
+    "test": "nsh test",
+    "web": "nsh run --target web",
+    "linux": "nsh run --target linux"
+  }
+}

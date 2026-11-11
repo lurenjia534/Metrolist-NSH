@@ -1,0 +1,69 @@
+{
+  "name": "Metrolist",
+  "id": "app.miku.metrolist",
+  "version": "0.4.0",
+  "build": 4,
+  "appearance": "dark",
+  "icon": "assets/icon.png",
+  "theme": "theme.json",
+  "locales": [
+    "en",
+    "zh-CN"
+  ],
+  "window": {
+    "title": "Metrolist · NSH",
+    "defaultSize": {
+      "width": 1440,
+      "height": 940
+    },
+    "minSize": {
+      "width": 340,
+      "height": 600
+    }
+  },
+  "capabilities": {
+    "network": {
+      "hosts": [
+        "*"
+      ]
+    },
+    "webview": {
+      "hosts": [
+        "*"
+      ]
+    },
+    "host": [
+      "files.*",
+      "auth.*",
+      "app.*"
+    ],
+    "audio": true,
+    "picker": true,
+    "clipboard": true,
+    "statusBar": true,
+    "openUrl": {
+      "schemes": [
+        "https",
+        "http"
+      ]
+    },
+    "fs": {
+      "read": [
+        "${dataDir}"
+      ],
+      "write": [
+        "${dataDir}"
+      ]
+    }
+  },
+  "statusBar": {
+    "foreground": "light"
+  },
+  "web": {
+    "host": "web/host.js",
+    "connect": [
+      "*"
+    ],
+    "history": false
+  }
+}

@@ -1,0 +1,20 @@
+.nsh/
+dist/
+node_modules/
+*.log
+.env
+.env.*
+!.env.example
+__pycache__/
+.venv/
+releases/
+.openai/hosting.json
+.openai/execution-profile.json
+.openai/source-state.json
+.openai/*.local.*
+
+# Local Android signing and SDK outputs
+*.keystore
+*.jks
+android/local.properties
+android/build/

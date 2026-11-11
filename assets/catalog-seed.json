@@ -1,0 +1,356 @@
+{
+  "curation": {
+    "label": "编辑精选",
+    "description": "依据公开音乐目录整理，非账号个性化推荐。",
+    "retrievedAt": "2026-11-11",
+    "source": "YouTube Music"
+  },
+  "tracks": [
+    {
+      "id": "G2PDJTkFiA8",
+      "title": "Miku",
+      "artist": "Anamanaguchi, Hatsune Miku",
+      "album": "Miku",
+      "artwork": "https://yt3.googleusercontent.com/uEOk2pCVOFnFGjzrsNavzKYoZEvz46KInWBpElYu1d_UHqH78cRqqCV3myVFmIl4SZytMGkGn1FLkgYz8w=w600-h600-l90-rj",
+      "duration": 224,
+      "source": "youtube"
+    },
+    {
+      "id": "4n94ukt15qg",
+      "title": "Tell Your World (feat. Hatsune Miku)",
+      "artist": "livetune",
+      "album": "Tell Your World EP",
+      "artwork": "https://yt3.googleusercontent.com/Fv2AcdfpKjgAtcoEzmN7u0roKaLMKtIQERGliR56BQGKynMNRvUMGjwAn3Z2V9GUP_s9aApD4xKd2rdK=w600-h600-s-l90-rj",
+      "duration": 255,
+      "source": "youtube"
+    },
+    {
+      "id": "h8DeZSB2o-c",
+      "title": "From The Start",
+      "artist": "Laufey",
+      "album": "Bewitched",
+      "artwork": "https://yt3.googleusercontent.com/eJ3BhkvN3MmLZt95bBLG-aqGdUvoA1F_AWIyPOpUx69Rv_WsGlQMOHWSHMD48MppwWppHpQWwjIR2LTA=w600-h600-l90-rj",
+      "duration": 170,
+      "source": "youtube"
+    },
+    {
+      "id": "V6TEcoNUmc8",
+      "title": "Ditto",
+      "artist": "NewJeans",
+      "album": "NewJeans 'OMG'",
+      "artwork": "https://yt3.googleusercontent.com/UWM-x77xhcEEAK8tKICtlDSxsYedoFxQhdiDPzW-Ww59DWs7rDQpD_idJQ6h5YEJruURgpEr1O-0oq5Y=w600-h600-l90-rj",
+      "duration": 186,
+      "source": "youtube"
+    },
+    {
+      "id": "NIzmrafKAdQ",
+      "title": "Just for Me",
+      "artist": "PinkPantheress",
+      "album": "Just for me",
+      "artwork": "https://yt3.googleusercontent.com/lHKPyUQ8Lw1OmFuZcH2d5FYXwuFCdm8Q9jFNVi_QcU0pnuiQ89aeWF1hZJwPC7pP3aPLVwnFf5CBejlC=w600-h600-l90-rj",
+      "duration": 116,
+      "source": "youtube"
+    },
+    {
+      "id": "MRzPDH24a1M",
+      "title": "Stateside",
+      "artist": "PinkPantheress",
+      "album": "Stateside",
+      "artwork": "https://yt3.googleusercontent.com/1H03Qi1c0N-Igr0lqdsf-6bHlBGQhqUd8oW9dZmMbavAGbwFbaPEQBrwLbVfVD-R61Jxv4hmoJGRggej=w600-h600-l90-rj",
+      "duration": 169,
+      "source": "youtube"
+    },
+    {
+      "id": "0c7zGU2C2mM",
+      "title": "Super Shy",
+      "artist": "NewJeans",
+      "album": "NewJeans 'Super Shy'",
+      "artwork": "https://yt3.googleusercontent.com/FzLKj6zFEJna0gRNDeZRH4nuQwEyN-YbCaC-bIGLoia6EhirHUachdvdEdR3VdB7pArgFCW8mtpLPL0=w600-h600-l90-rj",
+      "duration": 155,
+      "source": "youtube"
+    },
+    {
+      "id": "0_M2JX-Olv8",
+      "title": "Feather (feat. Cise Starr & Akin from CYNE)",
+      "artist": "Nujabes",
+      "album": "Modal Soul",
+      "artwork": "https://yt3.googleusercontent.com/qy-mvoWSpN_RHYA-3wV3BCOJYe_Pp_fGida6hqOo966KAleFo87xHNggk4K4Rq5wBNEgtwob94Yf1ehRdw=w600-h600-l90-rj",
+      "duration": 176,
+      "source": "youtube"
+    },
+    {
+      "id": "by4SYYWlhEs",
+      "title": "夜に駆ける",
+      "artist": "YOASOBI",
+      "album": "夜に駆ける",
+      "artwork": "https://yt3.googleusercontent.com/-smFMOtNB5Zu8EINwbq_FQUXbBp2mguY2-w0MLxcVU0-osix9gV6IF3IuIBkeWlhck8RBQ9shgKCfDw=w600-h600-l90-rj",
+      "duration": 262,
+      "source": "youtube"
+    },
+    {
+      "id": "3zh9Wb1KuW8",
+      "title": "死ぬのがいいわ - Shinunoga E-Wa",
+      "artist": "Fujii Kaze",
+      "album": "HELP EVER HURT NEVER",
+      "artwork": "https://yt3.googleusercontent.com/R4k8Fj3T1Y-LvlSrMIY6ekpKg5OviQqzaNTq4WoL2QHwBjc6C0CHOMl7R8Kbdyj8atWWkpsYi1HPCbnU=w600-h600-l90-rj",
+      "duration": 186,
+      "source": "youtube"
+    },
+    {
+      "id": "xlfT2DasD0g",
+      "title": "Promise",
+      "artist": "Laufey",
+      "album": "Bewitched",
+      "artwork": "https://yt3.googleusercontent.com/eJ3BhkvN3MmLZt95bBLG-aqGdUvoA1F_AWIyPOpUx69Rv_WsGlQMOHWSHMD48MppwWppHpQWwjIR2LTA=w600-h600-l90-rj",
+      "duration": 235,
+      "source": "youtube"
+    },
+    {
+      "id": "SZcilh-cZXE",
+      "title": "ワールドイズマイン-初音ミク「マジカルミライ 2021」Live- - The World Is Mine-Hatsune Miku Magical Mirai 2021 [Live] (feat. Hatsune Miku)",
+      "artist": "ryo (supercell), Hatsune Miku",
+      "album": "Hatsune Miku Magical Mirai 2021 [Live]",
+      "artwork": "https://yt3.googleusercontent.com/-z8EEnG9chC8mFBcfDD1YMWvyoa2_7QaYV1V2xhJ_FkJ-t4Lc-8y_m08C_X-qnAz0tjrkkTY-52Vk1wu=w600-h600-l90-rj",
+      "duration": 255,
+      "source": "youtube"
+    }
+  ],
+  "sections": [
+    {
+      "title": "编辑精选",
+      "items": [
+        {
+          "id": "G2PDJTkFiA8",
+          "title": "Miku",
+          "artist": "Anamanaguchi, Hatsune Miku",
+          "album": "Miku",
+          "artwork": "https://yt3.googleusercontent.com/uEOk2pCVOFnFGjzrsNavzKYoZEvz46KInWBpElYu1d_UHqH78cRqqCV3myVFmIl4SZytMGkGn1FLkgYz8w=w600-h600-l90-rj",
+          "duration": 224,
+          "source": "youtube"
+        },
+        {
+          "id": "4n94ukt15qg",
+          "title": "Tell Your World (feat. Hatsune Miku)",
+          "artist": "livetune",
+          "album": "Tell Your World EP",
+          "artwork": "https://yt3.googleusercontent.com/Fv2AcdfpKjgAtcoEzmN7u0roKaLMKtIQERGliR56BQGKynMNRvUMGjwAn3Z2V9GUP_s9aApD4xKd2rdK=w600-h600-s-l90-rj",
+          "duration": 255,
+          "source": "youtube"
+        },
+        {
+          "id": "h8DeZSB2o-c",
+          "title": "From The Start",
+          "artist": "Laufey",
+          "album": "Bewitched",
+          "artwork": "https://yt3.googleusercontent.com/eJ3BhkvN3MmLZt95bBLG-aqGdUvoA1F_AWIyPOpUx69Rv_WsGlQMOHWSHMD48MppwWppHpQWwjIR2LTA=w600-h600-l90-rj",
+          "duration": 170,
+          "source": "youtube"
+        },
+        {
+          "id": "V6TEcoNUmc8",
+          "title": "Ditto",
+          "artist": "NewJeans",
+          "album": "NewJeans 'OMG'",
+          "artwork": "https://yt3.googleusercontent.com/UWM-x77xhcEEAK8tKICtlDSxsYedoFxQhdiDPzW-Ww59DWs7rDQpD_idJQ6h5YEJruURgpEr1O-0oq5Y=w600-h600-l90-rj",
+          "duration": 186,
+          "source": "youtube"
+        },
+        {
+          "id": "NIzmrafKAdQ",
+          "title": "Just for Me",
+          "artist": "PinkPantheress",
+          "album": "Just for me",
+          "artwork": "https://yt3.googleusercontent.com/lHKPyUQ8Lw1OmFuZcH2d5FYXwuFCdm8Q9jFNVi_QcU0pnuiQ89aeWF1hZJwPC7pP3aPLVwnFf5CBejlC=w600-h600-l90-rj",
+          "duration": 116,
+          "source": "youtube"
+        },
+        {
+          "id": "MRzPDH24a1M",
+          "title": "Stateside",
+          "artist": "PinkPantheress",
+          "album": "Stateside",
+          "artwork": "https://yt3.googleusercontent.com/1H03Qi1c0N-Igr0lqdsf-6bHlBGQhqUd8oW9dZmMbavAGbwFbaPEQBrwLbVfVD-R61Jxv4hmoJGRggej=w600-h600-l90-rj",
+          "duration": 169,
+          "source": "youtube"
+        },
+        {
+          "id": "0c7zGU2C2mM",
+          "title": "Super Shy",
+          "artist": "NewJeans",
+          "album": "NewJeans 'Super Shy'",
+          "artwork": "https://yt3.googleusercontent.com/FzLKj6zFEJna0gRNDeZRH4nuQwEyN-YbCaC-bIGLoia6EhirHUachdvdEdR3VdB7pArgFCW8mtpLPL0=w600-h600-l90-rj",
+          "duration": 155,
+          "source": "youtube"
+        },
+        {
+          "id": "0_M2JX-Olv8",
+          "title": "Feather (feat. Cise Starr & Akin from CYNE)",
+          "artist": "Nujabes",
+          "album": "Modal Soul",
+          "artwork": "https://yt3.googleusercontent.com/qy-mvoWSpN_RHYA-3wV3BCOJYe_Pp_fGida6hqOo966KAleFo87xHNggk4K4Rq5wBNEgtwob94Yf1ehRdw=w600-h600-l90-rj",
+          "duration": 176,
+          "source": "youtube"
+        },
+        {
+          "id": "by4SYYWlhEs",
+          "title": "夜に駆ける",
+          "artist": "YOASOBI",
+          "album": "夜に駆ける",
+          "artwork": "https://yt3.googleusercontent.com/-smFMOtNB5Zu8EINwbq_FQUXbBp2mguY2-w0MLxcVU0-osix9gV6IF3IuIBkeWlhck8RBQ9shgKCfDw=w600-h600-l90-rj",
+          "duration": 262,
+          "source": "youtube"
+        },
+        {
+          "id": "3zh9Wb1KuW8",
+          "title": "死ぬのがいいわ - Shinunoga E-Wa",
+          "artist": "Fujii Kaze",
+          "album": "HELP EVER HURT NEVER",
+          "artwork": "https://yt3.googleusercontent.com/R4k8Fj3T1Y-LvlSrMIY6ekpKg5OviQqzaNTq4WoL2QHwBjc6C0CHOMl7R8Kbdyj8atWWkpsYi1HPCbnU=w600-h600-l90-rj",
+          "duration": 186,
+          "source": "youtube"
+        },
+        {
+          "id": "xlfT2DasD0g",
+          "title": "Promise",
+          "artist": "Laufey",
+          "album": "Bewitched",
+          "artwork": "https://yt3.googleusercontent.com/eJ3BhkvN3MmLZt95bBLG-aqGdUvoA1F_AWIyPOpUx69Rv_WsGlQMOHWSHMD48MppwWppHpQWwjIR2LTA=w600-h600-l90-rj",
+          "duration": 235,
+          "source": "youtube"
+        },
+        {
+          "id": "SZcilh-cZXE",
+          "title": "ワールドイズマイン-初音ミク「マジカルミライ 2021」Live- - The World Is Mine-Hatsune Miku Magical Mirai 2021 [Live] (feat. Hatsune Miku)",
+          "artist": "ryo (supercell), Hatsune Miku",
+          "album": "Hatsune Miku Magical Mirai 2021 [Live]",
+          "artwork": "https://yt3.googleusercontent.com/-z8EEnG9chC8mFBcfDD1YMWvyoa2_7QaYV1V2xhJ_FkJ-t4Lc-8y_m08C_X-qnAz0tjrkkTY-52Vk1wu=w600-h600-l90-rj",
+          "duration": 255,
+          "source": "youtube"
+        }
+      ]
+    },
+    {
+      "title": "日系与 VOCALOID",
+      "items": [
+        {
+          "id": "G2PDJTkFiA8",
+          "title": "Miku",
+          "artist": "Anamanaguchi, Hatsune Miku",
+          "album": "Miku",
+          "artwork": "https://yt3.googleusercontent.com/uEOk2pCVOFnFGjzrsNavzKYoZEvz46KInWBpElYu1d_UHqH78cRqqCV3myVFmIl4SZytMGkGn1FLkgYz8w=w600-h600-l90-rj",
+          "duration": 224,
+          "source": "youtube"
+        },
+        {
+          "id": "4n94ukt15qg",
+          "title": "Tell Your World (feat. Hatsune Miku)",
+          "artist": "livetune",
+          "album": "Tell Your World EP",
+          "artwork": "https://yt3.googleusercontent.com/Fv2AcdfpKjgAtcoEzmN7u0roKaLMKtIQERGliR56BQGKynMNRvUMGjwAn3Z2V9GUP_s9aApD4xKd2rdK=w600-h600-s-l90-rj",
+          "duration": 255,
+          "source": "youtube"
+        },
+        {
+          "id": "by4SYYWlhEs",
+          "title": "夜に駆ける",
+          "artist": "YOASOBI",
+          "album": "夜に駆ける",
+          "artwork": "https://yt3.googleusercontent.com/-smFMOtNB5Zu8EINwbq_FQUXbBp2mguY2-w0MLxcVU0-osix9gV6IF3IuIBkeWlhck8RBQ9shgKCfDw=w600-h600-l90-rj",
+          "duration": 262,
+          "source": "youtube"
+        },
+        {
+          "id": "3zh9Wb1KuW8",
+          "title": "死ぬのがいいわ - Shinunoga E-Wa",
+          "artist": "Fujii Kaze",
+          "album": "HELP EVER HURT NEVER",
+          "artwork": "https://yt3.googleusercontent.com/R4k8Fj3T1Y-LvlSrMIY6ekpKg5OviQqzaNTq4WoL2QHwBjc6C0CHOMl7R8Kbdyj8atWWkpsYi1HPCbnU=w600-h600-l90-rj",
+          "duration": 186,
+          "source": "youtube"
+        },
+        {
+          "id": "SZcilh-cZXE",
+          "title": "ワールドイズマイン-初音ミク「マジカルミライ 2021」Live- - The World Is Mine-Hatsune Miku Magical Mirai 2021 [Live] (feat. Hatsune Miku)",
+          "artist": "ryo (supercell), Hatsune Miku",
+          "album": "Hatsune Miku Magical Mirai 2021 [Live]",
+          "artwork": "https://yt3.googleusercontent.com/-z8EEnG9chC8mFBcfDD1YMWvyoa2_7QaYV1V2xhJ_FkJ-t4Lc-8y_m08C_X-qnAz0tjrkkTY-52Vk1wu=w600-h600-l90-rj",
+          "duration": 255,
+          "source": "youtube"
+        }
+      ]
+    },
+    {
+      "title": "轻轻放慢",
+      "items": [
+        {
+          "id": "h8DeZSB2o-c",
+          "title": "From The Start",
+          "artist": "Laufey",
+          "album": "Bewitched",
+          "artwork": "https://yt3.googleusercontent.com/eJ3BhkvN3MmLZt95bBLG-aqGdUvoA1F_AWIyPOpUx69Rv_WsGlQMOHWSHMD48MppwWppHpQWwjIR2LTA=w600-h600-l90-rj",
+          "duration": 170,
+          "source": "youtube"
+        },
+        {
+          "id": "0_M2JX-Olv8",
+          "title": "Feather (feat. Cise Starr & Akin from CYNE)",
+          "artist": "Nujabes",
+          "album": "Modal Soul",
+          "artwork": "https://yt3.googleusercontent.com/qy-mvoWSpN_RHYA-3wV3BCOJYe_Pp_fGida6hqOo966KAleFo87xHNggk4K4Rq5wBNEgtwob94Yf1ehRdw=w600-h600-l90-rj",
+          "duration": 176,
+          "source": "youtube"
+        },
+        {
+          "id": "xlfT2DasD0g",
+          "title": "Promise",
+          "artist": "Laufey",
+          "album": "Bewitched",
+          "artwork": "https://yt3.googleusercontent.com/eJ3BhkvN3MmLZt95bBLG-aqGdUvoA1F_AWIyPOpUx69Rv_WsGlQMOHWSHMD48MppwWppHpQWwjIR2LTA=w600-h600-l90-rj",
+          "duration": 235,
+          "source": "youtube"
+        }
+      ]
+    },
+    {
+      "title": "流行与节拍",
+      "items": [
+        {
+          "id": "V6TEcoNUmc8",
+          "title": "Ditto",
+          "artist": "NewJeans",
+          "album": "NewJeans 'OMG'",
+          "artwork": "https://yt3.googleusercontent.com/UWM-x77xhcEEAK8tKICtlDSxsYedoFxQhdiDPzW-Ww59DWs7rDQpD_idJQ6h5YEJruURgpEr1O-0oq5Y=w600-h600-l90-rj",
+          "duration": 186,
+          "source": "youtube"
+        },
+        {
+          "id": "NIzmrafKAdQ",
+          "title": "Just for Me",
+          "artist": "PinkPantheress",
+          "album": "Just for me",
+          "artwork": "https://yt3.googleusercontent.com/lHKPyUQ8Lw1OmFuZcH2d5FYXwuFCdm8Q9jFNVi_QcU0pnuiQ89aeWF1hZJwPC7pP3aPLVwnFf5CBejlC=w600-h600-l90-rj",
+          "duration": 116,
+          "source": "youtube"
+        },
+        {
+          "id": "MRzPDH24a1M",
+          "title": "Stateside",
+          "artist": "PinkPantheress",
+          "album": "Stateside",
+          "artwork": "https://yt3.googleusercontent.com/1H03Qi1c0N-Igr0lqdsf-6bHlBGQhqUd8oW9dZmMbavAGbwFbaPEQBrwLbVfVD-R61Jxv4hmoJGRggej=w600-h600-l90-rj",
+          "duration": 169,
+          "source": "youtube"
+        },
+        {
+          "id": "0c7zGU2C2mM",
+          "title": "Super Shy",
+          "artist": "NewJeans",
+          "album": "NewJeans 'Super Shy'",
+          "artwork": "https://yt3.googleusercontent.com/FzLKj6zFEJna0gRNDeZRH4nuQwEyN-YbCaC-bIGLoia6EhirHUachdvdEdR3VdB7pArgFCW8mtpLPL0=w600-h600-l90-rj",
+          "duration": 155,
+          "source": "youtube"
+        }
+      ]
+    }
+  ]
+}

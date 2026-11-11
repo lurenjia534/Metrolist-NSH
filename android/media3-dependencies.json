@@ -1,0 +1,125 @@
+{
+  "media3Version": "1.10.1",
+  "resolvedFrom": [
+    "androidx.media3:media3-exoplayer:1.10.1",
+    "androidx.media3:media3-datasource-okhttp:1.10.1",
+    "androidx.annotation:annotation-jvm:1.6.0"
+  ],
+  "artifacts": [
+    {
+      "file": "annotation-1.6.0.jar",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/annotation/annotation/1.6.0/annotation-1.6.0.jar",
+      "sha256": "fbc64f5c44a7added8b6eab517cf7d70555e25153bf5d44a6ed9b0e5312f7de9"
+    },
+    {
+      "file": "annotation-experimental-1.3.1.aar",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/annotation/annotation-experimental/1.3.1/annotation-experimental-1.3.1.aar",
+      "sha256": "e4d49dc3880b7b7437ea54ce71461e02897faa4e1ecc53e63ecadb1a14c20c9c"
+    },
+    {
+      "file": "annotation-jvm-1.6.0.jar",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/annotation/annotation-jvm/1.6.0/annotation-jvm-1.6.0.jar",
+      "sha256": "60b10b5ef5769b79570172e015b8159405c92f034ba88b9391a977589c9deb4e"
+    },
+    {
+      "file": "annotations-13.0.jar",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/annotations/13.0/annotations-13.0.jar",
+      "sha256": "ace2a10dc8e2d5fd34925ecac03e4988b2c0f851650c94b8cef49ba1bd111478"
+    },
+    {
+      "file": "exifinterface-1.3.6.aar",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/exifinterface/exifinterface/1.3.6/exifinterface-1.3.6.aar",
+      "sha256": "1804105e9e05fdd8f760413bad5de498c381aa329f4f9d94c851bc891ac654c6"
+    },
+    {
+      "file": "failureaccess-1.0.2.jar",
+      "url": "https://repo.maven.apache.org/maven2/com/google/guava/failureaccess/1.0.2/failureaccess-1.0.2.jar",
+      "sha256": "8a8f81cf9b359e3f6dfa691a1e776985c061ef2f223c9b2c80753e1b458e8064"
+    },
+    {
+      "file": "guava-33.3.1-android.jar",
+      "url": "https://repo.maven.apache.org/maven2/com/google/guava/guava/33.3.1-android/guava-33.3.1-android.jar",
+      "sha256": "2c3e41d1b380f2044d257947a3aa82dabf3ae4b978622745254aa18b6cf89ab0"
+    },
+    {
+      "file": "kotlin-stdlib-2.0.20.jar",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.0.20/kotlin-stdlib-2.0.20.jar",
+      "sha256": "fb169596659a518357c4b2c16f43dc75ab1c4980565ed4b4a317a050e5e39006"
+    },
+    {
+      "file": "kotlin-stdlib-common-1.9.10.jar",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-common/1.9.10/kotlin-stdlib-common-1.9.10.jar",
+      "sha256": "cde3341ba18a2ba262b0b7cf6c55b20c90e8d434e42c9a13e6a3f770db965a88"
+    },
+    {
+      "file": "kotlin-stdlib-jdk7-1.8.21.jar",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.21/kotlin-stdlib-jdk7-1.8.21.jar",
+      "sha256": "33d148db0e11debd0d90677d28242bced907f9c77730000fd597867089039d86"
+    },
+    {
+      "file": "kotlin-stdlib-jdk8-1.8.21.jar",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.21/kotlin-stdlib-jdk8-1.8.21.jar",
+      "sha256": "3db752a30074f06ee6c57984aa6f27da44f4d2bbc7f5442651f6988f1cb2b7d7"
+    },
+    {
+      "file": "listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar",
+      "url": "https://repo.maven.apache.org/maven2/com/google/guava/listenablefuture/9999.0-empty-to-avoid-conflict-with-guava/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar",
+      "sha256": "b372a037d4230aa57fbeffdef30fd6123f9c0c2db85d0aced00c91b974f33f99"
+    },
+    {
+      "file": "media3-common-1.10.1.aar",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/media3/media3-common/1.10.1/media3-common-1.10.1.aar",
+      "sha256": "39686f54ff6baf8cbc841199afd55619533eaef2ab6cd0efc32b8a3c55dd88c3"
+    },
+    {
+      "file": "media3-container-1.10.1.aar",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/media3/media3-container/1.10.1/media3-container-1.10.1.aar",
+      "sha256": "a198b62c577fa434941282fbfa31eb66ff0ff308a6573edf0b5dd01f4e38445d"
+    },
+    {
+      "file": "media3-database-1.10.1.aar",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/media3/media3-database/1.10.1/media3-database-1.10.1.aar",
+      "sha256": "520e6f814e42a7d428db187ac073b453c0fcba0f4f5f4edd1cf33fafd2cfb740"
+    },
+    {
+      "file": "media3-datasource-1.10.1.aar",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/media3/media3-datasource/1.10.1/media3-datasource-1.10.1.aar",
+      "sha256": "e22f9f779047ce951152c793af094593e7cbb52475a82d56fa4f869fd319e700"
+    },
+    {
+      "file": "media3-datasource-okhttp-1.10.1.aar",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/media3/media3-datasource-okhttp/1.10.1/media3-datasource-okhttp-1.10.1.aar",
+      "sha256": "7c33a4c5d6aee58d32462fa21720788c0f2e26dec10996964081fc23531a28e5"
+    },
+    {
+      "file": "media3-decoder-1.10.1.aar",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/media3/media3-decoder/1.10.1/media3-decoder-1.10.1.aar",
+      "sha256": "a9fb2b8fa1d54b4a8d6bda98a1c655b04d59c74b3ace7e2503e9e39830f13aee"
+    },
+    {
+      "file": "media3-exoplayer-1.10.1.aar",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/media3/media3-exoplayer/1.10.1/media3-exoplayer-1.10.1.aar",
+      "sha256": "19090f829afbbb595d67618f59c212f72b433ac01dc72b47594cf42552c8ed61"
+    },
+    {
+      "file": "media3-extractor-1.10.1.aar",
+      "url": "https://dl.google.com/dl/android/maven2/androidx/media3/media3-extractor/1.10.1/media3-extractor-1.10.1.aar",
+      "sha256": "3c823279356b64f4215a8c6cb1e6bfa60c533351a651786ad6fa69ad001ef1b1"
+    },
+    {
+      "file": "okhttp-4.12.0.jar",
+      "url": "https://repo.maven.apache.org/maven2/com/squareup/okhttp3/okhttp/4.12.0/okhttp-4.12.0.jar",
+      "sha256": "b1050081b14bb7a3a7e55a4d3ef01b5dcfabc453b4573a4fc019767191d5f4e0"
+    },
+    {
+      "file": "okio-3.6.0.jar",
+      "url": "https://repo.maven.apache.org/maven2/com/squareup/okio/okio/3.6.0/okio-3.6.0.jar",
+      "sha256": "8e63292e5c53bb93c4a6b0c213e79f15990fed250c1340f1c343880e1c9c39b5"
+    },
+    {
+      "file": "okio-jvm-3.6.0.jar",
+      "url": "https://repo.maven.apache.org/maven2/com/squareup/okio/okio-jvm/3.6.0/okio-jvm-3.6.0.jar",
+      "sha256": "67543f0736fc422ae927ed0e504b98bc5e269fda0d3500579337cb713da28412"
+    }
+  ]
+}
