@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-only
  */
 import { authenticationHeaders, accountUser } from './auth.mjs';
+import { youtubeFetch } from './youtube-transport.mjs';
 
 export const CLIENT_VERSION = '1.20260707.12.00';
 export const WEB_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0';
@@ -35,7 +36,7 @@ export async function innertube(endpoint, body, options = {}) {
     url.searchParams.set('continuation', body.continuation);
     url.searchParams.set('ctoken', body.continuation);
   }
-  const response = await (options.fetch || fetch)(url, {
+  const response = await youtubeFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -60,7 +61,7 @@ export async function innertube(endpoint, body, options = {}) {
       },
       ...body,
     }),
-  });
+  }, options.fetch || fetch);
   if (!response.ok) throw new ApiError(`YouTube Music returned HTTP ${response.status}`, response.status);
   const result = await response.json();
   if (result.error) throw new ApiError(result.error.message, result.error.code || 502);
