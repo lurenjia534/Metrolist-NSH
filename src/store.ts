@@ -173,12 +173,13 @@ export async function initialize() {
   if (initialized) return;
   initialized = true;
   player.initPlayback({
-    resolveStream: async (track) => {
+    resolveStream: async (track, request) => {
       const downloaded = downloadJobs().find((job) => job.id === track.id && job.status === "completed"
         && (settings().audioQuality === "auto" || job.quality === settings().audioQuality));
       if (downloaded?.url) return { ...await api.resolvePlayback({ ...track, source: "audio", url: downloaded.url }), quality: downloaded.quality };
-      return api.resolvePlayback(track, settings().audioQuality);
+      return api.resolvePlayback(track, settings().audioQuality, request);
     },
+    sourceContext: () => JSON.stringify([settings().apiBase, settings().audioQuality, account.currentCredentials()]),
     autoRadio: () => settings().autoRadio,
     fetchRadio: async (track) => { const result = await api.fetchNext(track.id); addTracks(result.tracks, false); return result.tracks; },
     onTrack: remember, onListen: recordListen, onError: showError,

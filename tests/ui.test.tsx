@@ -106,15 +106,18 @@ test("desktop library creates a playlist and song menus add, sort and reorder it
   await app.press("id:nav-search"); await app.type("id:search-input", "Test"); await app.submit("id:search-input");
   await app.waitFor("id:song-menu-ui-beta");
   for (const id of [beta.id, alpha.id]) {
-    await app.press(`id:song-menu-${id}`); await app.press("加入歌单…"); await app.press("id:app-dialog >> label:Desktop list");
+    await app.press(`id:song-menu-${id}`); await app.press("加入歌单…");
+    await app.waitFor("id:app-dialog >> label:Desktop list"); await app.press("id:app-dialog >> label:Desktop list");
   }
   expect(JSON.parse(app.storage()["metrolist.library"]).playlists[0].tracks.map((track: { id: string }) => track.id)).toEqual([beta.id, alpha.id]);
   await app.press("id:nav-library"); await app.press("id:library-playlists");
   await app.press("id:page-library >> label:Desktop list"); await app.waitFor("id:page-playlist");
   await app.press("label:歌曲排序"); await app.press("歌曲名称");
+  await app.waitUntil(() => app.texts().filter(text => text === alpha.title || text === beta.title)[0] === alpha.title);
   const titles = app.texts().filter((text) => text === alpha.title || text === beta.title);
   expect(titles).toEqual([alpha.title, beta.title]);
   await app.press("label:歌单操作"); await app.press("调整歌曲顺序");
+  await app.waitFor("id:track-ui-beta >> label:下移");
   await app.press("id:track-ui-beta >> label:下移");
   expect(JSON.parse(app.storage()["metrolist.library"]).playlists[0].tracks.map((track: { id: string }) => track.id)).toEqual([alpha.id, beta.id]);
   await app.press("id:track-ui-alpha >> label:从歌单移除");

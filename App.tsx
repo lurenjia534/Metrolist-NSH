@@ -1,4 +1,4 @@
-import { mount, View, Image, Scroll, signal, platform, keymap, host, colorScheme, reduceMotion } from "nsh";
+import { mount, View, Image, Scroll, signal, platform, keymap, host, colorScheme, reduceMotion, windowSize } from "nsh";
 import { NavStack, NavPage, Tabs, Tab } from "nsh/base";
 import * as s from "./src/store";
 import * as p from "./src/playback";
@@ -41,9 +41,10 @@ function Sidebar() {
 }
 function BottomNav() {
   const selected = (page: nav.Page) => nav.stack.routes()[0].page === page;
-  return <View testID="mobile-tabs" style={{ flexShrink: 0, backgroundColor: c().panel, borderTopWidth: 1, borderColor: c().line, paddingTop: 8, paddingBottom: "calc(env(safe-area-inset-bottom) + 6px)", paddingLeft: "env(safe-area-inset-left)", paddingRight: "env(safe-area-inset-right)" }}>
-    <Tabs style={{ flexDirection: "row", minHeight: 60 }} indicatorStyle={{ top: 0, height: 32, marginHorizontal: 20, borderRadius: 24, backgroundColor: c().selected }}>
-      <Each of={primary}>{item => <Tab testID={`nav-mobile-${item().page}`} accessibilityLabel={item().label} selected={selected(item().page)} onPress={() => nav.navigate(item().page, true)} style={{ flex: 1, minWidth: 0, minHeight: 60, alignItems: "center", gap: 5, borderRadius: 24, ...transition("colors,opacity") }} activeStyle={{ opacity: 0.7 }}>
+  const horizontal = () => windowSize().height < 480;
+  return <View testID="mobile-tabs" style={{ flexShrink: 0, backgroundColor: c().panel, borderTopWidth: 1, borderColor: c().line, paddingTop: horizontal() ? 2 : 8, paddingBottom: "calc(env(safe-area-inset-bottom) + 6px)", paddingLeft: "env(safe-area-inset-left)", paddingRight: "env(safe-area-inset-right)" }}>
+    <Tabs style={{ flexDirection: "row", minHeight: horizontal() ? 48 : 60 }} indicatorStyle={{ top: horizontal() ? 4 : 0, height: horizontal() ? 40 : 32, marginHorizontal: 20, borderRadius: 24, backgroundColor: c().selected }}>
+      <Each of={primary}>{item => <Tab testID={`nav-mobile-${item().page}`} accessibilityLabel={item().label} selected={selected(item().page)} onPress={() => nav.navigate(item().page, true)} style={{ flex: 1, minWidth: 0, minHeight: horizontal() ? 48 : 60, flexDirection: horizontal() ? "row" : "column", alignItems: "center", justifyContent: horizontal() ? "center" : "flex-start", gap: horizontal() ? 8 : 5, borderRadius: 24, ...transition("colors,opacity") }} activeStyle={{ opacity: 0.7 }}>
         <View style={{ height: 32, justifyContent: "center" }}><Icon name={item().icon} size={24} color={selected(item().page) ? c().accent : c().sub} /></View><Label size={12} weight={selected(item().page) ? "600" : "400"} color={selected(item().page) ? c().accent : c().sub}>{item().label}</Label>
       </Tab>}</Each>
     </Tabs>
@@ -75,7 +76,7 @@ function SidePlayer() {
 }
 function App() {
   if (platform.os === "web") void host.call("app.start").catch(s.showError);
-  account.setAccountHooks({ onChange: () => { void s.loadHome(); } });
+  account.setAccountHooks({ onChange: () => { p.invalidatePreparation(); void s.loadHome(); } });
   void s.initialize().then(() => account.initializeAccounts()).catch(s.showError);
   void together.initializeTogether().catch(s.showError);
   keymap.bind({ "space": () => { if (!p.remoteControlled()) void action(p.togglePlay); }, "mod+k": () => nav.navigate("search", true), "mod+right": () => { if (!p.remoteControlled()) void action(p.next); }, "mod+left": () => { if (!p.remoteControlled()) void action(p.previous); } });

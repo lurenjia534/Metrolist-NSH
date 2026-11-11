@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseAudioFormat, streamMetadata } from './streaming.mjs';
+import { chooseAudioFormat, resolveWorkerAudio, streamMetadata } from './streaming.mjs';
+import { retryAfterMilliseconds } from './catalog.mjs';
+import { api } from './index.mjs';
 
 const formats = [
   { itag: 139, mimeType: 'audio/mp4; codecs="mp4a.40.5"', bitrate: 50270, audioSampleRate: '22050', audioChannels: 2, url: 'https://audio.test/139' },
@@ -46,4 +48,332 @@ test('native source metadata retains request headers, expiry and stable format i
   assert.equal(proxy.headers, undefined);
   assert.equal(new URL(proxy.url).searchParams.get('client'), 'WEB_REMIX');
   assert.equal(new URL(proxy.url).searchParams.get('source'), media.url);
+});
+
+function playerResponse(id, version = 1, lifetime = 3600) {
+  return Response.json({ playabilityStatus: { status: 'OK' }, videoDetails: { title: id, lengthSeconds: '180' },
+    streamingData: { expiresInSeconds: String(lifetime), adaptiveFormats: formats.slice(0, 3).map(format => ({ ...format,
+      contentLength: '100000', url: `https://audio.test/${id}/${format.itag}?version=${version}&expire=${Math.floor(Date.now() / 1000) + lifetime}`,
+    })) },
+  });
+}
+
+function deferred() {
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  return { promise, resolve };
+}
+
+test('an already loaded anonymous catalog supplies the first song visitor with zero watch requests', async () => {
+  let watches = 0, pages = 0, players = 0;
+  const visitors = [];
+  const transport = async (url, init) => {
+    const path = new URL(url).pathname;
+    if (path.endsWith('/browse')) {
+      pages++;
+      return Response.json({ responseContext: { visitorData: `catalog-visitor-${pages}` }, contents: [] });
+    }
+    if (path === '/watch') { watches++; return new Response('{"VISITOR_DATA":"watch-visitor"}'); }
+    players++;
+    visitors.push(init.headers['X-Goog-Visitor-Id']);
+    assert.equal(init.headers.Cookie, undefined);
+    return playerResponse(JSON.parse(init.body).videoId);
+  };
+  assert.equal((await api(new Request('https://player.test/api/home'), { fetch: transport })).status, 200);
+  await resolveWorkerAudio('catalog-first-song', { fetch: transport });
+  await api(new Request('https://player.test/api/home'), { fetch: transport });
+  await resolveWorkerAudio('catalog-second-song', { fetch: transport });
+  assert.equal(watches, 0);
+  assert.equal(players, 2);
+  assert.deepEqual(visitors, ['catalog-visitor-1', 'catalog-visitor-1']);
+});
+
+test('authenticated catalog responses never seed the anonymous playback visitor', async () => {
+  let watches = 0;
+  const transport = async (url, init) => {
+    const path = new URL(url).pathname;
+    if (path.endsWith('/browse')) {
+      assert.equal(init.headers.Cookie, 'SAPISID=fixture-catalog-account');
+      return Response.json({ responseContext: { visitorData: 'signed-in-response-visitor' }, contents: [] });
+    }
+    if (path === '/watch') { watches++; return new Response('{"VISITOR_DATA":"anonymous-watch-visitor"}'); }
+    assert.equal(init.headers['X-Goog-Visitor-Id'], 'anonymous-watch-visitor');
+    assert.equal(init.headers.Cookie, undefined);
+    return playerResponse(JSON.parse(init.body).videoId);
+  };
+  const account = { cookie: 'SAPISID=fixture-catalog-account', visitorData: 'signed-in-request-visitor' };
+  await api(new Request('https://player.test/api/home', {
+    headers: { 'X-Metrolist-Account': encodeURIComponent(JSON.stringify(account)) },
+  }), { fetch: transport });
+  await resolveWorkerAudio('anonymous-after-account', { fetch: transport });
+  assert.equal(watches, 1);
+});
+
+test('an authenticated home response cannot replace a concurrent anonymous watch bootstrap', async () => {
+  const watchStarted = deferred(), finishWatch = deferred();
+  let watches = 0;
+  const visitors = [];
+  const transport = async (url, init) => {
+    const path = new URL(url).pathname;
+    if (path.endsWith('/browse')) return Response.json({ responseContext: { visitorData: 'private-home-visitor' } });
+    if (path === '/watch') {
+      watches++; watchStarted.resolve(); await finishWatch.promise;
+      return new Response('{"VISITOR_DATA":"concurrent-watch-visitor"}');
+    }
+    visitors.push(init.headers['X-Goog-Visitor-Id']);
+    return playerResponse(JSON.parse(init.body).videoId);
+  };
+  const first = resolveWorkerAudio('concurrent-private-home-a', { fetch: transport });
+  await watchStarted.promise;
+  await api(new Request('https://player.test/api/home', {
+    headers: { 'X-Metrolist-Account': encodeURIComponent(JSON.stringify({ cookie: 'SAPISID=fixture-concurrent-account' })) },
+  }), { fetch: transport });
+  const second = resolveWorkerAudio('concurrent-private-home-b', { fetch: transport });
+  finishWatch.resolve();
+  await Promise.all([first, second]);
+  assert.equal(watches, 1);
+  assert.deepEqual(visitors, ['concurrent-watch-visitor', 'concurrent-watch-visitor']);
+});
+
+test('anonymous catalog and a concurrent watch converge on one visitor without waiting for an unrelated watch', async () => {
+  const watchStarted = deferred(), finishWatch = deferred();
+  let watches = 0;
+  const visitors = [];
+  const transport = async (url, init) => {
+    const path = new URL(url).pathname;
+    if (path.endsWith('/browse')) return Response.json({ responseContext: { visitorData: 'concurrent-catalog-visitor' } });
+    if (path === '/watch') {
+      watches++; watchStarted.resolve(); await finishWatch.promise;
+      return new Response('{"VISITOR_DATA":"late-watch-visitor"}');
+    }
+    visitors.push(init.headers['X-Goog-Visitor-Id']);
+    return playerResponse(JSON.parse(init.body).videoId);
+  };
+  const first = resolveWorkerAudio('concurrent-catalog-a', { fetch: transport });
+  await watchStarted.promise;
+  await api(new Request('https://player.test/api/home'), { fetch: transport });
+  await resolveWorkerAudio('concurrent-catalog-b', { fetch: transport });
+  finishWatch.resolve();
+  await first;
+  assert.equal(watches, 1);
+  assert.deepEqual(visitors, ['concurrent-catalog-visitor', 'concurrent-catalog-visitor']);
+});
+
+test('missing catalog visitors and a different transport still bootstrap through watch', async () => {
+  const seededTransport = async () => Response.json({ responseContext: { visitorData: 'other-transport-visitor' } });
+  await api(new Request('https://player.test/api/home'), { fetch: seededTransport });
+  let watches = 0;
+  const transport = async (url, init) => {
+    const path = new URL(url).pathname;
+    if (path.endsWith('/browse')) return Response.json({ contents: [] });
+    if (path === '/watch') { watches++; return new Response('{"VISITOR_DATA":"own-transport-visitor"}'); }
+    assert.equal(init.headers['X-Goog-Visitor-Id'], 'own-transport-visitor');
+    return playerResponse(JSON.parse(init.body).videoId);
+  };
+  await api(new Request('https://player.test/api/home'), { fetch: transport });
+  await resolveWorkerAudio('missing-catalog-visitor', { fetch: transport });
+  assert.equal(watches, 1);
+});
+
+test('concurrent cold tracks share one visitor bootstrap without serializing player requests', async () => {
+  const visitor = deferred();
+  let watches = 0, players = 0, playingRequests = 0, peakPlayers = 0;
+  const transport = async (url, init) => {
+    if (new URL(url).pathname === '/watch') {
+      watches++;
+      await visitor.promise;
+      return new Response('<script>ytcfg.set({"VISITOR_DATA":"cold-visitor"})</script>');
+    }
+    players++; playingRequests++; peakPlayers = Math.max(peakPlayers, playingRequests);
+    assert.equal(init.headers['X-Goog-Visitor-Id'], 'cold-visitor');
+    await Promise.resolve();
+    playingRequests--;
+    return playerResponse(JSON.parse(init.body).videoId);
+  };
+  const loading = Array.from({ length: 8 }, (_, index) => resolveWorkerAudio(`cold-${index}`, { fetch: transport }));
+  visitor.resolve();
+  const sources = await Promise.all(loading);
+  assert.equal(watches, 1);
+  assert.equal(players, 8);
+  assert.ok(peakPlayers > 1);
+  assert.equal(new Set(sources.map(source => new URL(source.url).pathname)).size, 8);
+});
+
+test('prefetch, playback and quality selection reuse one player response', async () => {
+  let players = 0;
+  const transport = async (url, init) => {
+    if (new URL(url).pathname === '/watch') return new Response('{"VISITOR_DATA":"shared-visitor"}');
+    players++;
+    await Promise.resolve();
+    return playerResponse(JSON.parse(init.body).videoId);
+  };
+  const sources = await Promise.all(Array.from({ length: 12 }, () => resolveWorkerAudio('shared-song', { fetch: transport })));
+  assert.equal(players, 1);
+  assert.equal(new Set(sources.map(source => source.url)).size, 1);
+  const aac = await resolveWorkerAudio('shared-song', { fetch: transport, container: 'mp4', quality: 'high' });
+  assert.equal(aac.formatId, '140');
+  assert.equal(players, 1);
+});
+
+test('expired player and visitor caches refresh once across concurrent callers', async t => {
+  let now = 1800000000000;
+  t.mock.method(Date, 'now', () => now);
+  let players = 0, watches = 0;
+  const transport = async (url, init) => {
+    if (new URL(url).pathname === '/watch') {
+      watches++;
+      await Promise.resolve();
+      return new Response(`{"VISITOR_DATA":"visitor-${watches}"}`);
+    }
+    const version = ++players;
+    await Promise.resolve();
+    return playerResponse(JSON.parse(init.body).videoId, version);
+  };
+  await resolveWorkerAudio('expiring-song', { fetch: transport });
+  now += 4 * 60 * 60 * 1000;
+  const sources = await Promise.all(Array.from({ length: 10 }, () => resolveWorkerAudio('expiring-song', { fetch: transport })));
+  assert.equal(players, 2);
+  assert.equal(watches, 2);
+  assert.ok(sources.every(source => new URL(source.url).searchParams.get('version') === '2'));
+});
+
+test('missing server expiry uses a finite cache lifetime instead of resolving on every call', async () => {
+  let players = 0;
+  const transport = async url => {
+    if (new URL(url).pathname === '/watch') return new Response('{"VISITOR_DATA":"no-expiry-visitor"}');
+    players++;
+    return Response.json({ playabilityStatus: { status: 'OK' }, streamingData: { adaptiveFormats: [formats[1]] } });
+  };
+  const source = await resolveWorkerAudio('no-expiry-song', { fetch: transport });
+  await resolveWorkerAudio('no-expiry-song', { fetch: transport });
+  assert.ok(Number.isFinite(source.expiresAt));
+  assert.ok(source.expiresAt > Date.now());
+  assert.equal(players, 1);
+});
+
+test('refresh replaces the signed URL and an earlier in-flight response cannot overwrite it', async () => {
+  const firstStarted = deferred();
+  const firstResponse = deferred();
+  let players = 0;
+  const transport = async (url, init) => {
+    if (new URL(url).pathname === '/watch') return new Response('{"VISITOR_DATA":"refresh-visitor"}');
+    const version = ++players;
+    if (version === 1) { firstStarted.resolve(); await firstResponse.promise; }
+    return playerResponse(JSON.parse(init.body).videoId, version);
+  };
+  const first = resolveWorkerAudio('refresh-song', { fetch: transport });
+  await firstStarted.promise;
+  const refreshed = await resolveWorkerAudio('refresh-song', { fetch: transport, refresh: '1' });
+  firstResponse.resolve();
+  await first;
+  const cached = await resolveWorkerAudio('refresh-song', { fetch: transport });
+  assert.equal(new URL(refreshed.url).searchParams.get('version'), '2');
+  assert.equal(cached.url, refreshed.url);
+  assert.equal(players, 2);
+});
+
+test('changed visitor data and delegated channels retain independent signed URL and media caches', async () => {
+  let players = 0;
+  const transport = async (url, init) => {
+    players++;
+    const context = JSON.parse(init.body).context;
+    return playerResponse(`${context.client.visitorData}-${context.user.onBehalfOfUser}`);
+  };
+  const account = { cookie: 'SAPISID=fixture-session', authUser: '0', visitorData: 'visitor-a', dataSyncId: 'channel-a' };
+  const sources = await Promise.all([
+    account, { ...account, visitorData: 'visitor-b' }, { ...account, dataSyncId: 'channel-b' },
+  ].map(account => resolveWorkerAudio('session-song', { fetch: transport, account })));
+  assert.equal(players, 3);
+  assert.equal(new Set(sources.map(source => source.url)).size, 3);
+  assert.equal(new Set(sources.map(source => source.cacheKey)).size, 3);
+  await resolveWorkerAudio('session-song', { fetch: transport, account });
+  assert.equal(players, 3);
+});
+
+test('Retry-After supports seconds and HTTP dates', () => {
+  const now = Date.parse('2026-11-11T12:00:00Z');
+  assert.equal(retryAfterMilliseconds('3', now), 3000);
+  assert.equal(retryAfterMilliseconds('Wed, 11 Nov 2026 12:00:08 GMT', now), 8000);
+  assert.equal(retryAfterMilliseconds('invalid', now), undefined);
+  assert.equal(retryAfterMilliseconds(null, now), undefined);
+});
+
+test('visitor 429 keeps its status and retry metadata and failed bootstrap is not cached', async () => {
+  let requests = 0;
+  const transport = async (url, init) => {
+    requests++;
+    if (requests === 1) return new Response('limited', { status: 429, headers: { 'Retry-After': '60' } });
+    if (new URL(url).pathname === '/watch') return new Response('{"VISITOR_DATA":"retry-visitor"}');
+    return playerResponse(JSON.parse(init.body).videoId);
+  };
+  const request = new Request('https://player.test/api/stream?id=limited-visitor');
+  const response = await api(request, { fetch: transport, directStreams: true });
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get('Retry-After'), '60');
+  assert.match(response.headers.get('Access-Control-Expose-Headers'), /Retry-After/);
+  assert.deepEqual(await response.json(), {
+    error: 'YouTube 播放配置请求失败（HTTP 429）', code: 'rate-limited', stage: 'visitor', retryAfterMs: 60000,
+  });
+  assert.equal(requests, 1);
+  const retry = await api(request, { fetch: transport, directStreams: true });
+  assert.equal(retry.status, 200);
+  assert.equal(requests, 3);
+});
+
+test('a short explicit player Retry-After retries once within the shared resolution', async () => {
+  let players = 0;
+  const transport = async (url, init) => {
+    if (new URL(url).pathname === '/watch') return new Response('{"VISITOR_DATA":"short-retry-visitor"}');
+    players++;
+    if (players === 1) return new Response('limited', { status: 429, headers: { 'Retry-After': '0' } });
+    return playerResponse(JSON.parse(init.body).videoId);
+  };
+  const sources = await Promise.all(Array.from({ length: 6 }, () => resolveWorkerAudio('short-retry-song', { fetch: transport })));
+  assert.equal(players, 2);
+  assert.ok(sources.every(source => source.client === 'VISIONOS_0_1'));
+});
+
+test('player 429 without Retry-After does not fan out retries or become a 502', async () => {
+  let players = 0;
+  const transport = async url => {
+    if (new URL(url).pathname === '/watch') return new Response('{"VISITOR_DATA":"no-retry-visitor"}');
+    players++;
+    return new Response('limited', { status: 429 });
+  };
+  const responses = await Promise.all(Array.from({ length: 6 }, () => api(
+    new Request('https://player.test/api/stream?id=no-retry-song'), { fetch: transport, directStreams: true },
+  )));
+  assert.equal(players, 1);
+  for (const response of responses) {
+    assert.equal(response.status, 429);
+    assert.equal(response.headers.get('Retry-After'), null);
+    assert.equal((await response.json()).stage, 'player');
+  }
+});
+
+test('exhausted short retries remain bounded and authenticated player keeps 429 metadata', async () => {
+  let players = 0;
+  const account = { cookie: 'SAPISID=fixture-limited' };
+  const response = await api(new Request('https://player.test/api/stream?id=account-limited', {
+    headers: { 'X-Metrolist-Account': encodeURIComponent(JSON.stringify(account)) },
+  }), { fetch: async () => {
+    players++;
+    return new Response('limited', { status: 429, headers: { 'Retry-After': '0' } });
+  } });
+  assert.equal(players, 2);
+  assert.equal(response.status, 429);
+  assert.equal((await response.json()).stage, 'player');
+});
+
+test('audio proxy 429 reports its source stage and server delay', async t => {
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => {
+    calls++;
+    return new Response('limited', { status: 429, headers: { 'Retry-After': '30' } });
+  });
+  const response = await api(new Request('https://player.test/api/audio?source=https%3A%2F%2Faudio.test%2Ffile'));
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get('Retry-After'), '30');
+  assert.equal((await response.json()).stage, 'audio');
+  assert.equal(calls, 1);
 });

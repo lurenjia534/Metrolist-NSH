@@ -1,4 +1,4 @@
-import { Image, Text, View, Scroll, signal, windowSize, reduceMotion, colorScheme, platform, type JSX, type ViewStyle } from "nsh";
+import { Image, Text, View, Scroll, signal, effect, createAnimatedValue, windowSize, reduceMotion, colorScheme, platform, type JSX, type ViewStyle } from "nsh";
 import { Button, Input, Slider, Switch, Tab, Menu, MenuItem, MenuSeparator, Dialog } from "nsh/base";
 import { settings } from "./store";
 import { Icon } from "./icons";
@@ -80,10 +80,20 @@ export function Field(props: { value: string; onChange: (value: string) => void;
   return <Input testID={props.testID} accessibilityLabel={props.placeholder} value={props.value} onChange={({ value }) => props.onChange(value)} onSubmit={props.onSubmit} placeholder={props.placeholder} autoFocus={props.autoFocus} multiline={props.multiline} autoCapitalize="none" autoCorrect={false} returnKeyType="search"
     style={{ minWidth: 0, minHeight: 48, color: palette().text, fontSize: narrow() ? 16 : 14, placeholderColor: palette().faint, caretColor: palette().accent, backgroundColor: palette().card, borderWidth: 1, borderColor: palette().line, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12, flex: 1 }} class="focus:border-primary" />;
 }
-export function Rail(props: { value: number; max?: number; onChange: (value: number) => void; onChangeEnd?: (value: number) => void; label: string; large?: boolean; testID?: string; disabled?: boolean }) {
+function BufferedRail(props: { value: number; max: number; height: number; trackHeight: number }) {
+  const buffered = createAnimatedValue(0);
+  effect(() => buffered.set(Math.min(1, Math.max(0, props.value / props.max))));
+  return <View accessibilityElementsHidden style={{ position: "absolute", left: 8, right: 8, top: (props.height - props.trackHeight) / 2, height: props.trackHeight, borderRadius: 8, overflow: "hidden", backgroundColor: palette().raised, pointerEvents: "none" }}>
+    <View style={{ height: "100%", backgroundColor: palette().sub, opacity: 0.45, scale: [buffered, 1], transformOrigin: "left" }} />
+  </View>;
+}
+export function Rail(props: { value: number; max?: number; bufferedValue?: number; onChange: (value: number) => void; onChangeEnd?: (value: number) => void; label: string; large?: boolean; testID?: string; disabled?: boolean }) {
   const hitSize = () => touch() ? 48 : props.large ? 40 : 28;
-  return <Slider disabled={props.disabled} testID={props.testID} value={props.value} min={0} max={props.max || 100} step={0} onChange={({ value }) => props.onChange(value as number)} onChangeEnd={({ value }) => props.onChangeEnd?.(value as number)} accessibilityLabel={props.label}
-    style={{ height: hitSize(), minWidth: 0, justifyContent: "center", flex: 1 }} trackStyle={{ height: hitSize(), justifyContent: "center", paddingHorizontal: 8 }} indicatorStyle={{ height: props.large ? 6 : 4, backgroundColor: palette().raised, borderRadius: 8 }} rangeStyle={{ backgroundColor: palette().accent, borderRadius: 8 }} thumbStyle={{ width: props.large ? 6 : 12, height: props.large ? 24 : 12, borderRadius: props.large ? 3 : 6, backgroundColor: palette().accent }} />;
+  return <View style={{ height: hitSize(), minWidth: 0, flex: 1 }}>
+    <If when={props.bufferedValue !== undefined}><BufferedRail value={props.bufferedValue!} max={props.max || 100} height={hitSize()} trackHeight={props.large ? 6 : 4} /></If>
+    <Slider disabled={props.disabled} testID={props.testID} value={props.value} min={0} max={props.max || 100} step={0} onChange={({ value }) => props.onChange(value as number)} onChangeEnd={({ value }) => props.onChangeEnd?.(value as number)} accessibilityLabel={props.label}
+      style={{ height: hitSize(), minWidth: 0, justifyContent: "center", flex: 1 }} trackStyle={{ height: hitSize(), justifyContent: "center", paddingHorizontal: 8 }} indicatorStyle={{ height: props.large ? 6 : 4, backgroundColor: props.bufferedValue !== undefined ? "transparent" : palette().raised, borderRadius: 8 }} rangeStyle={{ backgroundColor: palette().accent, borderRadius: 8 }} thumbStyle={{ width: props.large ? 6 : 12, height: props.large ? 24 : 12, borderRadius: props.large ? 3 : 6, backgroundColor: palette().accent }} />
+  </View>;
 }
 export function SectionTitle(props: { title: string; subtitle?: string; action?: string; onPress?: () => void; icon?: string; disabled?: boolean }) {
   return <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
@@ -104,9 +114,12 @@ export function Section(props: { title?: string; children?: JSX.Element }) {
 }
 export interface CommandItem { label: string; icon?: string; run: () => void; active?: boolean; disabled?: boolean; danger?: boolean; separator?: boolean; testID?: string }
 export function CommandMenu(props: { label: string; icon?: string; items: CommandItem[]; testID?: string }) {
-  return <Menu offset={6} popupStyle={{ minWidth: 224, maxWidth: Math.min(340, windowSize().width - 24), borderRadius: 20, backgroundColor: palette().card, padding: 8, borderWidth: 1, borderColor: palette().line, boxShadow: palette().shadow, ...transition("opacity,transform") }} popupStartingStyle={{ opacity: 0, transform: [{ translateY: reduceMotion() ? 0 : -motion.shift }] }} popupEndingStyle={{ opacity: 0, transform: [{ translateY: reduceMotion() ? 0 : -motion.shift }] }} backdropStyle={{ backgroundColor: palette().scrim }}
+  let selected: (() => void) | undefined;
+  // Finish the native menu's exit before a command removes its row or page.
+  const finish = () => { const run = selected; selected = undefined; if (run) setTimeout(run, 0); };
+  return <Menu offset={6} onClose={finish} popupStyle={{ minWidth: 224, maxWidth: Math.min(340, windowSize().width - 24), borderRadius: 20, backgroundColor: palette().card, padding: 8, borderWidth: 1, borderColor: palette().line, boxShadow: palette().shadow, ...transition("opacity,transform") }} popupStartingStyle={{ opacity: 0, transform: [{ translateY: reduceMotion() ? 0 : -motion.shift }] }} popupEndingStyle={{ opacity: 0, transform: [{ translateY: reduceMotion() ? 0 : -motion.shift }] }} backdropStyle={{ backgroundColor: palette().scrim }}
     trigger={<View testID={props.testID} accessibilityLabel={props.label} style={{ width: touch() ? 48 : 36, height: touch() ? 48 : 36, flexShrink: 0, alignItems: "center", justifyContent: "center", borderRadius: 24 }} hoverStyle={{ backgroundColor: palette().hover }}><Icon name={props.icon || "more"} size={22} color={palette().sub} /></View>}>
-    <Each of={props.items}>{(item) => <><If when={item().separator}><MenuSeparator style={{ height: 1, backgroundColor: palette().line, marginVertical: 6 }} /></If><MenuItem testID={item().testID} onSelect={() => item().run()} disabled={item().disabled} style={{ flexDirection: "row", gap: 14, alignItems: "center", minHeight: touch() ? 52 : 40, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, backgroundColor: item().active ? palette().selected : "transparent" }} hoverStyle={{ backgroundColor: palette().hover }} activeStyle={{ opacity: 0.7 }} class="focus-visible:bg-accent"><Icon name={item().active ? "check" : item().icon || "music"} size={20} color={item().danger ? palette().danger : palette().sub} /><Label size={14} style={{ flex: 1 }} color={item().danger ? palette().danger : palette().text}>{item().label}</Label></MenuItem></>}</Each>
+    <Each of={props.items}>{(item) => <><If when={item().separator}><MenuSeparator style={{ height: 1, backgroundColor: palette().line, marginVertical: 6 }} /></If><MenuItem testID={item().testID} onSelect={() => { selected = item().run; }} disabled={item().disabled} style={{ flexDirection: "row", gap: 14, alignItems: "center", minHeight: touch() ? 52 : 40, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, backgroundColor: item().active ? palette().selected : "transparent" }} hoverStyle={{ backgroundColor: palette().hover }} activeStyle={{ opacity: 0.7 }} class="focus-visible:bg-accent"><Icon name={item().active ? "check" : item().icon || "music"} size={20} color={item().danger ? palette().danger : palette().sub} /><Label size={14} style={{ flex: 1 }} color={item().danger ? palette().danger : palette().text}>{item().label}</Label></MenuItem></>}</Each>
   </Menu>;
 }
 export function Modal(props: { title: string; close: () => void; open?: boolean; children?: JSX.Element }) {

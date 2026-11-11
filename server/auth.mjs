@@ -48,5 +48,5 @@ export function accountUser(account) {
 }
 
 export async function accountIdentity(account) {
-  return account ? sha1(`${account.cookie}\n${account.authUser}\n${account.dataSyncId}`) : 'anonymous';
+  return account ? sha1(`${account.cookie}\n${account.authUser || '0'}\n${account.dataSyncId || ''}\n${account.visitorData || ''}`) : 'anonymous';
 }

@@ -1,13 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { brotliCompressSync, gzipSync } from "node:zlib";
+import { nsh, nshEnv } from "./nsh-path.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const nsh = process.env.NSH_BIN || "nsh";
 const output = join(root, ".nsh/web-package");
-const build = spawnSync(nsh, ["package", root, "--target", "web", "-o", output], { stdio: "inherit" });
+const build = spawnSync(nsh, ["package", root, "--target", "web", "-o", output], { env: nshEnv, stdio: "inherit" });
 if (build.status !== 0) process.exit(build.status || 1);
 
 const packageName = JSON.parse(readFileSync(join(root, "nsh.json"), "utf8")).name;
@@ -36,6 +36,11 @@ const shared = ["auth", "catalog", "streaming", "account", "index"].map(name =>
 ).join("\n");
 const worker = `${shared}\nconst INDEX_HTML = ${JSON.stringify(html)};\nexport default { async fetch(request, env, ctx) {\n const path = new URL(request.url).pathname;\n if (path.startsWith('/api/')) return api(request, env);\n if (path === '/' || path === '/index.html') return new Response(INDEX_HTML, {headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-cache','Referrer-Policy':'strict-origin-when-cross-origin'}});\n return env.ASSETS.fetch(request);\n}};\n`;
 writeFileSync(join(root, "dist/server/index.js"), worker);
-mkdirSync(join(root, "dist/.openai"), { recursive: true });
-cpSync(join(root, ".openai/hosting.json"), join(root, "dist/.openai/hosting.json"));
+// Local hosting configuration is optional; the public checkout builds on its own.
+const hosting = join(root, ".openai/hosting.json");
+rmSync(join(root, "dist/.openai"), { recursive: true, force: true });
+if (existsSync(hosting)) {
+  mkdirSync(join(root, "dist/.openai"), { recursive: true });
+  cpSync(hosting, join(root, "dist/.openai/hosting.json"));
+}
 console.log(`Metrolist built: ${readdirSync(client).length} assets + music gateway`);

@@ -1,8 +1,8 @@
 {
   "name": "Metrolist",
   "id": "app.miku.metrolist",
-  "version": "0.4.0",
-  "build": 4,
+  "version": "0.5.0",
+  "build": 5,
   "appearance": "dark",
   "icon": "assets/icon.png",
   "theme": "theme.json",

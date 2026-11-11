@@ -8,6 +8,8 @@ import { authenticationHeaders, accountUser } from './auth.mjs';
 export const CLIENT_VERSION = '1.20260707.12.00';
 export const WEB_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0';
 const ORIGIN = 'https://music.youtube.com';
+const anonymousVisitors = new WeakMap();
+const VISITOR_TTL_MS = 3 * 60 * 60 * 1000;
 const FILTERS = {
   songs: 'EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D',
   albums: 'EgWKAQIYAWoKEAkQChAFEAMQBA%3D%3D',
@@ -16,10 +18,55 @@ const FILTERS = {
 };
 
 export class ApiError extends Error {
-  constructor(message, status = 502) {
+  constructor(message, status = 502, details = {}) {
     super(message);
     this.status = status;
+    this.code = status === 429 ? 'rate-limited' : `http-${status}`;
+    Object.assign(this, details);
   }
+}
+
+export function getAnonymousVisitor(options = {}) {
+  const context = anonymousVisitors.get(options.fetch || fetch);
+  return context?.expiresAt > Date.now() ? context : undefined;
+}
+
+export function rememberAnonymousVisitor(visitorData, options = {}) {
+  if (options.account || !visitorData) return undefined;
+  const existing = getAnonymousVisitor(options);
+  if (existing) return existing;
+  const context = { visitorData, expiresAt: Date.now() + VISITOR_TTL_MS };
+  anonymousVisitors.set(options.fetch || fetch, context);
+  return context;
+}
+
+export function retryAfterMilliseconds(value, now = Date.now()) {
+  if (!value) return undefined;
+  const delay = /^\d+$/.test(value.trim()) ? Number(value) * 1000 : Date.parse(value) - now;
+  return Number.isFinite(delay) ? Math.max(0, delay) : undefined;
+}
+
+export function upstreamError(response, stage, message) {
+  const retryAfterMs = retryAfterMilliseconds(response.headers.get('Retry-After'));
+  return new ApiError(message, response.status, { stage,
+    ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
+  });
+}
+
+// Only playback setup retries a short, explicit server delay. Catalog requests
+// and account mutations never wait behind a playback retry.
+export async function playbackRequest(url, init, options, stage) {
+  const transport = options.fetch || fetch;
+  let response = await transport(url, init);
+  const retryAfterMs = response.status === 429 ? retryAfterMilliseconds(response.headers.get('Retry-After')) : undefined;
+  if (retryAfterMs !== undefined && retryAfterMs <= 5000) {
+    await response.body?.cancel();
+    await new Promise(resolve => setTimeout(resolve, retryAfterMs));
+    response = await transport(url, init);
+  }
+  if (!response.ok) throw upstreamError(response, stage,
+    `YouTube ${stage === 'visitor' ? '播放配置请求' : '音频解析'}失败（HTTP ${response.status}）`);
+  return response;
 }
 
 export async function innertube(endpoint, body, options = {}) {
@@ -35,7 +82,7 @@ export async function innertube(endpoint, body, options = {}) {
     url.searchParams.set('continuation', body.continuation);
     url.searchParams.set('ctoken', body.continuation);
   }
-  const response = await (options.fetch || fetch)(url, {
+  const init = {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -60,13 +107,17 @@ export async function innertube(endpoint, body, options = {}) {
       },
       ...body,
     }),
-  });
-  if (!response.ok) throw new ApiError(`YouTube Music returned HTTP ${response.status}`, response.status);
+  };
+  const response = endpoint === 'player' ? await playbackRequest(url, init, options, 'player') :
+    await (options.fetch || fetch)(url, init);
+  if (!response.ok) throw upstreamError(response, 'catalog', `YouTube Music returned HTTP ${response.status}`);
   const result = await response.json();
   if (result.error) throw new ApiError(result.error.message, result.error.code || 502);
   if (options.account && result.responseContext?.mainAppWebResponseContext?.loggedOut === true) {
     throw new ApiError('YouTube Music 登录会话已失效，请重新登录。', 401);
   }
+  // An already loaded anonymous catalog page can supply the first player request's visitor.
+  rememberAnonymousVisitor(result.responseContext?.visitorData, options);
   return result;
 }
 

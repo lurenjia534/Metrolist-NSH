@@ -20,6 +20,13 @@ function Fixture() {
     { name: "Native profile", work: () => accountRequest("account", accountA) },
     { name: "Native two accounts", work: () => Promise.all([accountA, accountB].map(account => accountRequest("account", account))) },
     { name: "Native audio sources", work: () => Promise.all([accountA, accountB].map(account => accountRequest("stream?id=native-fixture-audio&quality=high&container=mp4", account))) },
+    { name: "Native playback error", work: async () => {
+      try { return await accountRequest("stream?id=native-fixture-rate-limit", accountA); }
+      catch (reason) {
+        const failure = reason as { status: number; code: string; stage?: string; retryAfterMs?: number };
+        return { status: failure.status, code: failure.code, stage: failure.stage, retryAfterMs: failure.retryAfterMs };
+      }
+    } },
     { name: "Issued browser source", work: async () => {
       const streamResponse = await api(new Request("https://web.test/api/stream?id=native-fixture-source&container=mp4", {
         headers: { "X-Metrolist-Account": encodeURIComponent(JSON.stringify(accountA)) },

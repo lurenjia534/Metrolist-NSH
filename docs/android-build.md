@@ -1,8 +1,8 @@
 # Android APK 构建与原生播放
 
-## 0.4.0 的 Android 播放链路
+## 0.5.0 的 Android 播放链路
 
-界面仍由 NSH 渲染。Android 音频改由原生 **Media3 ExoPlayer 1.10.1** 播放，使用 OkHttp 数据源和 1 GiB LRU 磁盘缓存；Web、桌面平台继续使用 NSH AudioPlayer。
+界面仍由 NSH 渲染。Android 继续使用 0.4 已引入的原生 **Media3 ExoPlayer 1.10.1**，使用 OkHttp 数据源和 1 GiB LRU 磁盘缓存；Web、桌面平台继续使用 NSH AudioPlayer。0.5 重点改进解析请求复用、下一首准备、429 行为与播放状态界面。
 
 `MetrolistAudio` 在应用进程中保留一个 ExoPlayer。暂停、恢复、切换页面和 Activity 重建不会重新创建播放器；切歌更换 MediaSource，不销毁引擎。音频直接从签名地址加载，HTTP 请求头随对应曲目传给 OkHttp，不通过 JavaScript 全量下载音频后再播放。
 
@@ -21,6 +21,10 @@
 
 缓存按歌曲与音频格式的稳定 `cacheKey` 区分，不把会过期的签名 URL 作为同一首歌的唯一缓存身份。媒体内容与 HTTP Range 读取由 Media3 的数据源和提取器处理。
 
+当前歌曲开始播放后，共享播放逻辑解析实际下一首；只有当前前方缓冲达到 12 秒，Android 才以 `CacheWriter` 读取下一首最多 256 KiB 的开头。它复用播放数据源、请求头与缓存标识，切歌即可读取已缓存的部分。切换歌曲、队列或账号时会结束旧准备任务。此实现不等于完整队列已经交给 ExoPlayer，也不提供无缝播放。
+
+音频 CDN 返回 HTTP 429 时，当前 MediaSource 的错误策略直接结束该次加载，不使用 Media3 默认的连续重试；其余错误保持原生策略。界面显示音频数据阶段的 429，用户重试会重新解析地址。`SimpleCache` 由进程持有，服务重建复用同一缓存，避免异步预读尚未结束时重新打开缓存锁。
+
 ### 界面、服务和通知
 
 `MetrolistMediaService` 管理前台媒体通知和 Android MediaSession。系统的播放、暂停、seek 直接操作原生引擎，再将实际状态传回 NSH；上一首、下一首继续交给共享队列。一起听访客的系统控制约束由 `remoteControlled` 同步到原生层。
@@ -33,21 +37,29 @@ Activity 销毁时只解除 View 连接，当前曲目继续由前台服务持�
 
 ## 构建
 
-需要 Python 3、Java 17 以上（带 `jdk.compiler` 模块）、curl，以及 NSH 0.4.0 nightly `c5214aa`。重建不需要 Gradle、Maven、Rust 或 Android NDK。
+需要 Python 3.11+、Node.js 24、Java 17 以上（带 `jdk.compiler` 模块）、curl，以及 NSH 0.4.0 nightly `c5214aa`。本轮实际使用 JDK 21。重建不需要 Gradle、Maven、Rust 或 Android NDK。
 
 ```sh
+# 安装本项目匹配的 CLI 与 Android runtime
+python3 scripts/install-nsh.py --component android
+
 # 手机常用的较小 arm64 APK
-python scripts/build-android.py --abi arm64-v8a
+python3 scripts/build-android.py --abi arm64-v8a
 
 # 三架构通用 APK
-python scripts/build-android.py
+python3 scripts/build-android.py
 ```
 
-本轮使用独立应用标识 `app.miku.metrolist.next` 与名称 `Metrolist NSH` 并排安装，保留旧版应用及其数据：
+本轮使用独立应用标识 `app.miku.metrolist.preview` 与名称 `Metrolist NSH Preview` 并排安装，保留旧版应用及其数据：
 
 ```sh
-python scripts/build-android.py --abi arm64-v8a \
-  --application-id app.miku.metrolist.next --application-name 'Metrolist NSH'
+python3 scripts/build-android.py --abi arm64-v8a \
+  --application-id app.miku.metrolist.preview --application-name 'Metrolist NSH Preview' \
+  --out releases/android/arm64
+
+python3 scripts/build-android.py \
+  --application-id app.miku.metrolist.preview --application-name 'Metrolist NSH Preview' \
+  --out releases/android/universal
 ```
 
 该参数同时修改最终 Android Manifest 和 APK 内 NSH `app.json` 的应用 ID；NSH 数据目录与 host 的下载目录保持一致，其他平台的源码 ID 不变。
@@ -69,7 +81,7 @@ python scripts/build-android.py \
 
 Linux 缺少 SDK 时，脚本从 Google 官方仓库获取 `build-tools;35.0.1` 与 `platforms;android-35`；macOS / Windows 可先用 Android SDK Manager 安装。NSH Java 源码与原生库都固定为 `c5214aa`。
 
-Media3、OkHttp、Kotlin 和其依赖固定在 `android/media3-dependencies.json`，包含官方 Google Maven / Maven Central 地址和摘要。发布构建只读取这份固定依赖清单，不临时解析“最新版本”。
+Media3、OkHttp、Kotlin 和其依赖固定在 `android/media3-dependencies.json`，包含官方 Google Maven / Maven Central 地址和摘要。NSH CLI、Android/Web 组件与 Java 源码固定在 `scripts/nsh-toolchain.json`。发布构建读取这两份清单，不临时解析“最新版本”。NSH 上游 nightly 是可更新地址，摘要不匹配时应恢复匹配归档，或通过 `NSH_DOWNLOAD_BASE` 使用保留的镜像；不能把不同版本的 Java 与 JNI 库混在一起。
 
 ### 资源与字节码
 
@@ -86,7 +98,7 @@ Media3、OkHttp、Kotlin 和其依赖固定在 `android/media3-dependencies.json
 
 首次构建会在 `toolchain/signing/` 生成 RSA 3072 位密钥和随机密码文件，私钥不进入源码仓库。覆盖安装旧版本必须使用同一签名密钥。
 
-本轮临时环境恢复了 Git 源码，但旧 0.3.0 私钥未随源码保存。使用新密钥构建的 0.4.0 **不能直接覆盖旧签名的 0.3.0**。因此本轮 APK 使用 `app.miku.metrolist.next` 并排安装；可以在旧版导出音乐库，再在新版导入，旧版及其数据继续保留。若有旧的私有签名备份，也可使用原应用 ID 和旧密钥另行重建。实际证书和 APK 摘要以本次构建检查结果为准。
+当前工作区恢复了 Git 源码，但没有旧 0.4.0 的私钥。使用新密钥构建的 0.5.0 **不能直接覆盖旧签名的 0.4.0**。因此本轮 APK 使用 `app.miku.metrolist.preview` 并排安装；可以在旧版导出音乐库，再在新版导入，旧版及其数据继续保留。0.4 交付的应用标识为 `app.miku.metrolist.next`。若有旧的私有签名备份，也可使用原应用 ID 和旧密钥另行重建。实际证书和 APK 摘要以本次构建检查结果为准。
 
 签名备份应单独私有保存，不放入公开文档、APK 或源码压缩包。
 
@@ -103,6 +115,8 @@ Media3、OkHttp、Kotlin 和其依赖固定在 `android/media3-dependencies.json
 | `app.audio.settings` | 修改 `volume,rate,remoteControlled`。 |
 | `app.audio.stop` | 清空原生媒体源并结束前台服务。切歌使用 open，不使用 stop→open。 |
 | `app.audio.snapshot` | 无音源返回 null；否则返回实际状态、track、source 和引擎信息，供 Activity 重接。 |
+| `app.audio.preload` / `cancelPreload` | 使用下一首的 URL、请求头、cacheKey 和可选 contentLength，在播放缓存中预读最多 256 KiB；取消结束该准备任务。 |
+| `audio.preload` | 返回 trackId、cacheKey、cached，界面只更新匹配的下一首状态。 |
 | `audio.state` | `requestId,position,duration,bufferedPosition,playing,playWhenReady,buffering,state,rate,volume,error?,errorCode?`。长 URL 和曲目信息只在 snapshot 提供。 |
 | `media.command` | 系统上一首 / 下一首交给共享队列。 |
 | `auth.available/login/logout` | Android WebView + CookieManager 本人会话登录，保留 0.3.0 的账号功能。 |
