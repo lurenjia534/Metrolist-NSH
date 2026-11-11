@@ -33,6 +33,7 @@ import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import java.util.HashMap;
 import java.util.Map;
@@ -57,7 +58,7 @@ final class MetrolistLogin implements AutoCloseable {
     private final WebView web;
     private final TextView address, message;
     private final ProgressBar progress, spinner;
-    private final LinearLayout overlay;
+    private final ScrollView overlay;
     private final TextView overlayTitle, overlayDetail, primary, secondary;
     private final int surface, text, muted, accent, accentText, line;
     private final boolean dark;
@@ -207,34 +208,37 @@ final class MetrolistLogin implements AutoCloseable {
             }
         });
         content.addView(web, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        overlay = new LinearLayout(activity);
-        overlay.setOrientation(LinearLayout.VERTICAL);
-        overlay.setGravity(Gravity.CENTER);
-        overlay.setPadding(dp(28), dp(24), dp(28), dp(24));
+        overlay = new ScrollView(activity);
+        overlay.setFillViewport(true);
         overlay.setBackgroundColor(surface);
         overlay.setClickable(true);
+        LinearLayout overlayContent = new LinearLayout(activity);
+        overlayContent.setOrientation(LinearLayout.VERTICAL);
+        overlayContent.setGravity(Gravity.CENTER);
+        overlayContent.setPadding(dp(28), dp(24), dp(28), dp(24));
         spinner = new ProgressBar(activity);
         spinner.setIndeterminateTintList(ColorStateList.valueOf(accent));
         LinearLayout.LayoutParams spinnerSize = new LinearLayout.LayoutParams(dp(36), dp(36));
         spinnerSize.bottomMargin = dp(24);
-        overlay.addView(spinner, spinnerSize);
+        overlayContent.addView(spinner, spinnerSize);
         overlayTitle = label("正在连接账号", 22, text);
         overlayTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         overlayTitle.setGravity(Gravity.CENTER);
-        overlay.addView(overlayTitle);
+        overlayContent.addView(overlayTitle);
         overlayDetail = label("正在向 YouTube Music 验证登录会话…", 14, muted);
         overlayDetail.setGravity(Gravity.CENTER);
         overlayDetail.setLineSpacing(dp(5), 1);
         LinearLayout.LayoutParams detailSize = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         detailSize.topMargin = dp(12);
         detailSize.bottomMargin = dp(24);
-        overlay.addView(overlayDetail, detailSize);
+        overlayContent.addView(overlayDetail, detailSize);
         primary = action(true);
         secondary = action(false);
-        overlay.addView(primary, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
+        overlayContent.addView(primary, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
         LinearLayout.LayoutParams secondarySize = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48));
         secondarySize.topMargin = dp(8);
-        overlay.addView(secondary, secondarySize);
+        overlayContent.addView(secondary, secondarySize);
+        overlay.addView(overlayContent, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         overlay.setVisibility(View.GONE);
         content.addView(overlay, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         column.addView(content, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
@@ -349,19 +353,20 @@ final class MetrolistLogin implements AutoCloseable {
         stage("waiting", "在 Google 页面完成登录，验证后会自动返回");
     }
     private void showVerification() {
-        web.clearFocus();
-        activity.getSystemService(InputMethodManager.class).hideSoftInputFromWindow(web.getWindowToken(), 0);
+        hideKeyboard();
         overlayTitle.setText("正在连接账号");
         overlayDetail.setText("正在向 YouTube Music 验证登录会话，完成后自动返回。");
         spinner.setVisibility(View.VISIBLE);
         primary.setVisibility(View.GONE);
         secondary.setVisibility(View.GONE);
         overlay.setVisibility(View.VISIBLE);
+        overlay.scrollTo(0, 0);
         progress.setIndeterminate(true);
         progress.setVisibility(View.VISIBLE);
     }
     private void showError(String title, String detail, String first, Runnable retry, String second, Runnable other) {
         web.removeCallbacks(readSession);
+        hideKeyboard();
         spinner.setVisibility(View.GONE);
         overlayTitle.setText(title);
         overlayDetail.setText(detail);
@@ -372,9 +377,14 @@ final class MetrolistLogin implements AutoCloseable {
         secondary.setOnClickListener(ignored -> other.run());
         secondary.setVisibility(View.VISIBLE);
         overlay.setVisibility(View.VISIBLE);
+        overlay.scrollTo(0, 0);
         progress.setIndeterminate(false);
         progress.setVisibility(View.INVISIBLE);
         stage("error", title);
+    }
+    private void hideKeyboard() {
+        web.clearFocus();
+        activity.getSystemService(InputMethodManager.class).hideSoftInputFromWindow(web.getWindowToken(), 0);
     }
     private void stage(String stage, String detail) {
         message.setText(detail);

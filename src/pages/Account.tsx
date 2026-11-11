@@ -9,7 +9,7 @@ import { Label, Pill, Chip, Tool, Field, Art, Section, SectionTitle, CommandMenu
 import { Icon } from "../icons";
 
 const musicUrl = "https://music.youtube.com";
-const androidReleasesUrl = "https://github.com/lurenjia534/Metrolist-NSH/releases/latest";
+const androidReleasesUrl = "https://github.com/lurenjia534/Metrolist-NSH/releases";
 const libraryTypes: { type: a.CloudType; title: string; icon: string }[] = [
   { type: "playlists", title: "歌单", icon: "queue" }, { type: "liked", title: "喜欢的歌曲", icon: "heart" },
   { type: "songs", title: "歌曲", icon: "music" }, { type: "albums", title: "专辑", icon: "album" },

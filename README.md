@@ -6,7 +6,7 @@
 
 **公开知识库：[Metrolist NSH 文档](https://metrolist-nsh-docs.lurenjia534.chatgpt.site/)**。包含 Android 安装、账号登录、云端音乐库、播放与下载、构建和版本发布说明。
 
-**下载与发布：[GitHub Releases](https://github.com/lurenjia534/Metrolist-NSH/releases/latest)**。发布流水线生成 Android、Linux、Windows、macOS、iOS 与 Web 工件，并提供版本、来源提交、构建信息和 SHA-256。平台包的具体名称与签名状态以该版本发布页为准。
+**下载与发布：[GitHub Releases](https://github.com/lurenjia534/Metrolist-NSH/releases)**。发布流水线生成 Android、Linux、Windows、macOS、iOS 与 Web 工件，并提供版本、来源提交、构建信息和 SHA-256。平台包的具体名称与签名状态以该版本发布页为准。
 
 **Android 0.5.1 沿用 0.5 的 `app.miku.metrolist.preview` 和同一签名，应用名为 `Metrolist NSH Preview`。** 可覆盖升级 0.5 并保留账号、曲库与下载；最低 Android 8 / API 26。0.4 使用的 `app.miku.metrolist.next` 与它是不同应用，可从旧版导出曲库再导入。正式 Android 发布使用持久签名；构建检查产生的测试签名文件不作为正式升级包。
 
@@ -72,7 +72,7 @@ Worker 与 Node 默认使用同一套纯 JavaScript 音频解析：`/api/stream`
 
 ## 多平台发行包
 
-当前版本统一从 [GitHub Releases](https://github.com/lurenjia534/Metrolist-NSH/releases/latest) 下载。Linux、Windows 与 macOS 包含 NSH runtime、本机音乐 gateway 和固定 Node 运行环境，使用者无需另装 NSH、Node 或 Python。平台依赖、CPU 架构和签名状态在发行说明中列出；iOS unsigned 工件需要先签名才能安装到真机。
+当前版本统一从 [GitHub Releases](https://github.com/lurenjia534/Metrolist-NSH/releases) 下载。Linux、Windows 与 macOS 包含 NSH runtime、本机音乐 gateway 和固定 Node 运行环境，使用者无需另装 NSH、Node 或 Python。平台依赖、CPU 架构和签名状态在发行说明中列出；iOS unsigned 工件需要先签名才能安装到真机。
 
 ### Android
 

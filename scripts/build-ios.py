@@ -10,9 +10,9 @@ import subprocess
 from release import ROOT, APP, VERSION, CONFIG, OUTPUT, report_artifact, run
 
 
-def package(target, directory, signing=False):
+def package(target, directory, icon, signing=False):
     command = ['node', ROOT / 'scripts/run-nsh.mjs', 'package', '--target', target,
-               '--id', CONFIG['iosApplicationId'], '--out', directory]
+               '--id', CONFIG['iosApplicationId'], '--icon', icon, '--out', directory]
     if signing:
         command += ['--sign', os.environ['IOS_SIGNING_IDENTITY'], '--profile', os.environ['IOS_PROVISION_PROFILE']]
     run(*command, cwd=ROOT)
@@ -39,13 +39,18 @@ def main(signed_only):
         raise RuntimeError('The pinned iOS runtime must be packaged on an Apple Silicon Mac.')
     OUTPUT.mkdir(parents=True, exist_ok=True)
     base = ROOT / 'releases/ios'
+    base.mkdir(parents=True, exist_ok=True)
+    # NSH's iOS catalog declares one 1024px icon; our shared artwork is 512px.
+    # Generate the exact catalog size without changing the source asset.
+    icon = base / 'AppIcon-1024.png'
+    run('sips', '-z', '1024', '1024', ROOT / APP['icon'], '--out', icon)
     if not signed_only:
-        simulator = package('ios-simulator', base / 'simulator')
+        simulator = package('ios-simulator', base / 'simulator', icon)
         run('codesign', '--verify', '--deep', '--strict', simulator)
         archive = OUTPUT / f'Metrolist-NSH-{VERSION}-ios-simulator-arm64.zip'
         archive_app(simulator, archive)
         report_artifact(archive, **inspect(simulator, 'ios-simulator', 'ad-hoc'))
-        device = package('ios', base / 'unsigned')
+        device = package('ios', base / 'unsigned', icon)
         app_zip = OUTPUT / f'Metrolist-NSH-{VERSION}-ios-device-arm64-unsigned.app.zip'
         archive_app(device, app_zip)
         values = inspect(device, 'ios-device', 'unsigned; requires user signing')
@@ -58,7 +63,7 @@ def main(signed_only):
         archive_app(payload, ipa)
         report_artifact(ipa, **values)
     else:
-        device = package('ios', base / 'signed', signing=True)
+        device = package('ios', base / 'signed', icon, signing=True)
         run('codesign', '--verify', '--deep', '--strict', device)
         ipa = OUTPUT / f'Metrolist-NSH-{VERSION}-ios-device-arm64-signed.ipa'
         shutil.copy2(base / 'signed' / (APP['name'] + '.ipa'), ipa)

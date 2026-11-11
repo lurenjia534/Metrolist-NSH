@@ -60,7 +60,7 @@ test("web login explains the separate browser session, folds advanced import and
   expect(app.shows("id:account-import")).toBe(false);
   await app.scroll("id:content-account", 200);
   await app.press("id:account-get-android"); await app.press("id:account-open-youtube");
-  expect(app.openedUrls()).toEqual(["https://github.com/lurenjia534/Metrolist-NSH/releases/latest", "https://music.youtube.com"]);
+  expect(app.openedUrls()).toEqual(["https://github.com/lurenjia534/Metrolist-NSH/releases", "https://music.youtube.com"]);
   expect(app.shows("id:account-name")).toBe(false);
   await app.press("id:account-advanced"); await app.waitFor("id:account-import");
   await app.press("id:account-import"); await app.waitFor("id:account-session-input");
