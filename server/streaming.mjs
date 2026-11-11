@@ -1,13 +1,22 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The visitor-backed VISIONOS_0_1 direct-audio path from Metrolist / InnertubeX.
-import { ApiError, artwork, innertube, WEB_USER_AGENT } from './catalog.mjs';
+import { ApiError, artwork, getAnonymousVisitor, innertube, playbackRequest, rememberAnonymousVisitor, upstreamError, WEB_USER_AGENT } from './catalog.mjs';
 import { accountIdentity } from './auth.mjs';
 
 const YOUTUBE_ORIGIN = 'https://www.youtube.com';
 const MUSIC_ORIGIN = 'https://music.youtube.com';
 const VISION_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15';
-const playerRecords = new Map();
-let visitorContext;
+const resolverStates = new WeakMap();
+
+function resolverState(options) {
+  const transport = options.fetch || fetch;
+  let state = resolverStates.get(transport);
+  if (!state) {
+    state = { records: new Map(), requests: new Map(), visitorRequest: null };
+    resolverStates.set(transport, state);
+  }
+  return state;
+}
 
 // InnerTubeX 0.11.2 buildHeaders: visionOS media needs no browser headers;
 // WEB_REMIX retains the request profile of the music web client.
@@ -19,17 +28,23 @@ export function audioRequestHeaders(client) {
 }
 
 async function watchVisitor(videoId, options = {}) {
-  if (visitorContext) return visitorContext;
-  const response = await (options.fetch || fetch)(`${YOUTUBE_ORIGIN}/watch?v=${encodeURIComponent(videoId)}`, {
-    headers: { 'User-Agent': VISION_USER_AGENT, 'Accept-Language': 'en-US,en;q=0.9' },
-  });
-  if (!response.ok) throw new ApiError(`YouTube 播放配置请求失败（HTTP ${response.status}）`);
-  const html = await response.text();
-  const visitorData = html.match(/"VISITOR_DATA"\s*:\s*"([^"]+)"/)?.[1] ||
-    html.match(/"visitorData"\s*:\s*"([^"]+)"/)?.[1];
-  if (!visitorData) throw new ApiError('YouTube 未提供播放所需的 visitorData。');
-  visitorContext = { visitorData };
-  return visitorContext;
+  const state = resolverState(options);
+  const cached = getAnonymousVisitor(options);
+  if (cached) return cached;
+  if (state.visitorRequest) return state.visitorRequest;
+  state.visitorRequest = (async () => {
+    const response = await playbackRequest(`${YOUTUBE_ORIGIN}/watch?v=${encodeURIComponent(videoId)}`, {
+      headers: { 'User-Agent': VISION_USER_AGENT, 'Accept-Language': 'en-US,en;q=0.9' },
+    }, options, 'visitor');
+    const html = await response.text();
+    const visitorData = html.match(/"VISITOR_DATA"\s*:\s*"([^"]+)"/)?.[1] ||
+      html.match(/"visitorData"\s*:\s*"([^"]+)"/)?.[1];
+    if (!visitorData) throw new ApiError('YouTube 未提供播放所需的 visitorData。');
+    // This watch request is anonymous even when it follows an authenticated public-song attempt.
+    return rememberAnonymousVisitor(visitorData, { fetch: options.fetch });
+  })();
+  try { return await state.visitorRequest; }
+  finally { state.visitorRequest = null; }
 }
 
 function directAudioFormats(player) {
@@ -38,9 +53,10 @@ function directAudioFormats(player) {
 }
 
 function audioPlayerRecord(player, formats, client) {
+  const lifetime = Number(player.streamingData.expiresInSeconds);
+  const fallbackExpiry = Date.now() + (Number.isFinite(lifetime) && lifetime > 0 ? lifetime : 300) * 1000;
   const expiresAt = Math.min(...formats.map(format =>
-    Number(new URL(format.url).searchParams.get('expire')) * 1000 ||
-      Date.now() + Number(player.streamingData.expiresInSeconds) * 1000));
+    Number(new URL(format.url).searchParams.get('expire')) * 1000 || fallbackExpiry));
   const nonce = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(12))))
     .replace(/\+/g, '-').replace(/\//g, '_');
   return { player, formats, expiresAt, nonce, client };
@@ -64,7 +80,7 @@ async function requestAudioPlayer(videoId, options = {}) {
     // can use its proven direct format; Google credentials never go to it.
   }
   const { visitorData } = await watchVisitor(videoId, options);
-  const response = await (options.fetch || fetch)(`${MUSIC_ORIGIN}/youtubei/v1/player?prettyPrint=false`, {
+  const response = await playbackRequest(`${MUSIC_ORIGIN}/youtubei/v1/player?prettyPrint=false`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json', 'User-Agent': VISION_USER_AGENT,
@@ -81,8 +97,7 @@ async function requestAudioPlayer(videoId, options = {}) {
       },
       videoId, contentCheckOk: true, racyCheckOk: true,
     }),
-  });
-  if (!response.ok) throw new ApiError(`YouTube 音频解析失败（HTTP ${response.status}）`);
+  }, options, 'player');
   const player = await response.json();
   if (player.playabilityStatus?.status !== 'OK') {
     throw new ApiError(player.playabilityStatus?.reason || '该曲目目前无法播放。');
@@ -93,16 +108,25 @@ async function requestAudioPlayer(videoId, options = {}) {
 }
 
 async function playerRecord(videoId, options = {}) {
-  const key = `${await accountIdentity(options.account)}:${videoId}`;
-  const cached = playerRecords.get(key);
-  if (cached) {
-    const record = await cached;
-    if (record.expiresAt > Date.now() + 60000) return record;
-  }
-  const promise = requestAudioPlayer(videoId, options);
-  playerRecords.set(key, promise);
-  try { return await promise; }
-  catch (error) { playerRecords.delete(key); throw error; }
+  const state = resolverState(options);
+  const identity = await accountIdentity(options.account);
+  const key = `${identity}:${videoId}`;
+  const refresh = options.refresh === true || options.refresh === '1';
+  const pending = state.requests.get(key);
+  if (refresh) state.records.delete(key);
+  const cached = state.records.get(key);
+  if (cached?.expiresAt > Date.now() + 60000) return cached;
+  if (pending && (!refresh || pending.refresh)) return pending.promise;
+  const entry = { refresh, promise: null };
+  entry.promise = requestAudioPlayer(videoId, options).then(record => {
+    const value = { ...record, identity };
+    if (state.requests.get(key) === entry) state.records.set(key, value);
+    return value;
+  }).finally(() => {
+    if (state.requests.get(key) === entry) state.requests.delete(key);
+  });
+  state.requests.set(key, entry);
+  return entry.promise;
 }
 
 function protoFields(bytes) {
@@ -163,7 +187,7 @@ export function chooseAudioFormat(formats, quality = 'auto', container = '') {
 }
 
 export async function resolveWorkerAudio(videoId, options = {}) {
-  const { player, formats, expiresAt, nonce, client } = await playerRecord(videoId, options);
+  const { player, formats, expiresAt, nonce, client, identity } = await playerRecord(videoId, options);
   const quality = options.quality || 'auto';
   const format = chooseAudioFormat(formats, quality, options.container || '');
   const url = new URL(format.url);
@@ -172,7 +196,7 @@ export async function resolveWorkerAudio(videoId, options = {}) {
   const audioConfig = player.playerConfig?.audioConfig || {};
   return {
     url: url.href, headers: audioRequestHeaders(client), expiresAt, quality, container: options.container || '',
-    cacheKey: `${videoId}:${format.itag}:${format.contentLength || ''}`,
+    cacheKey: `${identity === 'anonymous' ? '' : `${identity}:`}${videoId}:${format.itag}:${format.contentLength || ''}`,
     mimeType: format.mimeType.split(';')[0], codecs: format.mimeType.match(/codecs="([^"]+)"/)?.[1],
     bitrate: Number(format.bitrate || format.averageBitrate), formatId: String(format.itag),
     sampleRate: Number(format.audioSampleRate), contentLength: Number(format.contentLength),
@@ -204,7 +228,7 @@ export async function proxyAudio(request, media, extraHeaders = {}) {
   const response = await fetch(media.url, {
     method: request.method === 'HEAD' ? 'HEAD' : 'GET', headers, signal: request.signal,
   });
-  if (!response.ok && response.status !== 416) throw new ApiError(`音频源返回 HTTP ${response.status}。`, response.status);
+  if (!response.ok && response.status !== 416) throw upstreamError(response, 'audio', `音频源返回 HTTP ${response.status}。`);
   if (response.headers.get('Content-Type')?.includes('text/html')) {
     throw new ApiError('音频源返回了网页而非音频；当前服务节点无法取得 googlevideo 音频数据。');
   }

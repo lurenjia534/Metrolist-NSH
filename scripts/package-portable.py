@@ -8,7 +8,6 @@ python3 scripts/package-portable.py web
 import argparse
 import hashlib
 import json
-import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -49,7 +48,7 @@ def package(target, output):
         }, indent=2) + '\n')
     else:
         native_out = ROOT / 'releases' / target
-        subprocess.run([os.environ.get('NSH_BIN', 'nsh'), 'package', '--target', target,
+        subprocess.run(['node', ROOT / 'scripts/run-nsh.mjs', 'package', '--target', target,
                         '--out', str(native_out)], cwd=ROOT, check=True)
         app = native_out / 'Metrolist'
         shutil.copytree(TEMPLATES / 'gateway', app / 'gateway', dirs_exist_ok=True)

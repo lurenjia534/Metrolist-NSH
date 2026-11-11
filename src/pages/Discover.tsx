@@ -2,10 +2,25 @@ import { View, Scroll, computed, signal, cleanup, windowSize } from "nsh";
 import * as s from "../store";
 import * as p from "../playback";
 import * as nav from "../navigation";
+import * as together from "../together";
 import { isTrack, type Collection, type SearchType, type ExploreTab } from "../model";
 import { Icon } from "../icons";
 import { TrackRow, TrackList, MusicCard, ItemRail, CollectionRow } from "../components/Music";
 import { Label, Tool, Pill, Chip, Field, SectionTitle, Empty, Press, palette as c, narrow, pageGutter, action } from "../ui";
+
+function HomeShortcuts() {
+  return <View testID="home-shortcuts" style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+    <Each of={[
+      { page: "liked", label: "喜欢的音乐", icon: "heart", detail: "喜欢过的歌曲" },
+      { page: "downloads", label: "已下载", icon: "download", detail: `${s.downloads().length} 首离线音乐` },
+      { page: "history", label: "最近播放", icon: "clock", detail: `${s.history().length} 首听过的歌` },
+      { page: "together", label: "一起听", icon: "users", detail: together.room() ? `房间 ${together.room()!.roomCode}` : "与朋友同步聆听" },
+    ] as const}>{item => <Press testID={`home-${item().page}`} label={item().label} onPress={() => nav.navigate(item().page)} style={{ flexGrow: 1, flexBasis: "46%", minWidth: 0, minHeight: 68, paddingHorizontal: 12, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 16, backgroundColor: c().card }}>
+      <Icon name={item().icon} size={22} color={item().page === "liked" ? c().danger : c().accent} />
+      <View style={{ flex: 1, minWidth: 0, gap: 4 }}><Label size={13} weight="600" lines={1}>{item().label}</Label><Label size={10} color={c().sub} lines={1}>{item().detail}</Label></View>
+    </Press>}</Each>
+  </View>;
+}
 
 export function HomePage() {
   const picks = computed(() => {
@@ -18,6 +33,7 @@ export function HomePage() {
     <Scroll horizontal scrollbar={false} style={{ height: 52, flexShrink: 0 }} contentStyle={{ flexDirection: "row", gap: 8, paddingVertical: 2 }}>
       <Each of={[{ label: "放松", q: "relax chill music" }, { label: "通勤", q: "commute music" }, { label: "专注", q: "focus music" }, { label: "运动", q: "workout music" }, { label: "睡眠", q: "sleep music" }, { label: "心情不错", q: "feel good music" }]}>{item => <Chip label={item().label} selected={false} onPress={() => nav.performSearch(item().q)} />}</Each>
     </Scroll>
+    <If when={narrow()}><HomeShortcuts /></If>
     <View><SectionTitle title="快速选歌" disabled={p.remoteControlled()} action="播放全部" icon="play" onPress={() => action(() => p.playList(picks(), 0, "快速选歌"))} />
       <Scroll horizontal scrollbar={false} style={{ height: 280 }} contentStyle={{ flexDirection: "row", gap: 16 }}><Each of={columns()}>{column => <View style={{ width: narrow() ? Math.min(350, windowSize().width - pageGutter() * 2) : 350, gap: 1 }}><Each of={column()}>{track => <TrackRow track={track()} list={picks()} compact />}</Each></View>}</Each></Scroll>
     </View>

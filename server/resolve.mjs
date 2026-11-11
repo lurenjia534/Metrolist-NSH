@@ -8,13 +8,36 @@ import { resolveWorkerAudio } from './streaming.mjs';
 
 const execute = promisify(execFile);
 const resolved = new Map();
+const requests = new Map();
 
 export async function resolveAudio(id, options = {}) {
   if (options.account) return resolveWorkerAudio(id, options);
+  options.signal?.throwIfAborted();
   const quality = options.quality || 'auto';
   const cacheKey = `${id}:${quality}:${options.container || ''}`;
+  const refresh = options.refresh === true || options.refresh === '1';
+  if (refresh) resolved.delete(cacheKey);
   const previous = resolved.get(cacheKey);
   if (previous && previous.expiresAt > Date.now() + 60000) return previous;
+  let entry = requests.get(cacheKey);
+  if (!entry || (refresh && !entry.refresh)) {
+    const pending = { refresh, promise: null };
+    pending.promise = extractAudio(id, options).then(media => {
+      if (requests.get(cacheKey) === pending) resolved.set(cacheKey, media);
+      return media;
+    }).finally(() => {
+      if (requests.get(cacheKey) === pending) requests.delete(cacheKey);
+    });
+    requests.set(cacheKey, pending);
+    entry = pending;
+  }
+  const media = await entry.promise;
+  options.signal?.throwIfAborted();
+  return media;
+}
+
+async function extractAudio(id, options) {
+  const quality = options.quality || 'auto';
   const program = process.env.YT_DLP_PATH || process.env.PYTHON || 'python3';
   const args = process.env.YT_DLP_PATH ? [] : ['-m', 'yt_dlp'];
   const container = options.container === 'mp4' ? 'm4a' : options.container;
@@ -31,7 +54,6 @@ export async function resolveAudio(id, options = {}) {
   try {
     ({ stdout } = await execute(program, args, {
       maxBuffer: 10 * 1024 * 1024,
-      signal: options.signal,
       env: { ...process.env, PYTHONPATH: [pythonPath, process.env.PYTHONPATH].filter(Boolean).join(delimiter) },
     }));
   } catch (error) {
@@ -51,6 +73,5 @@ export async function resolveAudio(id, options = {}) {
     formatId: media.format_id, sampleRate: media.asr, contentLength: media.filesize,
     codecs: media.acodec, client: 'yt-dlp',
   };
-  resolved.set(cacheKey, value);
   return value;
 }

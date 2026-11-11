@@ -68,6 +68,7 @@ for (const device of [
   await app.press(`id:${device.nav}-search`); await app.type("id:search-input", "Cloud"); await app.submit("id:search-input");
   await app.waitFor("id:song-menu-cloud-alpha"); await app.press("id:song-menu-cloud-alpha");
   await app.press("加入 YouTube Music 歌单…"); await app.waitFor("id:app-dialog");
+  await app.waitFor("正在读取歌单…", { state: "gone" });
   await app.press(`id:app-dialog >> label:${newTitle}`); await app.waitFor("id:app-dialog", { state: "gone" });
   expect(mutations(app).find(input => input.action === "add")).toEqual({ action: "add", playlistId: "fixture-created", videoIds: [alpha.id] });
 
@@ -76,10 +77,13 @@ for (const device of [
   await app.press("label:编辑云端歌曲");
   expect(app.count("id:track-cloud-alpha")).toBe(2);
   await app.press("id:track-cloud-alpha >> label:云端歌曲操作 >> nth=0"); await app.press("下移");
+  await app.waitUntil(() => app.requests().filter(request => request.url === "https://gateway.test/api/browse?id=VLfixture-owned").length === 2
+    && app.count("id:track-cloud-alpha") === 2 && !app.shows("正在加载…"));
   expect(mutations(app).find(input => input.action === "move")).toEqual({ action: "move", playlistId: "fixture-owned", setVideoId: "set-alpha-first", successorSetVideoId: "set-beta" });
   expect(data.rows().map(row => row.setVideoId)).toEqual(["set-alpha-second", "set-alpha-first", "set-beta"]);
   expect(app.count("id:track-cloud-alpha")).toBe(2);
   await app.press("id:track-cloud-alpha >> label:云端歌曲操作 >> nth=0"); await app.press("从云端歌单移除");
+  await app.waitUntil(() => app.count("id:track-cloud-alpha") === 1);
   expect(mutations(app).find(input => input.action === "remove")).toEqual({ action: "remove", playlistId: "fixture-owned", videoId: alpha.id, setVideoId: "set-alpha-second" });
   expect(data.rows().map(row => row.setVideoId)).toEqual(["set-alpha-first", "set-beta"]);
   expect(app.count("id:track-cloud-alpha")).toBe(1);

@@ -22,9 +22,14 @@ export const radioLoading = signal(false);
 export const radioError = signal("");
 export const syncingRemote = signal(false);
 export const remoteControlled = signal(false);
+export const playbackPhase = signal<"idle" | "resolving" | "buffering" | "playing" | "paused" | "error">("idle");
+export const playbackTiming = signal<{ resolveMs: number; readyMs: number; totalMs: number; prepared: boolean } | null>(null);
+export const upNext = signal<Track | undefined>();
+export const nextPreparation = signal<{ trackId: string; title: string; state: "resolving" | "ready" | "caching" | "cached" } | null>(null);
 
 interface PlaybackOptions {
-  resolveStream: (track: Track) => Promise<StreamInfo>;
+  resolveStream: (track: Track, request?: { refresh?: boolean }) => Promise<StreamInfo>;
+  sourceContext?: () => string;
   autoRadio?: () => boolean;
   fetchRadio?: (track: Track) => Promise<Track[]>;
   onTrack?: (track: Track) => void;
@@ -48,6 +53,69 @@ let radioPromise: Promise<Track[]> | undefined;
 let listening: { track: Track; event: ListenEvent; reported: number } | undefined;
 let lastPosition = 0;
 let savedPosition = 0;
+let startup: { requestedAt: number; resolvedAt: number; prepared: boolean } | undefined;
+let prepared: { track: Track; context: string; source?: StreamInfo; cacheRequested: boolean } | undefined;
+
+function upcomingIndex() {
+  if (!queue().length || currentIndex() < 0) return -1;
+  if (repeat() === "one") return currentIndex();
+  if (shuffle()) {
+    if (!shuffleBag.length && repeat() === "all") resetShuffle();
+    return shuffleBag[shuffleBag.length - 1] ?? (repeat() === "all" ? currentIndex() : -1);
+  }
+  const next = currentIndex() + 1;
+  return next < queue().length ? next : repeat() === "all" ? 0 : -1;
+}
+
+function cancelPreparation() {
+  if (prepared?.cacheRequested && platform.os === "android") void nativeCommand("cancelPreload").catch(surfaceError);
+  prepared = undefined;
+  nextPreparation.set(null);
+}
+
+/** Resolve only the actual next queue entry, after the current source has started. */
+function prepareUpcoming() {
+  const track = queue()[upcomingIndex()];
+  upNext.set(track);
+  if (!track || repeat() === "one" || remoteControlled()) { cancelPreparation(); return; }
+  const context = options.sourceContext?.() || "";
+  if (prepared?.track.id === track.id && prepared.track.url === track.url && prepared.context === context
+      && (!prepared.source?.expiresAt || prepared.source.expiresAt > Date.now() + 60000)) {
+    cachePreparedSource();
+    return;
+  }
+  cancelPreparation();
+  if (!sourceStarted || !playing()) return;
+  const next = { track, context, cacheRequested: false } as NonNullable<typeof prepared>;
+  prepared = next;
+  nextPreparation.set({ trackId: track.id, title: track.title, state: "resolving" });
+  void options.resolveStream(track).then(source => {
+    if (prepared !== next) return;
+    next.source = source;
+    nextPreparation.set({ trackId: track.id, title: track.title, state: "ready" });
+    cachePreparedSource();
+  }).catch(() => {
+    // A speculative next-track failure must not replace the currently playing song's state.
+    if (prepared === next) nextPreparation.set(null);
+  });
+}
+
+export function invalidatePreparation() { cancelPreparation(); prepareUpcoming(); }
+
+function cachePreparedSource() {
+  const next = prepared;
+  if (platform.os !== "android" || !next?.source || next.cacheRequested || !playing()
+      || bufferedPosition() - position() < 12 || !/^https?:/.test(next.source.url)) return;
+  next.cacheRequested = true;
+  nextPreparation.set({ trackId: next.track.id, title: next.track.title, state: "caching" });
+  void nativeCommand("preload", { trackId: next.track.id, ...next.source, cacheKey: sourceCacheKey(next.track, next.source) }).catch(() => {
+    if (prepared === next) nextPreparation.set({ trackId: next.track.id, title: next.track.title, state: "ready" });
+  });
+}
+
+function sourceCacheKey(track: Track, source: StreamInfo) {
+  return source.cacheKey || (track.source === "youtube" ? `${track.id}:${source.formatId || source.quality || "audio"}` : source.url);
+}
 
 export interface NativeAudioState {
   requestId: number;
@@ -89,6 +157,9 @@ function reportError(reason: unknown) {
   const code = reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "failed";
   playRequested = false;
   batch(() => { playbackErrorCode.set(code); playbackError.set(code === "not-allowed" ? "点按播放以开始音频" : errorText(reason)); buffering.set(false); playing.set(false); });
+  playbackPhase.set("error");
+  startup = undefined;
+  cancelPreparation();
   updateMediaSession();
   if (code !== "not-allowed") surfaceError(reason);
 }
@@ -97,6 +168,11 @@ export function initPlayback(configuration: PlaybackOptions) {
   options = configuration;
   if (platform.os === "android") {
     host.on("audio.state", (payload: unknown) => receiveNativeState(payload as NativeAudioState));
+    host.on("audio.preload", (payload: unknown) => {
+      const event = payload as { trackId: string; cacheKey: string; cached: boolean };
+      if (prepared?.track.id !== event.trackId || !prepared.source || sourceCacheKey(prepared.track, prepared.source) !== event.cacheKey) return;
+      nextPreparation.set({ trackId: prepared.track.id, title: prepared.track.title, state: event.cached ? "cached" : "ready" });
+    });
     effect(() => {
       const controlled = remoteControlled();
       void nativeCommand("settings", { remoteControlled: controlled }).catch(surfaceError);
@@ -120,7 +196,7 @@ function updateMediaSession() {
     playing: playing(), buffering: buffering(), position: position(), duration: duration(), rate: rate(),
   }).catch(surfaceError);
 }
-function changed() { options?.onQueueChange?.(); }
+function changed() { options?.onQueueChange?.(); prepareUpcoming(); }
 function flushListening() {
   if (!listening || listening.event.seconds === listening.reported) return;
   options.onListen?.(listening.track, { ...listening.event });
@@ -154,6 +230,7 @@ function releaseSource(stopNative = false) {
   sourceStarted = false;
   nativeState = "idle";
   batch(() => { playing.set(false); buffering.set(false); bufferedPosition.set(0); streamInfo.set(null); });
+  startup = undefined;
 }
 
 function receiveProgress(seconds: number, total: number) {
@@ -173,6 +250,7 @@ function receiveNativeState(event: NativeAudioState) {
   if (event.error) { reportError({ message: event.error, code: event.errorCode || "failed" }); return; }
   const previousState = nativeState;
   const previousIntent = playRequested;
+  const wasPlaying = playing();
   nativeState = event.state;
   if (event.discontinuity) lastPosition = event.position;
   receiveProgress(event.position, event.duration);
@@ -181,6 +259,7 @@ function receiveNativeState(event: NativeAudioState) {
     playing.set(event.playing);
     buffering.set(event.buffering && event.playWhenReady);
     bufferedPosition.set(event.bufferedPosition);
+    playbackPhase.set(event.state === "idle" ? "idle" : event.playing ? "playing" : event.playWhenReady && event.buffering ? "buffering" : "paused");
   });
   if (event.state === "idle") {
     player = undefined;
@@ -190,8 +269,12 @@ function receiveNativeState(event: NativeAudioState) {
     changed();
     return;
   }
-  if (event.playing && !sourceStarted) finishPlaybackStart();
-  if (!event.playWhenReady && previousIntent) { flushListening(); changed(); }
+  if (event.playing) {
+    if (!sourceStarted) finishPlaybackStart();
+    else if (!wasPlaying) prepareUpcoming();
+    cachePreparedSource();
+  }
+  if (!event.playWhenReady && previousIntent) { startup = undefined; flushListening(); changed(); }
   if (event.state === "ended" && previousState !== "ended") { flushListening(); void advance(true); }
 }
 
@@ -223,20 +306,27 @@ export async function reconnectNativePlayback() {
   changed();
 }
 
-async function loadCurrent(startAt = 0, continueSession = false) {
+async function loadCurrent(startAt = 0, continueSession = false, refresh = false) {
   let track = currentTrack();
   if (!track) return;
+  const wasPrepared = !refresh && prepared?.track.id === track.id && prepared.track.url === track.url
+    && prepared.context === (options.sourceContext?.() || "") && !!prepared.source
+    && (!prepared.source.expiresAt || prepared.source.expiresAt > Date.now() + 60000);
+  cancelPreparation();
   releaseSource();
   const request = loadId;
   playRequested = true;
   lastPosition = startAt;
   savedPosition = startAt;
+  startup = { requestedAt: Date.now(), resolvedAt: 0, prepared: wasPrepared };
   if (!continueSession || listening?.track.id !== track.id) startListening(track);
-  batch(() => { position.set(startAt); duration.set(track.duration); buffering.set(true); playbackError.set(""); playbackErrorCode.set(""); });
+  batch(() => { position.set(startAt); duration.set(track.duration); buffering.set(true); playbackError.set(""); playbackErrorCode.set(""); playbackPhase.set("resolving"); playbackTiming.set(null); });
   changed();
   try {
-    const source = await options.resolveStream(track);
+    const source = await options.resolveStream(track, { refresh });
     if (request !== loadId) return;
+    if (startup) startup.resolvedAt = Date.now();
+    playbackPhase.set("buffering");
     track = {
       ...track, title: source.title || track.title, artist: source.artist || track.artist,
       artwork: source.artwork || track.artwork, duration: source.duration || track.duration,
@@ -253,7 +343,7 @@ async function loadCurrent(startAt = 0, continueSession = false) {
       await nativeCommand("open", {
         requestId: request, track, url: source.url, headers: source.headers || {},
         mimeType: source.mimeType, formatId: source.formatId, expiresAt: source.expiresAt,
-        cacheKey: source.cacheKey || (track.source === "youtube" ? `${track.id}:${source.formatId || source.quality || "audio"}` : source.url),
+        cacheKey: sourceCacheKey(track, source),
         position: startAt, volume: volume(), rate: rate(), playWhenReady: playRequested,
         remoteControlled: remoteControlled(),
       });
@@ -269,7 +359,11 @@ async function loadCurrent(startAt = 0, continueSession = false) {
       receiveProgress(event.currentTime, event.duration);
       updateMediaSession();
     });
-    audio.on("buffer", (event) => { if (request === loadId) buffering.set(event.buffering); });
+    audio.on("buffer", (event) => {
+      if (request !== loadId) return;
+      buffering.set(event.buffering && playRequested);
+      playbackPhase.set(!playRequested ? "paused" : event.buffering ? "buffering" : "playing");
+    });
     audio.on("error", (event) => { if (request === loadId) reportError(event); });
     audio.on("end", () => { if (request === loadId) { flushListening(); void advance(true); } });
     if (startAt > 0) audio.seek(startAt);
@@ -280,7 +374,13 @@ async function loadCurrent(startAt = 0, continueSession = false) {
 }
 
 function finishPlaybackStart() {
-  batch(() => { playing.set(true); buffering.set(false); playbackError.set(""); playbackErrorCode.set(""); });
+  batch(() => { playing.set(true); buffering.set(false); playbackError.set(""); playbackErrorCode.set(""); playbackPhase.set("playing"); });
+  if (startup) {
+    const readyAt = Date.now();
+    playbackTiming.set({ resolveMs: startup.resolvedAt - startup.requestedAt,
+      readyMs: readyAt - startup.resolvedAt, totalMs: readyAt - startup.requestedAt, prepared: startup.prepared });
+    startup = undefined;
+  }
   if (!sourceStarted) {
     sourceStarted = true;
     const track = currentTrack()!;
@@ -289,6 +389,7 @@ function finishPlaybackStart() {
     if (!remoteControlled() && options.autoRadio?.() && repeat() === "off" && queue().length - currentIndex() <= 3) void extendRadio();
   }
   updateMediaSession();
+  prepareUpcoming();
 }
 
 export function playList(items: Track[], index = 0, title = "") {
@@ -314,9 +415,13 @@ export function playAt(index: number) {
 export async function resumePlayback() {
   if (!currentTrack() || playRequested) return;
   playRequested = true;
-  if (!player || (playbackError() && playbackErrorCode() !== "not-allowed")) { await loadCurrent(position(), true); return; }
+  if (!player || (playbackError() && playbackErrorCode() !== "not-allowed")) {
+    await loadCurrent(position(), true, !!playbackError());
+    return;
+  }
   const request = loadId;
   buffering.set(true);
+  playbackPhase.set("buffering");
   try {
     await player.play();
     if (request !== loadId || !playRequested || platform.os === "android") return;
@@ -329,19 +434,21 @@ export async function togglePlay() {
 }
 export function pause() {
   playRequested = false;
+  startup = undefined;
   flushListening();
   if (!player) releaseSource();
   else player.pause();
-  batch(() => { playing.set(false); buffering.set(false); });
+  batch(() => { playing.set(false); buffering.set(false); playbackPhase.set(currentTrack() ? "paused" : "idle"); });
   updateMediaSession();
   changed();
 }
 export async function reloadPlayback() {
+  cancelPreparation();
   if (!currentTrack()) return;
   if (playRequested || playing()) await loadCurrent(position(), true);
   else { releaseSource(true); updateMediaSession(); changed(); }
 }
-export function retryPlayback() { return playbackErrorCode() === "not-allowed" ? resumePlayback() : loadCurrent(position(), true); }
+export function retryPlayback() { return playbackErrorCode() === "not-allowed" ? resumePlayback() : loadCurrent(position(), true, true); }
 
 export function extendRadio(): Promise<Track[]> {
   if (radioPromise) return radioPromise;
@@ -426,9 +533,10 @@ export function setRate(value: number) {
   updateMediaSession();
   options?.onPreferences?.();
 }
-export function toggleShuffle() { shuffle.update((value) => !value); resetShuffle(); options?.onPreferences?.(); }
+export function toggleShuffle() { shuffle.update((value) => !value); resetShuffle(); prepareUpcoming(); options?.onPreferences?.(); }
 export function cycleRepeat() {
   repeat.set(repeat() === "off" ? "all" : repeat() === "all" ? "one" : "off");
+  prepareUpcoming();
   options?.onPreferences?.();
 }
 export function addToQueue(track: Track) {
@@ -479,27 +587,41 @@ export function moveQueue(from: number, to: number) {
 }
 export function clearQueue() {
   playRequested = false;
+  cancelPreparation();
   resetRadio();
   releaseSource();
   if (platform.os === "android") void nativeCommand("stop").catch(surfaceError);
   listening = undefined;
-  batch(() => { queue.set([]); queueTitle.set(""); currentIndex.set(-1); position.set(0); duration.set(0); playbackError.set(""); playbackErrorCode.set(""); });
+  batch(() => { queue.set([]); queueTitle.set(""); currentIndex.set(-1); position.set(0); duration.set(0); playbackError.set(""); playbackErrorCode.set(""); playbackPhase.set("idle"); playbackTiming.set(null); });
   visited = [];
   shuffleBag = [];
   updateMediaSession();
   changed();
 }
+
+export function clearUpcoming() {
+  if (currentIndex() < 0) { clearQueue(); return; }
+  resetRadio();
+  cancelPreparation();
+  queue.update(items => items.slice(0, currentIndex() + 1));
+  shuffleBag = [];
+  visited = visited.filter(index => index <= currentIndex());
+  changed();
+}
 export function restoreQueue(items: Track[], index: number, seconds = 0, title = "") {
   playRequested = false;
+  cancelPreparation();
   resetRadio();
   releaseSource();
   listening = undefined;
   batch(() => {
     queue.set(items); queueTitle.set(title); currentIndex.set(items.length ? Math.min(index, items.length - 1) : -1);
     position.set(seconds); duration.set(currentTrack()?.duration ?? 0); playbackError.set(""); playbackErrorCode.set("");
+    playbackPhase.set(items.length ? "paused" : "idle"); playbackTiming.set(null);
   });
   visited = [];
   resetShuffle();
+  prepareUpcoming();
 }
 export async function applyRemoteState(state: RemotePlaybackState) {
   syncingRemote.set(true);
@@ -522,6 +644,7 @@ export async function applyRemoteState(state: RemotePlaybackState) {
       releaseSource(true);
       listening = undefined;
       batch(() => { position.set(state.position); duration.set(currentTrack()?.duration ?? 0); });
+      playbackPhase.set(currentTrack() ? "paused" : "idle");
       updateMediaSession();
     }
     changed();

@@ -1,4 +1,4 @@
-# Metrolist NSH · 0.4.0
+# Metrolist NSH · 0.5.0
 
 使用 [Native Shell（nsh）](https://github.com/longbridge/nsh) 编写的 Metrolist 移植版。共享 TSX 界面、个人曲库、播放队列和纯音频播放器，面向现代浏览器、桌面系统与具备相应运行时的手机平台。
 
@@ -6,9 +6,17 @@
 
 **公开知识库：[Metrolist NSH 文档](https://metrolist-nsh-docs.lurenjia534.chatgpt.site/)**。包含 Android 安装、账号登录、云端音乐库、播放与下载、构建和版本发布说明。
 
-**本轮 Android：`Metrolist-0.4.0-arm64.apk` 与 `Metrolist-0.4.0-universal.apk`，Android 8.0 / API 26 起。arm64 包面向常见现代手机，通用包包含 arm64-v8a、armeabi-v7a、x86_64。手机默认直连音乐接口，无需 Node 服务。由于旧版签名私钥没有随源码恢复，0.4 交付使用 `app.miku.metrolist.next`，应用名为 `Metrolist NSH`，可与旧版并排安装。保留旧应用，在旧版导出曲库后可导入新版；账号需在新版登录，已下载音频需单独迁移。**
+**本轮 Android：`Metrolist-0.5.0-arm64.apk` 与 `Metrolist-0.5.0-universal.apk`，Android 8.0 / API 26 起。arm64 包面向常见现代手机，通用包包含 arm64-v8a、armeabi-v7a、x86_64。手机默认直连音乐接口，无需 Node 服务。由于当前工作区没有旧版签名私钥，本轮交付使用 `app.miku.metrolist.preview`，应用名为 `Metrolist NSH Preview`，与 0.4 的 `app.miku.metrolist.next` 并排安装。保留旧应用，在旧版导出曲库后可导入新版；账号需在新版登录，已下载音频需单独迁移。**
 
-### 0.4 本轮变化
+### 0.5 本轮变化
+
+播放链路合并重复的配置和音源解析请求，复用匿名首页的访客信息，并在当前歌曲开始播放后准备真正的下一首。Android 在当前歌曲有至少 12 秒前方缓冲时，将下一首最多 256 KiB 的开头写入同一个音频缓存。错误现在区分解析阶段与音频 CDN 的 HTTP 429；解析只接受服务端明确给出的短 `Retry-After`，CDN 429 不再触发播放器默认的连续重试。点“重试”或错误后的播放按钮会重新解析地址。
+
+播放器增加连接/缓冲状态、缓冲进度、下一首准备状态和起播耗时明细；手机迷你播放器可直接打开队列。队列支持回到当前、移除当前之后的歌曲、自动续播，重复歌曲按实际队列位置高亮。首页增加喜欢、下载、最近播放和一起听入口，改善矮横屏导航。菜单操作等待原生关闭完成，修复删除所在行时的 NSH 生命周期错误。
+
+[0.5 播放研究、实现与验证](docs/playback-0.5.md)记录请求数量对照、原版源码依据和真实验证边界。应用版本为 0.5.0，匹配的 NSH runtime 仍为 `0.4.0 / c5214aa`。
+
+### 0.4 播放引擎基础
 
 Android 音频改为服务持有的 Media3 1.10.1 / ExoPlayer，使用 OkHttp、1 GiB 磁盘缓存和原版对应的 50 秒缓冲参数。拖动进度只在松手时 seek，暂停保留源与缓冲，界面重建重接服务实际状态；NSH 仍负责共享界面。重新实现原生动画、底栏指示器、弹窗退出和短横屏播放器，调整音乐库、歌单编辑、下载、账号与设置的小屏布局。
 
@@ -56,7 +64,7 @@ Worker 与 Node 默认使用同一套纯 JavaScript 音频解析：`/api/stream`
 
 ### Android
 
-安装本轮 `Metrolist-0.4.0-arm64.apk`（应用名为 Metrolist NSH），打开应用后点右上角头像登录。进入 Google 页面完成本人登录，回到 YouTube Music 后点“完成”；应用读取会话后向 YouTube Music 验证资料。通过后可在“音乐库 → YouTube Music”同步并编辑云端内容。
+安装本轮 `Metrolist-0.5.0-arm64.apk`（应用名为 Metrolist NSH Preview），打开应用后点右上角头像登录。进入 Google 页面完成本人登录，回到 YouTube Music 后点“完成”；应用读取会话后向 YouTube Music 验证资料。通过后可在“音乐库 → YouTube Music”同步并编辑云端内容。
 
 账号详情见 [账号使用与实现](docs/ACCOUNT.md)，APK 构建、签名、16 KiB 对齐及原生桥见 [Android 构建](docs/android-build.md)。
 
@@ -136,22 +144,16 @@ Android 下载和音频导入由 Java 流式写入应用私有目录，导入与
 
 ## 从源码开发
 
-需要 **Node.js 24** 与 **NSH nightly**。默认音频解析不需要 Python，服务端使用 Node 内置模块，无 npm 运行依赖。
+需要 **Node.js 24** 与匹配的 **NSH 0.4.0 nightly `c5214aa`**。安装工具链需要 **Python 3.11+** 与 curl。默认音频解析不需要 Python，服务端使用 Node 内置模块，无 npm 运行依赖。
 
-Linux / macOS 安装 NSH：
+在源码目录安装固定版本的 CLI 与网页组件（Linux / macOS / Windows）：
 
 ```sh
-sh scripts/install-nsh.sh
-export PATH="$HOME/.local/bin:$PATH"
-nsh --version
+python3 scripts/install-nsh.py --component web
+node scripts/run-nsh.mjs --version
 ```
 
-Windows PowerShell：
-
-```powershell
-$env:NSH_VERSION = 'nightly'
-irm https://nsh.dev/install.ps1 | iex
-```
+Windows 将 `python3` 换成 `python`。工具链默认放在源码相邻的 `toolchain/`，项目脚本会自动使用它。安装器按 `scripts/nsh-toolchain.json` 检查固定摘要；上游 nightly 更新后，应恢复这份版本的归档或通过 `NSH_DOWNLOAD_BASE` 指向保留该版本的镜像。Android 构建另加 `--component android`。已有 CLI 可通过 `NSH_BIN` 指定；缓存目录可通过 `NSH_CACHE` 指定。
 
 原生开发脚本会先启动 gateway，再打开当前系统的 NSH 窗口：
 
@@ -176,9 +178,9 @@ npm run dev
 开发检查：
 
 ```sh
-nsh check
-nsh build
-nsh test
+npm run check
+node scripts/run-nsh.mjs build
+npm test
 node --test server/*.test.mjs
 ```
 
@@ -205,28 +207,28 @@ node scripts/run-native.mjs android
 
 | 平台 | 最低要求/运行条件 | 当前设备验证 |
 | --- | --- | --- |
-| Web | 支持 WebAssembly、现代音频 API 与所选音频格式的浏览器 | 托管部署路径已建立；本次云浏览器停在 ChatGPT 登录页，未完成已登录站点的视觉和声音验收 |
+| Web | 支持 WebAssembly、现代音频 API 与所选音频格式的浏览器 | 0.5 静态资源与 Worker 构建通过；当前环境不能完成图形浏览器预览，未验证页面像素与实际出声 |
 | Linux x86_64 | glibc 2.39、GTK 4.14+、WebKitGTK 6.0、GStreamer | 提供便携打包；构建容器缺 GTK/WebKitGTK，未启动原生窗口或验证出声 |
 | Windows x86_64 | Windows 10 1809+ | 提供跨平台生成的便携包；未在 Windows 设备启动或验证出声 |
 | macOS | macOS 14+ | 提供源码、构建命令和 CI job；未在 Mac 构建或运行 |
-| Android | Android 8 / API 26+；构建需 Android SDK、JDK 和 runtime | 0.4 已构建 arm64 Media3 APK，DEX、资源、Manifest、签名与 ZIP/ELF 16 KiB 对齐验证；没有真机登录/出声验证 |
+| Android | Android 8 / API 26+；构建需 Android SDK、JDK 和 runtime | 0.5 使用真实 Java 编译、资源链接、DEX、Manifest、签名与 ZIP/ELF 16 KiB 对齐检查；没有真机登录/出声验证 |
 | iOS | iOS 15+；构建需 macOS、Xcode 和 runtime | 当前环境无 Xcode，没有生成 IPA，没有实机验证 |
 
 本环境已核对真实目录和音频解析响应；访问 googlevideo 媒体地址时，执行网络返回网页内容而非音频字节，不能据此宣称已经实机出声。音频格式选择、代理与下载流程另以本地 HTTP 音频源进行测试。Together 的公共服务协议测试已经独立完成。服务端验证详见 [验证记录](docs/VERIFICATION.md)。
 
 当前 runtime 的 Linux 倍速固定为 1×。Android 已接入原生后台媒体服务、MediaSession、锁屏和通知控制，实际设备后台持续运行仍待验证；iOS 需要对应平台专项实现。浏览器 MediaSession 已接入，但实际可用的系统控件取决于浏览器与操作系统。
 
-本次使用 `nsh 0.4.0 (c5214aa nightly)`，Linux 和 Windows runtime 来自同一 nightly。GitHub Actions 工作流已提供，包含 Android 通用 APK、Ubuntu 24.04、Windows、macOS 与 Web 产物步骤，尚未在 GitHub Actions 上实际执行。
+本次使用 `nsh 0.4.0 (c5214aa nightly)`。GitHub Actions 工作流包含 Android 通用 APK、Ubuntu 24.04、Windows、macOS 与 Web 产物步骤；0.5 将组件版本与下载摘要固定到同一版本，并修复缺少可选托管配置时 Web 构建失败的问题。本地构建结果与具体 Actions 运行结果分别记录，不把旧版本 CI 的通过当作当前提交的验证。
 
 ## 打包与复现
 
 NSH 标准打包：
 
 ```sh
-nsh package --target linux --out releases/linux
-nsh package --target windows --out releases/windows
-nsh package --target macos --out releases/macos
-nsh package --target web --out releases/web-standard
+node scripts/run-nsh.mjs package --target linux --out releases/linux
+node scripts/run-nsh.mjs package --target windows --out releases/windows
+node scripts/run-nsh.mjs package --target macos --out releases/macos
+node scripts/run-nsh.mjs package --target web --out releases/web-standard
 ```
 
 标准原生包包含应用与 NSH runtime，音乐服务单独启动。增强便携包将 gateway、启动器、README 与许可证一同装入发行目录：

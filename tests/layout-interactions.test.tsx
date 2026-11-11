@@ -55,6 +55,7 @@ for (const { width, height } of [{ width: 340, height: 640 }, { width: 800, heig
   await app.press("id:page-library >> label:Layout playlist"); await app.waitFor("id:page-playlist");
   if (height < 900) await app.scroll("id:content-playlist", 240);
   await app.press("label:歌单操作"); await app.press("id:playlist-edit");
+  await app.waitFor("id:playlist-down-0");
   if (height < 900) await app.scroll("id:content-playlist", 260);
   const savedTracks = () => JSON.parse(app.storage()["metrolist.library"]).playlists.find((item: { id: string }) => item.id === playlist.id).tracks.map((item: { id: string }) => item.id);
   await app.press("id:playlist-down-0"); expect(savedTracks()).toEqual([beta.id, alpha.id, gamma.id]);

@@ -281,7 +281,8 @@ test('account audio resolves per identity and native dispatch returns its signed
   assert.equal(a.headers.Referer, 'https://music.youtube.com/');
   assert.match(a.headers['User-Agent'], /Firefox\/140\.0/);
   assert.equal(a.headers.Cookie, undefined);
-  assert.equal(a.cacheKey, 'account-fixture-audio:140:');
+  assert.match(a.cacheKey, /^[a-f0-9]{40}:account-fixture-audio:140:$/);
+  assert.notEqual(a.cacheKey, b.cacheKey);
   assert.equal(a.expiresAt, Number(new URL(a.url).searchParams.get('expire')) * 1000);
   const web = await (await api(request('stream?id=account-fixture-audio&container=mp4', accountA), { fetch: fetchFixture })).json();
   assert.equal(new URL(web.url).origin, 'https://metrolist.test');

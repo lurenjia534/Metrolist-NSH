@@ -11,17 +11,25 @@ import androidx.media3.common.PlaybackParameters;
 import androidx.media3.common.Player;
 import androidx.media3.database.StandaloneDatabaseProvider;
 import androidx.media3.datasource.DefaultDataSource;
+import androidx.media3.datasource.DataSpec;
+import androidx.media3.datasource.HttpDataSource;
 import androidx.media3.datasource.cache.CacheDataSource;
+import androidx.media3.datasource.cache.CacheWriter;
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor;
 import androidx.media3.datasource.cache.SimpleCache;
 import androidx.media3.datasource.okhttp.OkHttpDataSource;
 import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.source.ProgressiveMediaSource;
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy;
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy;
 import java.io.File;
+import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import okhttp3.OkHttpClient;
 
@@ -29,6 +37,8 @@ import okhttp3.OkHttpClient;
 public final class MetrolistAudio {
     public static final String ENGINE = "Media3 ExoPlayer 1.10.1";
     private static final long CACHE_BYTES = 1024L * 1024 * 1024;
+    private static final long PRELOAD_BYTES = 256L * 1024;
+    private static SimpleCache sharedCache;
     private static MetrolistAudio instance;
     private static WeakReference<NshView> view = new WeakReference<>(null);
     private final Context context;
@@ -36,6 +46,8 @@ public final class MetrolistAudio {
     private final SimpleCache cache;
     private final OkHttpClient http;
     private final ExoPlayer player;
+    private final ExecutorService preloadWorker = Executors.newSingleThreadExecutor();
+    private CacheWriter preloadWriter;
     private Map<String, Object> track, source;
     private long requestId;
     private double fallbackDuration;
@@ -61,8 +73,10 @@ public final class MetrolistAudio {
 
     private MetrolistAudio(Context context) {
         this.context = context;
-        cache = new SimpleCache(new File(context.getCacheDir(), "audio-streams"),
+        // The cache belongs to the process, so restarting the service never opens a second cache lock.
+        if (sharedCache == null) sharedCache = new SimpleCache(new File(context.getCacheDir(), "audio-streams"),
                 new LeastRecentlyUsedCacheEvictor(CACHE_BYTES), new StandaloneDatabaseProvider(context));
+        cache = sharedCache;
         http = new OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build();
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
                 .setBufferDurationsMs(50_000, 50_000, 750, 2_000)
@@ -78,6 +92,15 @@ public final class MetrolistAudio {
             }
             @Override public void onPlayerError(PlaybackException failure) {
                 error = text(failure.getMessage()); errorCode = failure.getErrorCodeName();
+                for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+                    if (cause instanceof HttpDataSource.InvalidResponseCodeException) {
+                        int status = ((HttpDataSource.InvalidResponseCodeException) cause).responseCode;
+                        errorCode = status == 429 ? "rate-limited" : "http-" + status;
+                        error = status == 429 ? "音频数据请求过于频繁（HTTP 429）。请稍后重试。"
+                                : "音频数据请求失败（HTTP " + status + "）。";
+                        break;
+                    }
+                }
                 player.setPlayWhenReady(false);
                 publish(true);
             }
@@ -99,6 +122,7 @@ public final class MetrolistAudio {
 
     @SuppressWarnings("unchecked")
     public void open(Map<String, Object> args) {
+        cancelPreload();
         requestId = ((Number) args.get("requestId")).longValue();
         track = new HashMap<>((Map<String, Object>) args.get("track"));
         fallbackDuration = number(track, "duration", 0);
@@ -107,23 +131,65 @@ public final class MetrolistAudio {
         for (String key : new String[] {"url", "headers", "mimeType", "formatId", "expiresAt", "cacheKey"}) {
             if (args.containsKey(key)) source.put(key, args.get(key));
         }
-        Map<String, String> headers = new HashMap<>();
-        if (args.get("headers") instanceof Map) {
-            ((Map<?, ?>) args.get("headers")).forEach((key, value) -> headers.put(key.toString(), value.toString()));
-        }
-        OkHttpDataSource.Factory network = new OkHttpDataSource.Factory(http).setDefaultRequestProperties(headers);
-        CacheDataSource.Factory cached = new CacheDataSource.Factory().setCache(cache)
-                .setUpstreamDataSourceFactory(new DefaultDataSource.Factory(context, network));
         MediaItem.Builder item = new MediaItem.Builder().setMediaId(text(track.get("id")))
                 .setUri(text(args.get("url"))).setCustomCacheKey(text(args.get("cacheKey")));
         String mimeType = text(args.get("mimeType"));
         if (!mimeType.isEmpty()) item.setMimeType(mimeType.split(";", 2)[0]);
         applySettings(args);
-        player.setMediaSource(new ProgressiveMediaSource.Factory(cached).createMediaSource(item.build()),
+        player.setMediaSource(new ProgressiveMediaSource.Factory(dataSource(args))
+                .setLoadErrorHandlingPolicy(new DefaultLoadErrorHandlingPolicy() {
+                    @Override public long getRetryDelayMsFor(LoadErrorHandlingPolicy.LoadErrorInfo failure) {
+                        for (Throwable cause = failure.exception; cause != null; cause = cause.getCause()) {
+                            if (cause instanceof HttpDataSource.InvalidResponseCodeException
+                                    && ((HttpDataSource.InvalidResponseCodeException) cause).responseCode == 429) return C.TIME_UNSET;
+                        }
+                        return super.getRetryDelayMsFor(failure);
+                    }
+                }).createMediaSource(item.build()),
                 Math.round(number(args, "position", 0) * 1000));
         player.setPlayWhenReady(!Boolean.FALSE.equals(args.get("playWhenReady")));
         player.prepare();
         publish(true);
+    }
+
+    private CacheDataSource.Factory dataSource(Map<String, Object> args) {
+        Map<String, String> headers = new HashMap<>();
+        if (args.get("headers") instanceof Map) {
+            ((Map<?, ?>) args.get("headers")).forEach((key, value) -> headers.put(key.toString(), value.toString()));
+        }
+        OkHttpDataSource.Factory network = new OkHttpDataSource.Factory(http).setDefaultRequestProperties(headers);
+        return new CacheDataSource.Factory().setCache(cache)
+                .setUpstreamDataSourceFactory(new DefaultDataSource.Factory(context, network));
+    }
+
+    /** Store the next song's opening bytes in the same cache used by real playback. */
+    public void preload(Map<String, Object> args) {
+        cancelPreload();
+        String trackId = text(args.get("trackId")), cacheKey = text(args.get("cacheKey"));
+        long contentLength = (long) number(args, "contentLength", 0);
+        long length = contentLength > 0 ? Math.min(PRELOAD_BYTES, contentLength) : PRELOAD_BYTES;
+        DataSpec spec = new DataSpec.Builder().setUri(text(args.get("url"))).setKey(cacheKey).setLength(length).build();
+        CacheWriter writer = new CacheWriter(dataSource(args).createDataSourceForDownloading(), spec, null, null);
+        preloadWriter = writer;
+        preloadWorker.execute(() -> {
+            boolean cached;
+            try { writer.cache(); cached = true; }
+            catch (IOException failure) { cached = false; }
+            final boolean completed = cached;
+            main.post(() -> {
+                if (preloadWriter != writer) return;
+                preloadWriter = null;
+                NshView target = view.get();
+                if (target != null) {
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("trackId", trackId); result.put("cacheKey", cacheKey); result.put("cached", completed);
+                    target.send("audio.preload", result);
+                }
+            });
+        });
+    }
+    public void cancelPreload() {
+        if (preloadWriter != null) { preloadWriter.cancel(); preloadWriter = null; }
     }
 
     public void play() { player.play(); publish(true); }
@@ -146,6 +212,7 @@ public final class MetrolistAudio {
         MetrolistMediaService.stop(context);
     }
     public void stopPlayback() {
+        cancelPreload();
         if (track != null) stoppedPosition = player.getCurrentPosition() / 1000.0;
         player.setPlayWhenReady(false);
         player.stop(); player.clearMediaItems();
@@ -208,9 +275,13 @@ public final class MetrolistAudio {
 
     public void release() {
         main.removeCallbacks(tick);
-        player.release(); cache.release();
-        http.dispatcher().executorService().shutdown();
-        http.connectionPool().evictAll();
+        cancelPreload();
+        player.release();
+        preloadWorker.execute(() -> {
+            http.dispatcher().executorService().shutdown();
+            http.connectionPool().evictAll();
+        });
+        preloadWorker.shutdown();
         instance = null;
     }
 

@@ -1,0 +1,44 @@
+{
+  "version": "0.4.0",
+  "commit": "c5214aa",
+  "revision": "c5214aaf4bbdf33bc1d59e9595e009b6aa54d702",
+  "downloadBase": "https://github.com/longbridge/nsh/releases/download/nightly",
+  "archives": {
+    "linux-x86_64": {
+      "file": "nsh-linux-x86_64.tar.gz",
+      "sha256": "021b445b86df0b900a2489644ea7a182ea4aeae1447f9851753cd215a4101acd"
+    },
+    "linux-arm64": {
+      "file": "nsh-linux-arm64.tar.gz",
+      "sha256": "4fe2a229866b62c2af951dfe0c874a0bf139f0cf30810ad6b8b690dabd6b159a"
+    },
+    "macos-arm64": {
+      "file": "nsh-macos-arm64.tar.gz",
+      "sha256": "b8a8c2f8cebfa9412717b4e7c4478c9a5be8b098e85c7f5f8dfe2f8f6b43b84a"
+    },
+    "macos-x86_64": {
+      "file": "nsh-macos-x86_64.tar.gz",
+      "sha256": "848ab6ae7c71b84f2a4e110c850aff50e28f592a938f281e594f37c5fca74870"
+    },
+    "windows-arm64": {
+      "file": "nsh-windows-arm64.zip",
+      "sha256": "c7eb3c06c89a0b485c1e796323f637074f08ef726069770fe58130e2a2a79c37"
+    },
+    "windows-x86_64": {
+      "file": "nsh-windows-x86_64.zip",
+      "sha256": "bdc30ff621f87c755d2693a0bc43f996a15ebdcd6527c6704ef8f3ad0415c5b3"
+    },
+    "web": {
+      "file": "nsh-web.tar.gz",
+      "sha256": "c4274fbc09764bf9fa31754cfe06bc5dbf2cb2e89d1590e19d9ea0fd833824c1"
+    },
+    "android": {
+      "file": "nsh-android.tar.gz",
+      "sha256": "0ad3797eaac597e9c4eb3d403f811f5e6abe6ebe22ffd429d56d404e226b64b1"
+    }
+  },
+  "source": {
+    "url": "https://codeload.github.com/longbridge/nsh/tar.gz/c5214aa",
+    "sha256": "39b9ff4fe3c317cfa6c9a49094e223b54c734be58e3d2bbdc6b65b84c14d5d4b"
+  }
+}

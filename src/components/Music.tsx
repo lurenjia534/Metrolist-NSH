@@ -34,18 +34,21 @@ export function songCommands(track: Track): CommandItem[] {
   ];
 }
 export function SongMenu(props: { track: Track }) { return <CommandMenu label={`更多 ${props.track.title}`} testID={`song-menu-${props.track.id}`} items={songCommands(props.track)} />; }
-export function TrackRow(props: { track: Track; list?: Track[]; index?: number; compact?: boolean; selected?: boolean; selecting?: boolean; onSelect?: () => void; onPlay?: () => void; trailing?: JSX.Element; actionsBelow?: boolean; rank?: number }) {
-  const active = () => p.currentTrack()?.id === props.track.id;
+export function TrackRow(props: { track: Track; list?: Track[]; index?: number; compact?: boolean; active?: boolean; menu?: boolean; playLabel?: string; selected?: boolean; selecting?: boolean; onSelect?: () => void; onPlay?: () => void; trailing?: JSX.Element; actionsBelow?: boolean; rank?: number }) {
+  const active = () => props.active ?? p.currentTrack()?.id === props.track.id;
   return <View testID={`track-${props.track.id}`} style={{ minWidth: 0, borderRadius: 12, paddingHorizontal: 4, backgroundColor: active() || props.selected ? c().selected : "transparent" }}>
     <View style={{ flexDirection: "row", minWidth: 0, minHeight: props.compact ? 68 : 76, alignItems: "center", gap: 8 }}>
     <If when={props.selecting}><Tool icon={props.selected ? "checkCircle" : "album"} label={`选择 ${props.track.title}`} active={props.selected} onPress={() => props.onSelect?.()} /></If>
     <If when={props.rank !== undefined}><Label size={14} color={c().sub} style={{ width: 24, textAlign: "center" }}>{props.rank}</Label></If>
-    <Press label={`播放 ${props.track.title}`} testID={`play-track-${props.track.id}`} onPress={() => props.selecting ? props.onSelect?.() : together.isGuest() ? action(() => together.suggestTrack(props.track), "点歌请求已发送") : props.onPlay ? props.onPlay() : action(() => props.list && props.index !== undefined ? p.playList(props.list, props.index) : p.playTrack(props.track, props.list))} style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 12, minWidth: 0, paddingVertical: 8 }}>
-      <Art track={props.track} size={props.compact ? 48 : 52} radius={8} />
+    <Press label={props.playLabel || `播放 ${props.track.title}`} testID={`play-track-${props.track.id}`} onPress={() => props.selecting ? props.onSelect?.() : together.isGuest() ? action(() => together.suggestTrack(props.track), "点歌请求已发送") : props.onPlay ? props.onPlay() : action(() => props.list && props.index !== undefined ? p.playList(props.list, props.index) : p.playTrack(props.track, props.list))} style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 12, minWidth: 0, paddingVertical: 8 }}>
+      <View style={{ width: props.compact ? 48 : 52, height: props.compact ? 48 : 52, flexShrink: 0 }}>
+        <Art track={props.track} size={props.compact ? 48 : 52} radius={8} />
+        <If when={active()}><View accessibilityElementsHidden style={{ position: "absolute", right: 2, bottom: 2, width: 22, height: 22, borderRadius: 7, backgroundColor: c().accent, alignItems: "center", justifyContent: "center" }}><Icon name={p.playbackPhase() === "resolving" || p.playbackPhase() === "buffering" ? "clock" : p.playing() ? "volume" : "pause"} size={14} color={c().onAccent} /></View></If>
+      </View>
       <View style={{ flex: 1, minWidth: 0, gap: 5 }}><Label lines={1} size={narrow() ? 15 : 14} weight="600" color={active() ? c().accent : c().text}>{props.track.title}</Label><View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}><If when={s.isLiked(props.track.id)}><Icon name="heart" size={12} color={c().danger} filled /></If><If when={s.downloads().some(t => t.id === props.track.id)}><Icon name="download" size={12} color={c().good} /></If><Label lines={1} size={12} color={c().sub} style={{ flex: 1 }}>{props.track.artist}{props.track.duration ? ` · ${time(props.track.duration)}` : ""}</Label></View></View>
     </Press>
     <If when={!narrow() && windowSize().width >= 1100 && !props.compact}><Label lines={1} size={12} color={c().faint} style={{ width: 128 }}>{props.track.album}</Label><Tool icon="heart" label={s.isLiked(props.track.id) ? "取消喜欢" : "喜欢这首歌"} active={s.isLiked(props.track.id)} onPress={() => s.toggleLike(props.track)} /></If>
-    <If when={!props.actionsBelow}>{props.trailing}</If><If when={!props.selecting}><SongMenu track={props.track} /></If>
+    <If when={!props.actionsBelow}>{props.trailing}</If><If when={!props.selecting && props.menu !== false}><SongMenu track={props.track} /></If>
     </View>
     <If when={props.actionsBelow}><View testID={`track-actions-${props.track.id}`} style={{ flexDirection: "row", justifyContent: "flex-end", gap: 8, paddingBottom: 4 }}>{props.trailing}</View></If>
   </View>;

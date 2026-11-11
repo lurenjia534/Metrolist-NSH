@@ -8,11 +8,11 @@ export const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, HEAD, POST, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Range, X-Metrolist-Account',
-  'Access-Control-Expose-Headers': 'Content-Range, Accept-Ranges, Content-Length, Content-Type',
+  'Access-Control-Expose-Headers': 'Content-Range, Accept-Ranges, Content-Length, Content-Type, Retry-After',
 };
 
-export function json(body, status = 200) {
-  return Response.json(body, { status, headers: { ...cors, 'Cache-Control': 'no-store' } });
+export function json(body, status = 200, headers = {}) {
+  return Response.json(body, { status, headers: { ...cors, 'Cache-Control': 'no-store', ...headers } });
 }
 
 export async function api(request, env = {}) {
@@ -65,7 +65,8 @@ export async function api(request, env = {}) {
       default: return json({ error: 'Unknown API endpoint' }, 404);
     }
   } catch (error) {
-    return json({ error: error.message }, error.status || 502);
+    return json({ error: error.message, code: error.code, stage: error.stage, retryAfterMs: error.retryAfterMs }, error.status || 502,
+      error.retryAfterMs !== undefined ? { 'Retry-After': String(Math.ceil(error.retryAfterMs / 1000)) } : {});
   }
 }
 

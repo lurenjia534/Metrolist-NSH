@@ -74,6 +74,14 @@ public final class MetrolistHost implements AutoCloseable {
         view.handle("app.audio.settings", (data, reply) -> { MetrolistMediaService.settings(arguments(data)); reply.resolve(null); });
         view.handle("app.audio.stop", (data, reply) -> { MetrolistMediaService.stop(activity); reply.resolve(null); });
         view.handle("app.audio.snapshot", (data, reply) -> reply.resolve(MetrolistAudio.current() == null ? null : MetrolistAudio.current().snapshot()));
+        view.handle("app.audio.preload", (data, reply) -> {
+            if (MetrolistAudio.current() != null) MetrolistAudio.current().preload(arguments(data));
+            reply.resolve(null);
+        });
+        view.handle("app.audio.cancelPreload", (data, reply) -> {
+            if (MetrolistAudio.current() != null) MetrolistAudio.current().cancelPreload();
+            reply.resolve(null);
+        });
         view.handle("auth.available", (data, reply) -> reply.resolve(object("available", true, "method", "webview")));
         view.handle("auth.login", (data, reply) -> login(arguments(data), reply));
         view.handle("auth.logout", (data, reply) -> CookieManager.getInstance().removeAllCookies(removed -> {

@@ -62,7 +62,9 @@ test("NSH native audio resolution returns account-specific signed AAC sources an
   expect(new URL(a.url).searchParams.get("signature")).toBe("fixture-A");
   expect(new URL(a.url).searchParams.get("cpn")!.length).toBe(16);
   expect(a).toMatchObject({ client: "WEB_REMIX", authenticated: true, mimeType: "audio/mp4", codecs: "mp4a.40.2", formatId: "140", bitrate: 128000, sampleRate: 44100, duration: 60 });
-  expect(a).toMatchObject({ cacheKey: "native-fixture-audio:140:8", expiresAt: 1700003600000,
+  expect(a.cacheKey.endsWith(":native-fixture-audio:140:8")).toBe(true);
+  expect(a.cacheKey === b.cacheKey).toBe(false);
+  expect(a).toMatchObject({ expiresAt: 1700003600000,
     headers: { Origin: "https://music.youtube.com", Referer: "https://music.youtube.com/", Accept: "*/*" } });
   expect(a.headers["User-Agent"]).toContain("Firefox/140.0");
   expect(app.requests()).toHaveLength(2);
@@ -90,4 +92,28 @@ test("NSH native anonymous account response reports the missing session without 
   await app.press("Native anonymous account"); await app.waitFor("Done");
   expect(read(app).status).toBe(401);
   expect(app.requests()).toHaveLength(0);
+});
+
+test("native playback preserves a long Retry-After and the actual 429 stage without retrying", async () => {
+  const app = await open("./gateway-native-fixture.tsx", { width: 1000, height: 900, platform: "android", network: {
+    ...network, "POST https://music.youtube.com/youtubei/v1/player?prettyPrint=false": {
+      status: 429, headers: { "Retry-After": "30" }, body: "Too many requests",
+    },
+  } });
+  await app.press("Native playback error"); await app.waitFor("Done");
+  expect(read(app)).toMatchObject({ status: 429, code: "rate-limited", stage: "player", retryAfterMs: 30000 });
+  expect(app.requests()).toHaveLength(1);
+});
+
+test("native playback can retry one explicit zero-delay 429 using the shared resolver", async () => {
+  let attempts = 0;
+  const app = await open("./gateway-native-fixture.tsx", { width: 1000, height: 900, platform: "android", network: {
+    ...network, "POST https://music.youtube.com/youtubei/v1/player?prettyPrint=false": (request: StubRequest) => ++attempts === 1
+      ? { status: 429, headers: { "Retry-After": "0" }, body: "Wait" }
+      : network["POST https://music.youtube.com/youtubei/v1/player?prettyPrint=false"](request),
+  } });
+  await app.press("Native playback error"); await app.waitFor("Done");
+  expect(app.texts().find(text => text.startsWith("error:"))).toBe("error:");
+  expect(read(app).url.startsWith("https://audio.test/A.m4a")).toBe(true);
+  expect(app.requests()).toHaveLength(2);
 });

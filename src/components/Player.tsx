@@ -5,7 +5,7 @@ import * as p from "../playback";
 import * as nav from "../navigation";
 import * as together from "../together";
 import { Icon } from "../icons";
-import { SongMenu, TrackRow, shareTrack } from "./Music";
+import { SongMenu, TrackRow, shareTrack, songCommands } from "./Music";
 import { Label, Tool, Pill, Art, Rail, Press, CommandMenu, Empty, palette as c, narrow, touch, action, say, time } from "../ui";
 import { motion, motionDuration, transition } from "../motion";
 import type { Track } from "../model";
@@ -13,6 +13,13 @@ import type { Track } from "../model";
 const compactMini = () => narrow() || windowSize().width < (touch() ? 1180 : 1000);
 const splitPlayer = () => windowSize().width >= 960 && windowSize().height >= 540;
 const shortLandscape = () => windowSize().width >= 600 && windowSize().height < 540;
+const waitingToPlay = () => p.playbackPhase() === "resolving" || p.playbackPhase() === "buffering";
+const playbackLabel = () => ({ idle: "待播放", resolving: "正在连接音源…", buffering: "正在缓冲…", playing: "正在播放", paused: "已暂停", error: "播放失败" }[p.playbackPhase()]);
+const nextLabel = () => {
+  const next = p.nextPreparation();
+  if (!next || next.trackId !== p.upNext()?.id) return "接下来";
+  return next.state === "cached" ? "开头已缓冲" : next.state === "ready" ? "音源已准备" : "正在准备下一首…";
+};
 
 // Dragging changes only this preview. The player receives one seek on release.
 function SeekRail(props: { large?: boolean; testID?: string; showTime?: boolean }) {
@@ -25,10 +32,10 @@ function SeekRail(props: { large?: boolean; testID?: string; showTime?: boolean 
     draft.set(undefined);
   };
   return <View style={{ flex: 1, minWidth: 0, minHeight: (touch() ? 48 : props.large ? 40 : 28) + (props.showTime ? 18 : 0) }}>
-    <Rail testID={props.testID} large={props.large} label="播放进度" value={value()} max={duration()} disabled={p.remoteControlled()} onChange={draft.set} onChangeEnd={commit} />
+    <Rail testID={props.testID} large={props.large} label="播放进度" value={value()} max={duration()} bufferedValue={p.bufferedPosition() > 0 ? p.bufferedPosition() : undefined} disabled={p.remoteControlled()} onChange={draft.set} onChangeEnd={commit} />
     <If when={props.showTime}><View style={{ flexDirection: "row", justifyContent: "space-between", gap: 12 }}>
       <Label testID="player-position" size={12} color={c().sub}>{time(value())}</Label>
-      <Label size={12} color={c().sub}>{p.buffering() ? "缓冲中…" : time(duration())}</Label>
+      <Label testID="player-status" size={12} color={waitingToPlay() ? c().accent : c().sub}>{waitingToPlay() ? playbackLabel() : time(duration())}</Label>
     </View></If>
   </View>;
 }
@@ -57,7 +64,7 @@ function MiniSurface(props: { track: Track }) {
         <Art track={props.track} size={compactMini() ? 46 : 54} radius={10} />
         <View style={{ flex: 1, gap: 4, minWidth: 0 }}>
           <Label size={14} weight="600" lines={1}>{props.track.title}</Label>
-          <Label size={12} color={p.playbackError() ? c().danger : c().sub} lines={1}>{p.playbackError() ? "播放失败 · 点按查看" : p.buffering() ? "正在缓冲…" : props.track.artist}</Label>
+          <Label testID="mini-player-status" size={12} color={p.playbackError() ? c().danger : waitingToPlay() ? c().accent : c().sub} lines={1}>{p.playbackError() ? "播放失败 · 点按查看" : waitingToPlay() ? playbackLabel() : p.playbackPhase() === "paused" ? `已暂停 · ${props.track.artist}` : props.track.artist}</Label>
         </View>
       </Press>
       <If when={!compactMini()}>
@@ -82,7 +89,7 @@ function MiniSurface(props: { track: Track }) {
           <Tool icon={p.volume() ? "volume" : "mute"} label={p.volume() ? "静音" : "取消静音"} onPress={() => s.updateSettings({ volume: p.volume() ? 0 : 0.7 })} />
           <View style={{ width: 64 }}><Rail label="音量" value={p.volume() * 100} onChange={value => s.updateSettings({ volume: value / 100 })} /></View>
         </View>
-      }><PlayButton small /><Tool icon="next" label="下一首" disabled={p.remoteControlled()} onPress={() => action(p.next)} /></If>
+      }><PlayButton small /><Tool icon="next" label="下一首" disabled={p.remoteControlled()} onPress={() => action(p.next)} /><Tool testID="mini-queue" icon="queue" label="打开播放队列" onPress={() => nav.showPlayer("queue")} /></If>
     </View>
     <If when={compactMini()}><MiniProgress /></If>
   </View>;
@@ -93,12 +100,13 @@ export function MiniPlayer() {
 }
 
 function PlayButton(props: { small?: boolean }) {
-  const state = createAnimatedValue(p.playing() ? 1 : 0);
-  effect(() => { void state.timing(p.playing() ? 1 : 0, { duration: motionDuration(motion.fast), easing: "easeOut" }); });
+  const pauses = () => p.playing() || waitingToPlay();
+  const state = createAnimatedValue(pauses() ? 1 : 0);
+  effect(() => { void state.timing(pauses() ? 1 : 0, { duration: motionDuration(motion.fast), easing: "easeOut" }); });
   const playOpacity = state.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
   const playScale = state.interpolate({ inputRange: [0, 1], outputRange: [1, 0.65] });
   const pauseScale = state.interpolate({ inputRange: [0, 1], outputRange: [0.65, 1] });
-  return <Button testID={props.small ? "mini-play-pause" : "player-play-pause"} accessibilityLabel={p.playing() ? "暂停" : "播放"} disabled={p.remoteControlled()} onPress={() => void action(p.togglePlay)}
+  return <Button testID={props.small ? "mini-play-pause" : "player-play-pause"} accessibilityLabel={pauses() ? "暂停" : "播放"} disabled={p.remoteControlled()} onPress={() => void action(p.togglePlay)}
     style={{ width: props.small ? 48 : 116, height: props.small ? 48 : 64, flexShrink: 0, borderRadius: props.small ? 24 : 28, backgroundColor: c().accent, alignItems: "center", justifyContent: "center", ...transition() }}
     activeStyle={{ scale: reduceMotion() ? 1 : motion.pressScale }} disabledStyle={{ opacity: 0.5 }} class="focus-visible:ring-2 focus-visible:ring-primary">
     <View accessibilityElementsHidden style={{ width: props.small ? 24 : 34, height: props.small ? 24 : 34 }}>
@@ -148,32 +156,34 @@ export function LyricsView() {
 export function QueueView() {
   const editing = signal(false);
   const ref = signal<ListRef | undefined>();
-  effect(() => { const index = p.currentIndex(); if (index >= 0 && !editing()) ref()?.scrollToIndex({ index, viewPosition: 0.15, animated: !reduceMotion() }); });
+  const upcoming = computed(() => p.queue().slice(p.currentIndex() + 1));
+  const minutes = computed(() => Math.ceil(upcoming().reduce((sum, track) => sum + track.duration, 0) / 60));
+  const revealCurrent = () => ref()?.scrollToIndex({ index: p.currentIndex(), viewPosition: 0.15, animated: !reduceMotion() });
+  effect(() => { const index = p.currentIndex(); if (index >= 0 && !editing()) revealCurrent(); });
   return <View testID="queue-panel" style={{ flex: 1, gap: 12, minWidth: 0, minHeight: 0 }}>
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 0, minWidth: 0 }}>
-      <View style={{ flex: 1, gap: 4, minWidth: 0 }}><Label size={shortLandscape() ? 20 : 24} weight="600">播放队列</Label><Label size={12} color={c().sub} lines={1}>{p.queue().length} 首 · {p.queueTitle() || "当前播放"}</Label></View>
-      <CommandMenu label="队列操作" items={[
+      <View style={{ flex: 1, gap: 4, minWidth: 0 }}><Label size={shortLandscape() ? 20 : 24} weight="600">播放队列</Label><Label testID="queue-summary" size={12} color={c().sub} lines={1}>{p.shuffle() ? `随机播放 · ${p.queue().length} 首` : `第 ${p.currentIndex() + 1} / ${p.queue().length} 首 · 后续 ${upcoming().length} 首${minutes() ? `，约 ${minutes()} 分钟` : ""}`}</Label></View>
+      <If when={editing()} else={<Tool testID="queue-current" icon="headphones" label="回到当前歌曲" onPress={revealCurrent} />}><Tool testID="queue-edit-done" icon="check" label="完成排序" active onPress={() => editing.set(false)} /></If>
+      <CommandMenu testID="queue-actions" label="队列操作" items={[
         { label: editing() ? "完成排序" : "调整顺序", icon: "sort", disabled: p.remoteControlled(), run: () => editing.update(value => !value) },
         { label: "保存为歌单", icon: "plus", run: () => nav.addToPlaylist(p.queue()) },
         { label: "下载队列", icon: "download", run: () => { for (const track of p.queue()) void s.downloadTrack(track).catch(s.showError); say("已加入下载"); } },
         { label: "播放设置", icon: "settings", run: () => { nav.fullPlayer.set(false); nav.settingsSection.set("player"); nav.navigate("settings"); } },
-        { label: "清空队列", icon: "trash", disabled: p.remoteControlled(), run: p.clearQueue },
+        { testID: "queue-clear-upcoming", label: p.shuffle() ? "移除当前之后的歌曲" : "清空待播", icon: "queue", disabled: p.remoteControlled() || !upcoming().length, separator: true, run: () => { p.clearUpcoming(); say("已移除当前之后的歌曲，保留当前歌曲"); } },
+        { label: "清空队列", icon: "trash", danger: true, disabled: p.remoteControlled(), run: p.clearQueue },
       ]} />
     </View>
-    <List ref={ref.set} each={p.queue()} style={{ flex: 1, minHeight: 0, minWidth: 0 }} estimatedItemSize={76} keyExtractor={(track, index) => `${track.id}-${index}`} contentStyle={{ paddingBottom: 16 }}>
-      {(track, index) => <View style={{ gap: 1, minWidth: 0 }}>
-        <If when={index() === p.currentIndex()}><Label color={c().accent} size={11} style={{ marginTop: 12, marginBottom: 5 }}>正在播放</Label></If>
-        <If when={index() === p.currentIndex() + 1}><Label color={c().faint} size={11} style={{ marginTop: 12, marginBottom: 5 }}>接下来</Label></If>
-        <TrackRow compact track={track()} onPlay={() => { if (!p.remoteControlled()) void action(() => p.playAt(index())); }} trailing={
-          <If when={!p.remoteControlled()}>
-            <If when={editing()} else={<Tool icon="close" label="从队列移除" onPress={() => p.removeFromQueue(index())} />}>
-              <CommandMenu label="调整这首歌" icon="sort" items={[
-                { label: "上移", icon: "up", disabled: index() === 0, run: () => p.moveQueue(index(), index() - 1) },
-                { label: "下移", icon: "down", disabled: index() === p.queue().length - 1, run: () => p.moveQueue(index(), index() + 1) },
-                { label: "从队列移除", icon: "close", run: () => p.removeFromQueue(index()) },
+    <List testID="queue-list" ref={ref.set} each={p.queue()} style={{ flex: 1, minHeight: 0, minWidth: 0 }} estimatedItemSize={76} keyExtractor={(track, index) => `${track.id}-${index}`} contentStyle={{ paddingBottom: 16 }}>
+      {(track, index) => <View testID={`queue-row-${index()}`} style={{ gap: 1, minWidth: 0 }}>
+        <If when={index() === p.currentIndex()}><Label testID="queue-current-status" color={c().accent} size={11} style={{ marginTop: 12, marginBottom: 5 }}>{playbackLabel()}</Label></If>
+        <If when={!p.shuffle() && index() === p.currentIndex() + 1}><Label color={c().faint} size={11} style={{ marginTop: 12, marginBottom: 5 }}>{nextLabel()}</Label></If>
+        <TrackRow compact menu={false} active={index() === p.currentIndex()} track={track()} playLabel={`${index() === p.currentIndex() && (p.playing() || waitingToPlay()) ? "暂停" : "播放"} ${track().title}`} onPlay={() => { if (!p.remoteControlled()) void action(() => index() === p.currentIndex() ? p.togglePlay() : p.playAt(index())); }} trailing={
+              <CommandMenu testID={`queue-song-menu-${index()}`} label={editing() ? "调整这首歌" : `队列操作 ${track().title}`} icon={editing() ? "sort" : "more"} items={[
+                { label: "上移", icon: "up", disabled: p.remoteControlled() || index() === 0, run: () => p.moveQueue(index(), index() - 1) },
+                { label: "下移", icon: "down", disabled: p.remoteControlled() || index() === p.queue().length - 1, run: () => p.moveQueue(index(), index() + 1) },
+                { label: "从队列移除", icon: "close", disabled: p.remoteControlled(), run: () => p.removeFromQueue(index()) },
+                ...(!editing() ? songCommands(track()).map((item, at) => at === 0 ? { ...item, separator: true } : item) : []),
               ]} />
-            </If>
-          </If>
         } />
       </View>}
     </List>
@@ -182,7 +192,7 @@ export function QueueView() {
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, minWidth: 0 }}>
         <Icon name="radio" size={20} color={c().accent} />
         <Label size={12} lines={2} style={{ flex: 1, minWidth: 0 }}>{p.remoteControlled() ? "与主持人的队列同步" : p.radioLoading() ? "正在获取电台推荐…" : s.settings().autoRadio ? "队列结束后自动续播" : "自动续播已关闭"}</Label>
-        <If when={!p.remoteControlled()}><Tool icon="settings" label="播放设置" onPress={() => { nav.fullPlayer.set(false); nav.settingsSection.set("player"); nav.navigate("settings"); }} /></If>
+        <If when={!p.remoteControlled()}><Tool testID="queue-autoplay" icon={s.settings().autoRadio ? "check" : "plus"} active={s.settings().autoRadio} label={s.settings().autoRadio ? "关闭自动续播" : "开启自动续播"} onPress={() => s.updateSettings({ autoRadio: !s.settings().autoRadio })} /></If>
       </View>
       <If when={p.radioError()}><Label size={12} color={c().danger}>{p.radioError()}</Label><Pill label="重试电台" onPress={() => void action(p.extendRadio)} /></If>
     </View></If>
@@ -273,13 +283,47 @@ function CompactTransport() {
   </View>;
 }
 
+function PlaybackDetails() {
+  const expanded = signal(false);
+  const quality = () => p.streamInfo()?.mimeType?.includes("opus") || p.streamInfo()?.mimeType?.includes("webm") ? "Opus" : p.streamInfo()?.mimeType?.includes("mp4") ? "AAC" : p.streamInfo()?.mimeType?.split(";")[0] || "音频";
+  const latency = (milliseconds: number) => milliseconds < 1000 ? `${Math.round(milliseconds)} ms` : `${(milliseconds / 1000).toFixed(2)} 秒`;
+  return <View style={{ gap: 8, minWidth: 0 }}>
+    <Press testID="playback-details-toggle" label={expanded() ? "收起播放详情" : "播放详情"} onPress={() => expanded.update(value => !value)} style={{ minHeight: touch() ? 48 : 36, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 }}>
+      <Label size={11} color={c().faint} lines={1}>{p.streamInfo() ? `${quality()}${p.streamInfo()?.bitrate ? ` · ${Math.round(p.streamInfo()!.bitrate! / 1000)} kbps` : ""}${p.rate() !== 1 ? ` · ${p.rate()}×` : ""}` : playbackLabel()}</Label>
+      <Icon name={expanded() ? "up" : "info"} size={14} color={c().faint} />
+    </Press>
+    <If when={expanded()}><View testID="playback-details" style={{ gap: 10, padding: 14, borderRadius: 16, backgroundColor: c().card }}>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 12 }}><Label size={12} color={c().sub}>播放状态</Label><Label size={12} color={c().accent}>{playbackLabel()}</Label></View>
+      <If when={p.bufferedPosition() > 0}><View style={{ flexDirection: "row", justifyContent: "space-between", gap: 12 }}><Label size={12} color={c().sub}>前方已缓冲</Label><Label testID="playback-buffered" size={12}>{Math.max(0, Math.floor(p.bufferedPosition() - p.position()))} 秒</Label></View></If>
+      <If when={p.playbackTiming()}>{timing => <>
+        <View style={{ height: 1, backgroundColor: c().line }} />
+        <Label size={12} weight="600">本次起播{timing().prepared ? " · 已提前准备音源" : ""}</Label>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+          <View style={{ flex: 1, minWidth: 70, gap: 5 }}><Label size={11} color={c().sub}>连接音源</Label><Label size={14}>{latency(timing().resolveMs)}</Label></View>
+          <View style={{ flex: 1, minWidth: 70, gap: 5 }}><Label size={11} color={c().sub}>播放准备</Label><Label size={14}>{latency(timing().readyMs)}</Label></View>
+          <View style={{ flex: 1, minWidth: 70, gap: 5 }}><Label size={11} color={c().sub}>合计</Label><Label testID="playback-start-time" size={14} color={c().accent}>{latency(timing().totalMs)}</Label></View>
+        </View>
+        <Label size={10} color={c().faint}>从播放请求到引擎报告开始播放</Label>
+      </>}</If>
+    </View></If>
+  </View>;
+}
+
+function NextTrack() {
+  return <If when={p.repeat() !== "one" ? p.upNext() : undefined}>{track => <Press testID="player-up-next" label="查看接下来的歌曲" onPress={() => nav.playerTab.set("queue")} style={{ flexDirection: "row", alignItems: "center", minWidth: 0, gap: 10, padding: 12, borderRadius: 18, backgroundColor: c().card }}>
+    <Art track={track()} size={38} radius={8} />
+    <View style={{ flex: 1, minWidth: 0, gap: 4 }}><Label size={10} color={c().accent}>下一首 · {nextLabel()}</Label><Label size={12} lines={1}>{track().title}</Label></View>
+    <Icon name="queue" size={20} color={c().sub} />
+  </Press>}</If>;
+}
+
 function PlayerCover(props: { size: number; width: number; onHeight: (height: number) => void }) {
-  const quality = () => p.streamInfo()?.mimeType?.includes("opus") || p.streamInfo()?.mimeType?.includes("webm") ? "Opus" : p.streamInfo()?.mimeType?.includes("mp4") ? "AAC" : p.streamInfo()?.mimeType?.split(";")[0];
   return <Scroll testID="player-cover-scroll" style={{ flex: 1, minWidth: 0, minHeight: 0 }} scrollbar={false} contentStyle={{ flexDirection: shortLandscape() ? "row" : "column", alignItems: shortLandscape() ? "center" : undefined, gap: shortLandscape() ? 24 : 22, paddingTop: 6, paddingBottom: 12 }}>
     <View style={{ width: shortLandscape() ? props.width : "100%", alignItems: "center", flexShrink: 0 }}><CoverArt size={props.size} /></View>
     <View style={{ flex: shortLandscape() ? 1 : undefined, minWidth: 0, width: shortLandscape() ? undefined : "100%", maxWidth: 600, alignSelf: "center", gap: 8 }}>
       <Transport onHeight={props.onHeight} />
-      <If when={p.streamInfo()?.bitrate}><Label size={11} color={c().faint} style={{ textAlign: "center" }}>{quality()} · {Math.round(p.streamInfo()!.bitrate! / 1000)} kbps{p.rate() !== 1 ? ` · ${p.rate()}×` : ""}</Label></If>
+      <PlaybackDetails />
+      <If when={!shortLandscape()}><NextTrack /></If>
     </View>
   </Scroll>;
 }
@@ -290,7 +334,7 @@ function PlayerContent() {
   const controlsHeight = signal(290);
   const padding = () => splitPlayer() ? 36 : 16;
   const coverWidth = () => splitPlayer() ? (bodyWidth() - 32) / 2.1 : shortLandscape() ? bodyWidth() * 0.36 : bodyWidth();
-  const coverSize = () => Math.min(420, coverWidth(), Math.max(136, bodyHeight() - (shortLandscape() ? 24 : controlsHeight() + 44)));
+  const coverSize = () => Math.min(420, coverWidth(), Math.max(shortLandscape() ? 136 : 112, bodyHeight() - (shortLandscape() ? 24 : controlsHeight() + (touch() ? 100 : 88) + (p.repeat() !== "one" && p.upNext() ? 72 : 0))));
   return <View style={{ flex: 1, minWidth: 0, minHeight: 0, paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)", paddingLeft: "env(safe-area-inset-left)", paddingRight: "env(safe-area-inset-right)" }}>
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: padding(), height: shortLandscape() ? 52 : 60, flexShrink: 0, minWidth: 0 }}>
       <Tool testID="close-player" icon="down" label="收起播放器" onPress={() => nav.fullPlayer.set(false)} />
@@ -314,6 +358,9 @@ function PlayerContent() {
 
 export function FullPlayer() {
   return <Dialog testID="full-player" open={nav.fullPlayer()} presentation="fullScreen" animation={reduceMotion() ? "none" : "slide"} onOpenChange={({ open }) => nav.fullPlayer.set(open)} statusBar={{ foreground: s.settings().theme === "light" || s.settings().theme === "system" && colorScheme() === "light" ? "dark" : "light" }} style={{ flex: 1, minWidth: 0, minHeight: 0, backgroundColor: c().bg }}>
-    <PlayerContent />
+    <If when={p.currentTrack()} else={<View style={{ flex: 1, minWidth: 0, paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)", paddingHorizontal: 16 }}>
+      <View style={{ alignItems: "flex-start" }}><Tool testID="close-player" icon="down" label="收起播放器" onPress={() => nav.fullPlayer.set(false)} /></View>
+      <Scroll style={{ flex: 1, minHeight: 0 }}><Empty icon="queue" title="队列已清空" description="挑选一首音乐，开始下一段聆听。"><Pill primary label="搜索音乐" icon="search" onPress={() => { nav.fullPlayer.set(false); nav.navigate("search"); }} /></Empty></Scroll>
+    </View>}><PlayerContent /></If>
   </Dialog>;
 }

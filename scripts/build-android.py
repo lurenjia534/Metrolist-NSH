@@ -22,9 +22,8 @@ from xml.sax.saxutils import escape
 PROJECT = Path(__file__).resolve().parent.parent
 BUILD_TOOLS = "35.0.1"
 ANDROID_API = "35"
-RUNTIME_COMMIT = "c5214aa"
-ANDROID_ARCHIVE_SHA256 = "0ad3797eaac597e9c4eb3d403f811f5e6abe6ebe22ffd429d56d404e226b64b1"
-SOURCE_ARCHIVE_SHA256 = "39b9ff4fe3c317cfa6c9a49094e223b54c734be58e3d2bbdc6b65b84c14d5d4b"
+NSH_TOOLCHAIN = json.loads((PROJECT / "scripts" / "nsh-toolchain.json").read_text())
+RUNTIME_COMMIT = NSH_TOOLCHAIN["commit"]
 GOOGLE = "https://dl.google.com/android/repository/"
 
 
@@ -120,10 +119,15 @@ def sdk_tools(toolchain: Path, sdk: Path) -> Path:
 
 
 def runtime_sources(toolchain: Path, nsh: Path) -> tuple[Path, Path]:
+    version = subprocess.check_output([str(nsh), "--version"], text=True).strip()
+    if f"({RUNTIME_COMMIT} " not in version:
+        raise RuntimeError(f"This Android host needs NSH {RUNTIME_COMMIT}; found {version}. Run scripts/install-nsh.py --component android.")
     dist = nsh.resolve().parent.parent
     runtime = dist / "runtime" / "android" / "release"
     if not (runtime / "classes.dex").exists():
-        archive = download("https://github.com/longbridge/nsh/releases/download/nightly/nsh-android.tar.gz", toolchain / "downloads" / "nsh-android-c5214aa.tar.gz", ANDROID_ARCHIVE_SHA256)
+        item = NSH_TOOLCHAIN["archives"]["android"]
+        base = os.environ.get("NSH_DOWNLOAD_BASE", NSH_TOOLCHAIN["downloadBase"]).rstrip("/")
+        archive = download(f"{base}/{item['file']}", toolchain / "downloads" / f"nsh-android-{RUNTIME_COMMIT}.tar.gz", item["sha256"])
         with tarfile.open(archive) as package:
             for item in package.getmembers():
                 if item.isfile():
@@ -135,7 +139,7 @@ def runtime_sources(toolchain: Path, nsh: Path) -> tuple[Path, Path]:
         raise RuntimeError(f"This host build uses NSH {RUNTIME_COMMIT}; found {metadata['commit']}. Keep the matching NSH distribution for this release.")
     source = toolchain / "nsh-android-source"
     if not (source / "com" / "longbridge" / "nsh" / "NshView.java").exists():
-        archive = download(f"https://codeload.github.com/longbridge/nsh/tar.gz/{RUNTIME_COMMIT}", toolchain / "downloads" / f"nsh-source-{RUNTIME_COMMIT}.tar.gz", SOURCE_ARCHIVE_SHA256)
+        archive = download(NSH_TOOLCHAIN["source"]["url"], toolchain / "downloads" / f"nsh-source-{RUNTIME_COMMIT}.tar.gz", NSH_TOOLCHAIN["source"]["sha256"])
         with tarfile.open(archive) as package:
             for item in package.getmembers():
                 if item.isfile() and "/crates/nsh-platform-android/java/" in item.name:
