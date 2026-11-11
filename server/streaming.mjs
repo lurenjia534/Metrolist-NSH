@@ -2,6 +2,7 @@
 // The visitor-backed VISIONOS_0_1 direct-audio path from Metrolist / InnertubeX.
 import { ApiError, artwork, innertube, WEB_USER_AGENT } from './catalog.mjs';
 import { accountIdentity } from './auth.mjs';
+import { youtubeFetch } from './youtube-transport.mjs';
 
 const YOUTUBE_ORIGIN = 'https://www.youtube.com';
 const MUSIC_ORIGIN = 'https://music.youtube.com';
@@ -20,9 +21,9 @@ export function audioRequestHeaders(client) {
 
 async function watchVisitor(videoId, options = {}) {
   if (visitorContext) return visitorContext;
-  const response = await (options.fetch || fetch)(`${YOUTUBE_ORIGIN}/watch?v=${encodeURIComponent(videoId)}`, {
+  const response = await youtubeFetch(`${YOUTUBE_ORIGIN}/watch?v=${encodeURIComponent(videoId)}`, {
     headers: { 'User-Agent': VISION_USER_AGENT, 'Accept-Language': 'en-US,en;q=0.9' },
-  });
+  }, options.fetch || fetch);
   if (!response.ok) throw new ApiError(`YouTube 播放配置请求失败（HTTP ${response.status}）`);
   const html = await response.text();
   const visitorData = html.match(/"VISITOR_DATA"\s*:\s*"([^"]+)"/)?.[1] ||
@@ -64,7 +65,7 @@ async function requestAudioPlayer(videoId, options = {}) {
     // can use its proven direct format; Google credentials never go to it.
   }
   const { visitorData } = await watchVisitor(videoId, options);
-  const response = await (options.fetch || fetch)(`${MUSIC_ORIGIN}/youtubei/v1/player?prettyPrint=false`, {
+  const response = await youtubeFetch(`${MUSIC_ORIGIN}/youtubei/v1/player?prettyPrint=false`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json', 'User-Agent': VISION_USER_AGENT,
@@ -81,7 +82,7 @@ async function requestAudioPlayer(videoId, options = {}) {
       },
       videoId, contentCheckOk: true, racyCheckOk: true,
     }),
-  });
+  }, options.fetch || fetch);
   if (!response.ok) throw new ApiError(`YouTube 音频解析失败（HTTP ${response.status}）`);
   const player = await response.json();
   if (player.playabilityStatus?.status !== 'OK') {
