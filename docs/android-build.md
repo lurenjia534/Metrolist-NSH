@@ -83,7 +83,7 @@ python scripts/build-android.py \
 
 Linux 缺少 SDK 时，脚本从 Google 官方仓库获取 `build-tools;35.0.1` 与 `platforms;android-35`；macOS / Windows 可先用 Android SDK Manager 安装。NSH Java 源码与原生库都固定为 `c5214aa`。
 
-Media3、OkHttp、Kotlin 和其依赖固定在 `android/media3-dependencies.json`，包含官方 Google Maven / Maven Central 地址和摘要。NSH CLI、Android/Web 组件与 Java 源码固定在 `scripts/nsh-toolchain.json`。发布构建读取这两份清单，不临时解析“最新版本”。NSH 上游 nightly 是可更新地址，摘要不匹配时应恢复匹配归档，或通过 `NSH_DOWNLOAD_BASE` 使用保留的镜像；不能把不同版本的 Java 与 JNI 库混在一起。
+Media3、OkHttp、Kotlin 和其依赖固定在 `android/media3-dependencies.json`，包含官方 Google Maven / Maven Central 地址和摘要。NSH CLI、Android/Web 组件与 Java 源码固定在 `scripts/nsh-toolchain.json`。发布构建读取这两份清单，不临时解析“最新版本”。安装器和 Android 构建优先使用本仓库的 `nsh-runtime-c5214aa` 固定工具链 Release；只有镜像资产返回 HTTP 404 时才从上游引导，随后仍校验固定摘要。`NSH_DOWNLOAD_BASE` 可指定其他版本镜像；不同版本的 Java 与 JNI 库不能混用。
 
 ### 资源与字节码
 

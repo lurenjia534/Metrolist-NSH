@@ -167,7 +167,7 @@ export function QueueView() {
       <CommandMenu testID="queue-actions" label="队列操作" items={[
         { label: editing() ? "完成排序" : "调整顺序", icon: "sort", disabled: p.remoteControlled(), run: () => editing.update(value => !value) },
         { label: "保存为歌单", icon: "plus", run: () => nav.addToPlaylist(p.queue()) },
-        { label: "下载队列", icon: "download", run: () => { for (const track of p.queue()) void s.downloadTrack(track).catch(s.showError); say("已加入下载"); } },
+        { label: "下载队列", icon: "download", run: () => { if (!s.downloadAvailable()) { say(s.downloadSetupMessage); return; } for (const track of p.queue()) void s.downloadTrack(track).catch(s.showError); say("已加入下载"); } },
         { label: "播放设置", icon: "settings", run: () => { nav.fullPlayer.set(false); nav.settingsSection.set("player"); nav.navigate("settings"); } },
         { testID: "queue-clear-upcoming", label: p.shuffle() ? "移除当前之后的歌曲" : "清空待播", icon: "queue", disabled: p.remoteControlled() || !upcoming().length, separator: true, run: () => { p.clearUpcoming(); say("已移除当前之后的歌曲，保留当前歌曲"); } },
         { label: "清空队列", icon: "trash", danger: true, disabled: p.remoteControlled(), run: p.clearQueue },

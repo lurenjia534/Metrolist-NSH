@@ -77,9 +77,47 @@ jobs:
       - run: npm test
       - run: node --test server/*.test.mjs
 
+  toolchain:
+    name: Preserve the fixed NSH build inputs
+    needs: [config, verify]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Resolve the absolute toolchain cache path
+        run: python -c "import os; from pathlib import Path; Path(os.environ['GITHUB_ENV']).open('a').write('METROLIST_TOOLCHAIN=' + (Path.cwd().parent / 'toolchain').resolve().as_posix() + '\n')"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.METROLIST_TOOLCHAIN }}/downloads
+          key: nsh-mirror-${{ hashFiles('scripts/nsh-toolchain.json') }}
+      - name: Verify and stage every locked runtime and its source
+        run: python scripts/mirror-nsh.py
+      - name: Publish the fixed dependency prerelease before app builds
+        if: needs.config.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python scripts/mirror-nsh.py --publish-only
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nsh-runtime-c5214aa-manifest
+          path: |
+            dist/toolchain/NSH-MIRROR-MANIFEST.json
+            dist/toolchain/SHA256SUMS.txt
+            dist/toolchain/LICENSE-APACHE.txt
+            dist/toolchain/NSH-PINNED-RUNTIME.md
+            dist/toolchain/nsh-toolchain.json
+          if-no-files-found: error
+          overwrite: true
+
   android:
     name: Android preview upgrades
-    needs: [config, verify]
+    needs: [config, verify, toolchain]
     if: needs.config.outputs.android_signing == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -120,7 +158,7 @@ jobs:
 
   native:
     name: Desktop ${{ matrix.target }} ${{ matrix.arch }}
-    needs: verify
+    needs: [verify, toolchain]
     strategy:
       fail-fast: false
       matrix:
@@ -167,7 +205,7 @@ jobs:
 
   ios:
     name: iOS ARM64 simulator and device
-    needs: [config, verify]
+    needs: [config, verify, toolchain]
     runs-on: macos-15
     timeout-minutes: 35
     steps:
@@ -222,7 +260,7 @@ jobs:
 
   web:
     name: Web site distribution
-    needs: verify
+    needs: [verify, toolchain]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -251,8 +289,8 @@ jobs:
 
   release:
     name: Publish versioned assets and checksums
-    needs: [config, verify, android, native, ios, web]
-    if: always() && needs.config.outputs.publish == 'true' && needs.verify.result == 'success'
+    needs: [config, verify, toolchain, android, native, ios, web]
+    if: always() && needs.config.outputs.publish == 'true' && needs.verify.result == 'success' && needs.toolchain.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
       contents: write

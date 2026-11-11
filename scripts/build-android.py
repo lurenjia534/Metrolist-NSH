@@ -18,6 +18,7 @@ import tarfile
 import zipfile
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
+from nsh_archives import fetch_archive
 
 PROJECT = Path(__file__).resolve().parent.parent
 BUILD_TOOLS = "35.0.1"
@@ -125,9 +126,7 @@ def runtime_sources(toolchain: Path, nsh: Path) -> tuple[Path, Path]:
     dist = nsh.resolve().parent.parent
     runtime = dist / "runtime" / "android" / "release"
     if not (runtime / "classes.dex").exists():
-        item = NSH_TOOLCHAIN["archives"]["android"]
-        base = os.environ.get("NSH_DOWNLOAD_BASE", NSH_TOOLCHAIN["downloadBase"]).rstrip("/")
-        archive = download(f"{base}/{item['file']}", toolchain / "downloads" / f"nsh-android-{RUNTIME_COMMIT}.tar.gz", item["sha256"])
+        archive = fetch_archive('android', toolchain)
         with tarfile.open(archive) as package:
             for item in package.getmembers():
                 if item.isfile():
@@ -139,7 +138,7 @@ def runtime_sources(toolchain: Path, nsh: Path) -> tuple[Path, Path]:
         raise RuntimeError(f"This host build uses NSH {RUNTIME_COMMIT}; found {metadata['commit']}. Keep the matching NSH distribution for this release.")
     source = toolchain / "nsh-android-source"
     if not (source / "com" / "longbridge" / "nsh" / "NshView.java").exists():
-        archive = download(NSH_TOOLCHAIN["source"]["url"], toolchain / "downloads" / f"nsh-source-{RUNTIME_COMMIT}.tar.gz", NSH_TOOLCHAIN["source"]["sha256"])
+        archive = fetch_archive('source', toolchain)
         with tarfile.open(archive) as package:
             for item in package.getmembers():
                 if item.isfile() and "/crates/nsh-platform-android/java/" in item.name:

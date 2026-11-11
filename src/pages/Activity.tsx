@@ -12,12 +12,19 @@ export function DownloadsPage() {
   const jobs = computed(() => s.downloadJobs().filter(job => filter() === "all" || filter() === "active" && ["queued", "resolving", "downloading"].includes(job.status) || filter() === job.status));
   const totalBytes = computed(() => s.downloadJobs().filter(job => job.status === "completed").reduce((sum, job) => sum + job.bytes, 0));
   return <View testID="page-downloads" style={{ gap: 24 }}>
+    <If when={!s.downloadAvailable()}><View testID="download-connection-needed" style={{ padding: narrow() ? 20 : 24, borderRadius: 24, backgroundColor: c().selected, gap: 16 }}>
+      <Icon name="link" size={28} color={c().accent} /><Label size={22} weight="600">连接下载服务</Label>
+      <Label size={14} color={c().sub} style={{ lineHeight: 23 }}>{s.downloadSetupMessage}</Label>
+      <Label size={12} color={c().sub} style={{ lineHeight: 20 }}>下载任务和文件由所连接的服务管理。</Label>
+      <Pill testID="download-open-settings" label="前往连接设置" icon="settings" primary onPress={() => { nav.settingsSection.set("network"); nav.navigate("settings"); }} />
+    </View></If>
+    <If when={s.downloadAvailable() || s.downloadJobs().length > 0}>
     <View style={{ backgroundColor: c().card, padding: narrow() ? 20 : 24, borderRadius: 24, gap: 16, flexDirection: narrow() ? "column" : "row", alignItems: narrow() ? "stretch" : "center" }}>
-      <View style={{ flexDirection: "row", flex: narrow() ? undefined : 1, minWidth: 0, gap: 16, alignItems: "center" }}><Icon name="storage" size={32} color={c().accent} /><View style={{ gap: 5, flex: 1, minWidth: 0 }}><Label size={26} weight="600">{bytes(totalBytes())}</Label><Label size={13} color={c().sub}>{s.downloads().length} 首离线歌曲 · {s.downloading().length} 首正在下载</Label></View></View>
-      <Pill label="播放离线音乐" icon="play" disabled={p.remoteControlled() || !s.downloads().length} onPress={() => action(() => p.playList(s.downloads(), 0, "已下载"))} />
+      <View style={{ flexDirection: "row", flex: narrow() ? undefined : 1, minWidth: 0, gap: 16, alignItems: "center" }}><Icon name="storage" size={32} color={c().accent} /><View style={{ gap: 5, flex: 1, minWidth: 0 }}><Label size={26} weight="600">{bytes(totalBytes())}</Label><Label size={13} color={c().sub}>{s.downloads().length} 首已下载歌曲 · {s.downloading().length} 首正在下载</Label></View></View>
+      <Pill label="播放已下载歌曲" icon="play" disabled={p.remoteControlled() || !s.downloads().length} onPress={() => action(() => p.playList(s.downloads(), 0, "已下载"))} />
     </View>
     <Scroll horizontal scrollbar={false} style={{ height: 52, flexShrink: 0 }} contentStyle={{ flexDirection: "row", gap: 8, paddingVertical: 2 }}><Each of={[{ id: "all", label: "全部" }, { id: "active", label: "下载中" }, { id: "completed", label: "已完成" }, { id: "failed", label: "失败" }, { id: "cancelled", label: "已取消" }]}>{item => <Chip label={item().label} selected={filter() === item().id} onPress={() => filter.set(item().id)} />}</Each></Scroll>
-    <If when={jobs().length > 0} else={<Empty icon="download" title="没有下载任务" description="从歌曲、专辑或歌单菜单选择下载，完成后可以离线播放。"><Pill label="打开音乐库" onPress={() => nav.navigate("library", true)} /></Empty>}><View style={{ gap: 12 }}><Each of={jobs()}>{job => <View testID={`download-${job().id}`} style={{ padding: 16, gap: 14, borderRadius: 18, backgroundColor: c().card }}>
+    <If when={jobs().length > 0} else={<Empty icon="download" title="没有下载任务" description="从歌曲、专辑或歌单菜单选择下载，完成后可以播放或另存音频。"><Pill label="打开音乐库" onPress={() => nav.navigate("library", true)} /></Empty>}><View style={{ gap: 12 }}><Each of={jobs()}>{job => <View testID={`download-${job().id}`} style={{ padding: 16, gap: 14, borderRadius: 18, backgroundColor: c().card }}>
       <View style={{ flexDirection: "row", gap: 14, alignItems: "center" }}><Art track={job().track} size={56} /><View style={{ flex: 1, minWidth: 0, gap: 6 }}><Label weight="600" lines={2}>{job().track.title}</Label><Label color={c().sub} size={12} lines={1}>{job().track.artist}</Label></View>
       <CommandMenu label="下载操作" items={[...(job().status === "completed" ? [{ label: "保存音频到设备", icon: "download", run: () => void action(() => s.exportDownloaded(job().id)) }] : []), { label: "移除下载", icon: "trash", danger: true, run: () => void action(() => s.removeDownload(job().id)) }]} /></View>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
@@ -27,6 +34,7 @@ export function DownloadsPage() {
       <If when={["resolving", "queued", "downloading"].includes(job().status)}><View style={{ height: 5, borderRadius: 5, backgroundColor: c().raised, overflow: "hidden" }}><View style={{ height: "100%", width: `${Math.round(job().progress * 100)}%` as `${number}%`, backgroundColor: c().accent, borderRadius: 5 }} /></View></If>
       <If when={job().error}><Label size={12} color={c().danger} style={{ lineHeight: 19 }}>{job().error}</Label></If>
     </View>}</Each></View></If>
+    </If>
   </View>;
 }
 
