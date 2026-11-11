@@ -14,7 +14,6 @@ async function acquire() {
     return;
   }
   await new Promise(resolve => waiters.push(resolve));
-  active++;
 }
 
 function release() {
