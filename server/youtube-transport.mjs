@@ -33,7 +33,8 @@ function retryDelay(response) {
 }
 
 export async function youtubeFetch(input, init = {}, fetchImpl = fetch) {
-  for (let attempt = 0; attempt < 2; attempt++) {
+  let retries = 0;
+  while (true) {
     await acquire();
     let response;
     let held = true;
@@ -52,7 +53,8 @@ export async function youtubeFetch(input, init = {}, fetchImpl = fetch) {
     } finally {
       if (held) release();
     }
-    if (response.status !== 429 || attempt === 1) return response;
+    if (response.status !== 429 || retries >= 1) return response;
+    retries++;
     await sleep(Math.max(0, cooldownUntil - Date.now()));
   }
 }
