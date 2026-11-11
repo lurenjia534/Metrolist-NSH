@@ -64,11 +64,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Resolve the absolute toolchain cache path
+        run: python -c "import os; from pathlib import Path; Path(os.environ['GITHUB_ENV']).open('a').write('METROLIST_TOOLCHAIN=' + (Path.cwd().parent / 'toolchain').resolve().as_posix() + '\n')"
       - uses: actions/cache@v4
         with:
           path: |
-            ../toolchain/downloads
-            ../toolchain/nsh-cache
+            ${{ env.METROLIST_TOOLCHAIN }}/downloads
+            ${{ env.METROLIST_TOOLCHAIN }}/nsh-cache
           key: nsh-verify-${{ runner.os }}-${{ hashFiles('scripts/nsh-toolchain.json') }}
       - run: python scripts/install-nsh.py
       - run: npm run check
@@ -89,6 +91,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Resolve the absolute toolchain cache path
+        run: python -c "import os; from pathlib import Path; Path(os.environ['GITHUB_ENV']).open('a').write('METROLIST_TOOLCHAIN=' + (Path.cwd().parent / 'toolchain').resolve().as_posix() + '\n')"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -96,10 +100,10 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: |
-            ../toolchain/downloads
-            ../toolchain/android-sdk
-            ../toolchain/media3
-            ../toolchain/nsh-android-source
+            ${{ env.METROLIST_TOOLCHAIN }}/downloads
+            ${{ env.METROLIST_TOOLCHAIN }}/android-sdk
+            ${{ env.METROLIST_TOOLCHAIN }}/media3
+            ${{ env.METROLIST_TOOLCHAIN }}/nsh-android-source
           key: android-${{ runner.os }}-${{ hashFiles('scripts/nsh-toolchain.json', 'android/media3-dependencies.json', 'scripts/build-android.py') }}
       - run: python scripts/install-nsh.py --component android
       - name: Build and verify both APKs with the existing preview identity
@@ -143,16 +147,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Linux runtime libraries
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libgtk-4-1 libwebkitgtk-6.0-4 libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav
+      - name: Resolve the absolute toolchain cache path
+        run: python -c "import os; from pathlib import Path; Path(os.environ['GITHUB_ENV']).open('a').write('METROLIST_TOOLCHAIN=' + (Path.cwd().parent / 'toolchain').resolve().as_posix() + '\n')"
       - uses: actions/cache@v4
         with:
           path: |
-            ../toolchain/downloads
-            ../toolchain/node-downloads
+            ${{ env.METROLIST_TOOLCHAIN }}/downloads
+            ${{ env.METROLIST_TOOLCHAIN }}/node-downloads
           key: desktop-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('scripts/nsh-toolchain.json', 'scripts/node-toolchain.json') }}
       - run: python scripts/install-nsh.py
       - name: Build app, bundled Node and gateway; smoke-test the packaged gateway
@@ -177,15 +178,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Resolve the absolute toolchain cache path
+        run: python -c "import os; from pathlib import Path; Path(os.environ['GITHUB_ENV']).open('a').write('METROLIST_TOOLCHAIN=' + (Path.cwd().parent / 'toolchain').resolve().as_posix() + '\n')"
       - uses: actions/cache@v4
         with:
-          path: ../toolchain/downloads
+          path: ${{ env.METROLIST_TOOLCHAIN }}/downloads
           key: ios-arm64-${{ hashFiles('scripts/nsh-toolchain.json') }}
       - run: python scripts/install-nsh.py --component ios
       - name: Build simulator and explicitly unsigned device archives
         run: python scripts/build-ios.py
-      - name: Install and launch the actual simulator app
+      - name: Install, launch, check process liveness and capture the simulator UI
         run: python scripts/smoke-ios.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-simulator-smoke
+          path: dist/smoke/
+          if-no-files-found: warn
+          overwrite: true
       - name: Prepare optional Apple signing identity
         if: needs.config.outputs.ios_signing == 'true'
         env:
@@ -223,9 +233,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Resolve the absolute toolchain cache path
+        run: python -c "import os; from pathlib import Path; Path(os.environ['GITHUB_ENV']).open('a').write('METROLIST_TOOLCHAIN=' + (Path.cwd().parent / 'toolchain').resolve().as_posix() + '\n')"
       - uses: actions/cache@v4
         with:
-          path: ../toolchain/downloads
+          path: ${{ env.METROLIST_TOOLCHAIN }}/downloads
           key: nsh-web-${{ runner.os }}-${{ hashFiles('scripts/nsh-toolchain.json') }}
       - run: python scripts/install-nsh.py --component web
       - run: npm run build

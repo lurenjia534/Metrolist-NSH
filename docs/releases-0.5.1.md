@@ -25,7 +25,7 @@ iOS Simulator 包只适用于 ARM64 模拟器，不能安装到 iPhone。`unsign
 
 `.github/workflows/build.yml` 在 PR、main 更新和 `v*` 标签运行。PR 只构建并保留 Actions artifacts；合入 main 后自动发布当前版本的 GitHub Release。推送版本标签，或在 main 手动运行并启用 `publish_release`，也会执行发布。
 
-流水线先运行共享 NSH 类型检查、应用测试和 Node gateway 测试，再并行构建 Android、Linux x64、Windows x64、macOS ARM64、macOS Intel、iOS 与 Web。桌面包会运行包内 Node 和 gateway 的真实健康检查；Windows 也执行新 EXE 启动器的检查入口。iOS job 会把真实 `.app` 安装到可用 iPhone Simulator 并启动。
+流水线先运行共享 NSH 类型检查、应用测试和 Node gateway 测试，再并行构建 Android、Linux x64、Windows x64、macOS ARM64、macOS Intel、iOS 与 Web。桌面包会运行包内 Node 和 gateway 的真实健康检查；Windows 也执行新 EXE 启动器的检查入口。iOS job 会把真实 `.app` 安装到可用 iPhone Simulator 并启动，检查进程持续存活，再将模拟器截图与版本记录上传为独立的 `ios-simulator-smoke` artifact。
 
 Release 聚合实际生成的文件，提供同提交源码 ZIP、每份产物的构建报告、`release-manifest.json` 与 `SHA256SUMS.txt`。部分平台缺失或 CI 失败时，只发布已经存在的文件，并把该 Release 标为待补齐的预发布；补齐后可重跑同一提交的流水线更新产物。版本标签必须始终指向产物记录的提交；修改源码后须提高版本，发布脚本不会把另一提交的文件写进既有版本。
 
