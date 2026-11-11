@@ -35,6 +35,10 @@
     "android": {
       "file": "nsh-android.tar.gz",
       "sha256": "0ad3797eaac597e9c4eb3d403f811f5e6abe6ebe22ffd429d56d404e226b64b1"
+    },
+    "ios": {
+      "file": "nsh-ios-macos-arm64.tar.gz",
+      "sha256": "5346042d670f7b0e7ecf0223d3521930d8c0d070cf77475286b4a446f3fc2d82"
     }
   },
   "source": {

@@ -48,7 +48,7 @@ def install(target: str, toolchain: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--toolchain", type=Path, default=PROJECT.parent / "toolchain")
-    parser.add_argument("--component", action="append", choices=("web", "android"), default=[])
+    parser.add_argument("--component", action="append", choices=("web", "android", "ios"), default=[])
     args = parser.parse_args()
     toolchain = args.toolchain.resolve()
     system = {"Linux": "linux", "Darwin": "macos", "Windows": "windows"}[platform.system()]
@@ -56,6 +56,8 @@ def main() -> None:
     arch = {"arm64": "arm64", "aarch64": "arm64", "amd64": "x86_64", "x86_64": "x86_64"}[machine]
     install(f"{system}-{arch}", toolchain)
     for component in dict.fromkeys(args.component):
+        if component == "ios" and (system, arch) != ("macos", "arm64"):
+            raise RuntimeError("NSH c5214aa's iOS component requires an Apple Silicon Mac.")
         install(component, toolchain)
     cli = toolchain / "nsh" / "bin" / ("nsh.exe" if system == "windows" else "nsh")
     version = subprocess.check_output([str(cli), "--version"], text=True).strip()

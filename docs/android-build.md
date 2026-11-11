@@ -1,6 +1,8 @@
 # Android APK 构建与原生播放
 
-## 0.5.0 的 Android 播放链路
+当前发行版本为 **0.5.1**。可升级发行使用 `python3 scripts/release.py android`，沿用 `app.miku.metrolist.preview` 和原 0.5 preview 签名；CI 配置与两个 APK 的发布方式见本文末尾“0.5.1 的可升级发行与 CI”。
+
+## 0.5.1 的 Android 播放链路
 
 界面仍由 NSH 渲染。Android 继续使用 0.4 已引入的原生 **Media3 ExoPlayer 1.10.1**，使用 OkHttp 数据源和 1 GiB LRU 磁盘缓存；Web、桌面平台继续使用 NSH AudioPlayer。0.5 重点改进解析请求复用、下一首准备、429 行为与播放状态界面。
 
@@ -96,9 +98,9 @@ Media3、OkHttp、Kotlin 和其依赖固定在 `android/media3-dependencies.json
 
 ## 签名
 
-首次构建会在 `toolchain/signing/` 生成 RSA 3072 位密钥和随机密码文件，私钥不进入源码仓库。覆盖安装旧版本必须使用同一签名密钥。
+0.5.1 发行必须恢复 `toolchain/signing/` 中原 0.5 preview 的 keystore 和密码，并使用 `release.py android` 核验证书。底层 `build-android.py` 在开发场景可生成 RSA 3072 位新密钥；它不应替代原发行签名。私钥不进入源码仓库，覆盖升级必须使用同一签名。
 
-当前工作区恢复了 Git 源码，但没有旧 0.4.0 的私钥。使用新密钥构建的 0.5.0 **不能直接覆盖旧签名的 0.4.0**。因此本轮 APK 使用 `app.miku.metrolist.preview` 并排安装；可以在旧版导出音乐库，再在新版导入，旧版及其数据继续保留。0.4 交付的应用标识为 `app.miku.metrolist.next`。若有旧的私有签名备份，也可使用原应用 ID 和旧密钥另行重建。实际证书和 APK 摘要以本次构建检查结果为准。
+0.5 preview 的签名已私密保存，0.5.1 沿用同一应用标识和证书，可覆盖该 preview 系列。更早的 0.4 使用 `app.miku.metrolist.next` 与不同签名，属于独立安装系列；可通过音乐库导出/导入迁移。实际包名、证书与 APK 摘要以本次构建报告为准。
 
 签名备份应单独私有保存，不放入公开文档、APK 或源码压缩包。
 
@@ -134,3 +136,20 @@ Manifest 包含 Internet、网络 / Wi-Fi 状态、唤醒锁与媒体播放前�
 - [Media3 自定义播放器与数据源](https://developer.android.com/media/media3/exoplayer/customization)
 - [Media3 DefaultLoadControl](https://developer.android.com/reference/androidx/media3/exoplayer/DefaultLoadControl.Builder)
 - [NSH Android host](https://github.com/longbridge/nsh/blob/c5214aa/crates/nsh-platform-android/java/com/longbridge/nsh/NshView.java)
+
+## 0.5.1 的可升级发行与 CI
+
+0.5.1 继续使用 `app.miku.metrolist.preview`、`Metrolist NSH Preview` 与 0.5 preview 的既有签名，版本码由 `nsh.json` 提供。新原生登录控制器 `MetrolistLogin.java` 会随所有 Java host 源码一起编译，构建报告新增 `loginSourceSha256`。
+
+发行入口为：
+
+```sh
+python3 scripts/install-nsh.py --component android
+python3 scripts/release.py android
+```
+
+该命令先要求恢复原 keystore 与密码文件（默认位于项目相邻的 `toolchain/signing/`），随后串行构建通用与 arm64 APK，并校验实际签名证书是否与 `scripts/release-config.json` 的公开指纹相同。确认后才将版本化文件写入 `dist/release/`；各自详细报告仍留在 `releases/android/universal/` 与 `releases/android/arm64/`。
+
+GitHub Actions 使用 `ANDROID_KEYSTORE_BASE64` 与 `ANDROID_KEYSTORE_PASSWORD` 两个仓库 secrets 恢复同一密钥。缺少这两个 secrets 时 Android Release 标为待配置，Linux、Windows、macOS、iOS 和 Web 构建照常进行；流水线不会临时生成另一个签名的“升级”包。具体平台发布、可选 Apple 签名和聚合 Release 说明见 [0.5.1 发行说明](releases-0.5.1.md)。
+
+已有的底层 `build-android.py` 仍支持为开发用途创建新签名；发布和升级应使用上述 `release.py android` 入口，它明确要求原签名并核验证书。私钥与密码不进入源码 ZIP、构建报告、公共 artifact 或 GitHub Release。

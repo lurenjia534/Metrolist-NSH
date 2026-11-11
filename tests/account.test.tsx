@@ -8,6 +8,14 @@ const alpha = { id: "alpha", title: "Alpha", artist: "Fixture artist", album: "F
 const beta = { ...alpha, id: "beta", title: "Beta" };
 const gamma = { ...alpha, id: "gamma", title: "Gamma" };
 const read = (app: App, key: string) => JSON.parse(app.texts().find(text => text.startsWith(`${key}:`))!.slice(key.length + 1));
+const nativeCalls = (app: App, name: string) => (read(app, "nativecalls") as { name: string; data: any }[]).filter(call => call.name === name);
+const sendNative = async (app: App, event: string, payload: unknown) => {
+  const before = nativeCalls(app, "auth.test.emit").length;
+  await app.clear("id:native-event-input");
+  await app.type("id:native-event-input", JSON.stringify({ event, payload }));
+  await app.press("Send native event");
+  await app.waitUntil(() => nativeCalls(app, "auth.test.emit").length > before);
+};
 const credentials = (request: StubRequest) => JSON.parse(decodeURIComponent(Object.entries(request.headers).find(([key]) => key.toLowerCase() === "x-metrolist-account")![1]));
 function network() {
   let liked = [alpha, beta];
@@ -36,7 +44,7 @@ function network() {
 
 test("web account page imports and verifies the owner's session then removes only its local account", async () => {
   const app = await open("./account-fixture.tsx", { width: 1280, height: 980, platform: "web", storage, network: network() });
-  await app.press("Show account page"); await app.press("id:account-import");
+  await app.press("Show account page"); await app.press("id:account-advanced"); await app.waitFor("id:account-import"); await app.press("id:account-import");
   await app.type("id:account-session-input", JSON.stringify({ cookie: "SAPISID=fixture-a", authUser: "0" }));
   await app.press("id:account-verify-import"); await app.waitFor("id:account-name");
   expect(read(app, "account")).toMatchObject({ name: "Fixture A", signedIn: true, state: "connected" });
@@ -90,20 +98,109 @@ test("full cloud synchronization preserves later pages across like changes and r
 });
 
 test("Android login uses the host WebView session, validates it with the account API and clears its app session on logout", async () => {
-  const app = await open("./account-fixture.tsx", { width: 390, height: 844, platform: "android", storage, network: network(), host: { handlers: {
-    "auth.available": { available: true, method: "webview" },
-    "auth.login": { cookie: "SAPISID=fixture-a", visitorData: "native-visitor", dataSyncId: "native-sync", authUser: "0" },
-    "auth.logout": null,
-  } } });
-  expect(read(app, "account").available).toBe(true);
+  const app = await open("./native-login/fixture.tsx", { width: 390, height: 844, platform: "android", storage, network: network() });
+  expect(read(app, "account")).toMatchObject({ available: true, nativeReady: true });
   await app.press("Native login");
+  expect(read(app, "account")).toMatchObject({ signedIn: false, nativeStage: "opening", busy: true });
+  expect(nativeCalls(app, "auth.login")[0]?.data).toEqual({ requestId: 1, selectAccount: false });
+  await sendNative(app, "auth.progress", { requestId: 1, stage: "waiting", message: "Complete Google login" });
+  await app.waitUntil(() => read(app, "account").nativeStage === "waiting");
+  expect(read(app, "account")).toMatchObject({ nativeStage: "waiting", nativeMessage: "Complete Google login" });
+  await sendNative(app, "auth.session", { requestId: 1, attemptId: "native-a", credentials: { cookie: "SAPISID=fixture-a", visitorData: "native-visitor", dataSyncId: "native-sync", authUser: "0" } });
+  await app.waitUntil(() => !read(app, "account").busy);
   expect(read(app, "account")).toMatchObject({ name: "Fixture A", signedIn: true, activeId: "0:native-sync" });
-  expect(app.host.calls().find(call => call.name === "auth.login")?.data).toEqual({ url: "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fmusic.youtube.com" });
+  expect(nativeCalls(app, "auth.complete").map(call => call.data)).toEqual([{ attemptId: "native-a", ok: true, name: "Fixture A" }]);
   const login = app.requests().find(request => request.url.endsWith("/account/login"))!;
   expect(JSON.parse(login.body!)).toMatchObject({ cookie: "SAPISID=fixture-a", visitorData: "native-visitor", dataSyncId: "native-sync" });
   await app.press("Logout");
-  expect(app.host.calls().filter(call => call.name === "auth.logout")).toHaveLength(1);
+  expect(nativeCalls(app, "auth.logout")).toHaveLength(1);
   expect(read(app, "account").signedIn).toBe(false);
+});
+
+test("cancelling native login is a normal outcome and never verifies or clears the saved Google session", async () => {
+  const app = await open("./native-login/fixture.tsx", { platform: "android", storage, network: network() });
+  await app.press("Native login");
+  await app.press("Cancel native");
+  await app.waitUntil(() => !read(app, "account").busy);
+  expect(read(app, "account")).toMatchObject({ signedIn: false, state: "none", busy: false, nativeStage: "idle", error: "", fixtureError: "" });
+  expect(app.requests().filter(request => request.url.endsWith("/account/login"))).toHaveLength(0);
+  expect(nativeCalls(app, "auth.logout")).toHaveLength(0);
+});
+
+test("a failed native session stays open for an explicit retry and repeated candidate events share one verification", async () => {
+  const app = await open("./native-login/fixture.tsx", { platform: "android", storage, network: network() });
+  await app.press("Native login");
+  const rejected = { requestId: 1, attemptId: "expired", credentials: { cookie: "SAPISID=fixture-expired" } };
+  await sendNative(app, "auth.session", rejected);
+  await app.waitUntil(() => nativeCalls(app, "auth.complete").length === 1);
+  expect(read(app, "account")).toMatchObject({ signedIn: false, busy: true, nativeStage: "error", nativeMessage: "Fixture session expired" });
+  expect(JSON.parse(app.storage()["metrolist.accounts"]).accounts).toHaveLength(0);
+  await sendNative(app, "auth.session", rejected);
+  expect(app.requests().filter(request => request.url.endsWith("/account/login"))).toHaveLength(1);
+  expect(nativeCalls(app, "auth.complete").map(call => call.data)).toEqual([{ attemptId: "expired", ok: false, message: "Fixture session expired", status: 401 }]);
+  await sendNative(app, "auth.session", { requestId: 1, attemptId: "retry", credentials: { cookie: "SAPISID=fixture-a" } });
+  await app.waitUntil(() => !read(app, "account").busy);
+  expect(read(app, "account")).toMatchObject({ signedIn: true, name: "Fixture A", busy: false, nativeStage: "idle", error: "" });
+  expect(app.requests().filter(request => request.url.endsWith("/account/login"))).toHaveLength(2);
+});
+
+test("cancel during account verification discards its late response without saving a different account", async () => {
+  const app = await open("./native-login/fixture.tsx", { platform: "android", storage, clock: {}, network: {
+    ...network(), "POST https://gateway.test/api/account/login": { delay: 2000, body: { account: profileB, session: { authUser: "1", visitorData: "b", dataSyncId: "b" } } },
+  } });
+  await app.press("Native login");
+  await sendNative(app, "auth.session", { requestId: 1, attemptId: "cancelled", credentials: { cookie: "SAPISID=fixture-b", authUser: "1" } });
+  await app.waitUntil(() => read(app, "account").nativeStage === "verifying");
+  expect(read(app, "account")).toMatchObject({ state: "none", nativeStage: "verifying", signedIn: false, busy: true });
+  await app.press("Cancel native");
+  await app.waitUntil(() => !read(app, "account").busy);
+  await app.clock!.runFor(2500);
+  expect(read(app, "account")).toMatchObject({ state: "none", signedIn: false, busy: false, error: "", fixtureError: "" });
+  expect(nativeCalls(app, "auth.complete")).toHaveLength(0);
+  expect(JSON.parse(app.storage()["metrolist.accounts"]).accounts).toHaveLength(0);
+});
+
+test("adding an account requests the Google account chooser and cancelling preserves the verified current account", async () => {
+  const app = await open("./native-login/fixture.tsx", { platform: "android", storage, network: network() });
+  await app.press("Import A");
+  const saved = app.storage()["metrolist.accounts"];
+  await app.press("Native login");
+  await app.press("Cancel native");
+  await app.waitUntil(() => !read(app, "account").busy);
+  expect(nativeCalls(app, "auth.login")[0]?.data).toEqual({ requestId: 1, selectAccount: true });
+  expect(read(app, "account")).toMatchObject({ name: "Fixture A", state: "connected", signedIn: true, busy: false, error: "" });
+  expect(app.storage()["metrolist.accounts"]).toBe(saved);
+});
+
+test("a new native login ignores session and progress events from a cancelled window", async () => {
+  const app = await open("./native-login/fixture.tsx", { platform: "android", storage, network: network() });
+  await app.press("Native login");
+  await app.press("Cancel native");
+  await app.waitUntil(() => !read(app, "account").busy);
+  await sendNative(app, "auth.progress", { requestId: 1, stage: "waiting", message: "old" });
+  await app.press("Native login");
+  await sendNative(app, "auth.session", { requestId: 1, attemptId: "old", credentials: { cookie: "SAPISID=fixture-b", authUser: "1" } });
+  await sendNative(app, "auth.progress", { requestId: 1, stage: "error", message: "old" });
+  expect(read(app, "account")).toMatchObject({ nativeStage: "opening", signedIn: false, busy: true });
+  expect(app.requests().filter(request => request.url.endsWith("/account/login"))).toHaveLength(0);
+  await sendNative(app, "auth.session", { requestId: 2, attemptId: "new", credentials: { cookie: "SAPISID=fixture-a" } });
+  await app.waitUntil(() => !read(app, "account").busy);
+  expect(read(app, "account")).toMatchObject({ name: "Fixture A", signedIn: true, busy: false });
+  expect(app.requests().filter(request => request.url.endsWith("/account/login"))).toHaveLength(1);
+});
+
+test("cancel keeps the current account's completed startup refresh instead of restoring an obsolete verifying state", async () => {
+  const saved = { profile: { ...profileA, id: "0:a", verifiedAt: 1 }, credentials: { cookie: "SAPISID=fixture-a", authUser: "0", dataSyncId: "a" }, library: { playlists: [], liked: [], songs: [], albums: [], artists: [] }, lastSynced: 0 };
+  const app = await open("./native-login/fixture.tsx", { platform: "android", clock: {}, storage: {
+    ...storage, "metrolist.accounts": JSON.stringify({ accounts: [saved], activeId: "0:a", syncEnabled: false, useAccountForBrowse: true }),
+  }, network: { ...network(), "GET https://gateway.test/api/account": { delay: 1000, body: profileA } } });
+  expect(read(app, "account").state).toBe("verifying");
+  await app.press("Native login");
+  await app.clock!.runFor(1200);
+  expect(read(app, "account").state).toBe("connected");
+  await app.press("Cancel native");
+  await app.waitUntil(() => !read(app, "account").busy);
+  expect(read(app, "account")).toMatchObject({ state: "connected", name: "Fixture A", signedIn: true, error: "", busy: false });
 });
 
 test("original Metrolist and Netscape session imports retain the owner session fields and filter unrelated cookies", async () => {

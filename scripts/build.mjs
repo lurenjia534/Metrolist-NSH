@@ -10,12 +10,14 @@ const output = join(root, ".nsh/web-package");
 const build = spawnSync(nsh, ["package", root, "--target", "web", "-o", output], { env: nshEnv, stdio: "inherit" });
 if (build.status !== 0) process.exit(build.status || 1);
 
-const packageName = JSON.parse(readFileSync(join(root, "nsh.json"), "utf8")).name;
+const appMetadata = JSON.parse(readFileSync(join(root, "nsh.json"), "utf8"));
+const packageName = appMetadata.name;
 const client = join(root, "dist/client");
 rmSync(client, { recursive: true, force: true });
 mkdirSync(join(root, "dist/server"), { recursive: true });
 cpSync(join(output, packageName), client, { recursive: true });
-cpSync(join(root, "web/sw.js"), join(client, "sw.js"));
+writeFileSync(join(client, "sw.js"), readFileSync(join(root, "web/sw.js"), "utf8").replaceAll("__APP_VERSION__", appMetadata.version));
+writeFileSync(join(client, "version.json"), JSON.stringify({ version: appMetadata.version, build: appMetadata.build }) + "\n");
 
 let html = readFileSync(join(client, "index.html"), "utf8");
 html = html.replace('<html lang="en">', '<html lang="zh-CN">');
