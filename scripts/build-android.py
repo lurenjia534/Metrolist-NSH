@@ -18,6 +18,7 @@ import tarfile
 import zipfile
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
+from nsh_archives import fetch_archive
 
 PROJECT = Path(__file__).resolve().parent.parent
 BUILD_TOOLS = "35.0.1"
@@ -125,9 +126,7 @@ def runtime_sources(toolchain: Path, nsh: Path) -> tuple[Path, Path]:
     dist = nsh.resolve().parent.parent
     runtime = dist / "runtime" / "android" / "release"
     if not (runtime / "classes.dex").exists():
-        item = NSH_TOOLCHAIN["archives"]["android"]
-        base = os.environ.get("NSH_DOWNLOAD_BASE", NSH_TOOLCHAIN["downloadBase"]).rstrip("/")
-        archive = download(f"{base}/{item['file']}", toolchain / "downloads" / f"nsh-android-{RUNTIME_COMMIT}.tar.gz", item["sha256"])
+        archive = fetch_archive('android', toolchain)
         with tarfile.open(archive) as package:
             for item in package.getmembers():
                 if item.isfile():
@@ -139,7 +138,7 @@ def runtime_sources(toolchain: Path, nsh: Path) -> tuple[Path, Path]:
         raise RuntimeError(f"This host build uses NSH {RUNTIME_COMMIT}; found {metadata['commit']}. Keep the matching NSH distribution for this release.")
     source = toolchain / "nsh-android-source"
     if not (source / "com" / "longbridge" / "nsh" / "NshView.java").exists():
-        archive = download(NSH_TOOLCHAIN["source"]["url"], toolchain / "downloads" / f"nsh-source-{RUNTIME_COMMIT}.tar.gz", NSH_TOOLCHAIN["source"]["sha256"])
+        archive = fetch_archive('source', toolchain)
         with tarfile.open(archive) as package:
             for item in package.getmembers():
                 if item.isfile() and "/crates/nsh-platform-android/java/" in item.name:
@@ -336,7 +335,7 @@ def main() -> None:
     run(tools / ("zipalign.exe" if os.name == "nt" else "zipalign"), "-c", "-P", "16", "4", apk)
     checksum = digest(apk)
     apk.with_suffix(".apk.sha256").write_text(f"{checksum}  {apk.name}\n")
-    report = {"file": apk.name, "bytes": apk.stat().st_size, "sha256": checksum, "applicationId": metadata["id"], "version": version, "versionCode": build, "minimumAndroidApi": 26, "targetAndroidApi": int(ANDROID_API), "abis": args.abi.split(","), "nshRuntimeCommit": RUNTIME_COMMIT, "nativeLibraries": {abi: native_alignment[abi] for abi in args.abi.split(",")}, "foregroundMediaPlayback": True, "audioEngine": "Media3 ExoPlayer 1.10.1", "audioCacheBytes": 1073741824, "audioBufferMs": {"minimum": 50000, "maximum": 50000, "playback": 750, "rebuffer": 2000}, **revision, "appSourceSha256": digest(PROJECT / "App.tsx"), "hostSourceSha256": digest(PROJECT / "android" / "MetrolistHost.java"), "audioSourceSha256": digest(PROJECT / "android" / "MetrolistAudio.java"), "mediaServiceSourceSha256": digest(PROJECT / "android" / "MetrolistMediaService.java"), "androidManifestSourceSha256": digest(PROJECT / "android" / "AndroidManifest.xml"), "buildScriptSha256": digest(Path(__file__))}
+    report = {"file": apk.name, "bytes": apk.stat().st_size, "sha256": checksum, "applicationId": metadata["id"], "version": version, "versionCode": build, "minimumAndroidApi": 26, "targetAndroidApi": int(ANDROID_API), "abis": args.abi.split(","), "nshRuntimeCommit": RUNTIME_COMMIT, "nativeLibraries": {abi: native_alignment[abi] for abi in args.abi.split(",")}, "foregroundMediaPlayback": True, "audioEngine": "Media3 ExoPlayer 1.10.1", "audioCacheBytes": 1073741824, "audioBufferMs": {"minimum": 50000, "maximum": 50000, "playback": 750, "rebuffer": 2000}, **revision, "appSourceSha256": digest(PROJECT / "App.tsx"), "hostSourceSha256": digest(PROJECT / "android" / "MetrolistHost.java"), "loginSourceSha256": digest(PROJECT / "android" / "MetrolistLogin.java"), "audioSourceSha256": digest(PROJECT / "android" / "MetrolistAudio.java"), "mediaServiceSourceSha256": digest(PROJECT / "android" / "MetrolistMediaService.java"), "androidManifestSourceSha256": digest(PROJECT / "android" / "AndroidManifest.xml"), "buildScriptSha256": digest(Path(__file__))}
     (out / "build-info.json").write_text(json.dumps(report, indent=2) + "\n")
     print(f"Built {apk} ({apk.stat().st_size:,} bytes)")
     print(f"SHA-256 {checksum}")

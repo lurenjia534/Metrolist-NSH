@@ -61,7 +61,7 @@ export async function api(request, env = {}) {
         return await proxyAudio(request, media, cors);
       }
       case '/api/download':
-      case '/api/offline': return json({ error: '本地文件下载由 Node gateway 提供；网页版的离线音频保存在浏览器中。' }, 501);
+      case '/api/offline': return json({ error: '当前音乐服务不支持文件下载。请在“设置 → 连接 → 音乐服务”填写支持下载的服务地址。' }, 501);
       default: return json({ error: 'Unknown API endpoint' }, 404);
     }
   } catch (error) {

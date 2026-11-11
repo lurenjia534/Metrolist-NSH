@@ -3,6 +3,7 @@
   "commit": "c5214aa",
   "revision": "c5214aaf4bbdf33bc1d59e9595e009b6aa54d702",
   "downloadBase": "https://github.com/longbridge/nsh/releases/download/nightly",
+  "mirrorDownloadBase": "https://github.com/lurenjia534/Metrolist-NSH/releases/download/nsh-runtime-c5214aa",
   "archives": {
     "linux-x86_64": {
       "file": "nsh-linux-x86_64.tar.gz",
@@ -35,9 +36,14 @@
     "android": {
       "file": "nsh-android.tar.gz",
       "sha256": "0ad3797eaac597e9c4eb3d403f811f5e6abe6ebe22ffd429d56d404e226b64b1"
+    },
+    "ios": {
+      "file": "nsh-ios-macos-arm64.tar.gz",
+      "sha256": "5346042d670f7b0e7ecf0223d3521930d8c0d070cf77475286b4a446f3fc2d82"
     }
   },
   "source": {
+    "file": "nsh-source-c5214aa.tar.gz",
     "url": "https://codeload.github.com/longbridge/nsh/tar.gz/c5214aa",
     "sha256": "39b9ff4fe3c317cfa6c9a49094e223b54c734be58e3d2bbdc6b65b84c14d5d4b"
   }

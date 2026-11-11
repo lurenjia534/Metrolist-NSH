@@ -1,27 +1,13 @@
 package com.longbridge.nsh;
 
-import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.app.Dialog;
 import android.content.Intent;
 import android.database.Cursor;
 import android.media.MediaMetadataRetriever;
 import android.net.Uri;
-import android.os.Build;
 import android.provider.OpenableColumns;
-import android.text.TextUtils;
-import android.view.View;
-import android.view.ViewGroup;
-import android.view.WindowInsets;
-import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.WebStorage;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
-import android.webkit.WebResourceRequest;
-import android.widget.Button;
-import android.widget.LinearLayout;
-import android.widget.TextView;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -48,7 +34,6 @@ import org.json.JSONTokener;
 /** Android services used by the NSH UI, including its native Media3 audio engine. */
 public final class MetrolistHost implements AutoCloseable {
     private static final int OPEN_AUDIO = 9121, OPEN_LIBRARY = 9122, SAVE_FILE = 9123;
-    private static final String LOGIN_URL = "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fmusic.youtube.com";
     private final Activity activity;
     private final NshView view;
     private final File music;
@@ -57,8 +42,7 @@ public final class MetrolistHost implements AutoCloseable {
     private NshHostReply pickerReply;
     private File exportFile;
     private String exportContent;
-    private Dialog loginDialog;
-    private NshHostReply loginReply;
+    private MetrolistLogin login;
 
     public MetrolistHost(Activity activity, NshView view) {
         this.activity = activity;
@@ -84,6 +68,7 @@ public final class MetrolistHost implements AutoCloseable {
         });
         view.handle("auth.available", (data, reply) -> reply.resolve(object("available", true, "method", "webview")));
         view.handle("auth.login", (data, reply) -> login(arguments(data), reply));
+        view.handle("auth.complete", (data, reply) -> reply.resolve(object("accepted", login != null && login.complete(arguments(data)))));
         view.handle("auth.logout", (data, reply) -> CookieManager.getInstance().removeAllCookies(removed -> {
             CookieManager.getInstance().flush();
             WebStorage.getInstance().deleteAllData();
@@ -156,111 +141,10 @@ public final class MetrolistHost implements AutoCloseable {
             throw new AssertionError(exception);
         }
     }
-    private int dp(int value) { return Math.round(value * activity.getResources().getDisplayMetrics().density); }
 
-    @SuppressLint("SetJavaScriptEnabled")
     private void login(Map<String, Object> args, NshHostReply reply) {
-        loginReply = reply;
-        Dialog dialog = new Dialog(activity, android.R.style.Theme_Material_NoActionBar);
-        loginDialog = dialog;
-        LinearLayout column = new LinearLayout(activity);
-        column.setOrientation(LinearLayout.VERTICAL);
-        column.setOnApplyWindowInsetsListener((root, insets) -> {
-            int left, top, right, bottom;
-            if (Build.VERSION.SDK_INT >= 30) {
-                android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
-                left = bars.left; top = bars.top; right = bars.right; bottom = bars.bottom;
-            } else {
-                left = insets.getStableInsetLeft(); top = insets.getStableInsetTop();
-                right = insets.getStableInsetRight(); bottom = insets.getStableInsetBottom();
-                if (Build.VERSION.SDK_INT >= 28 && insets.getDisplayCutout() != null) {
-                    left = Math.max(left, insets.getDisplayCutout().getSafeInsetLeft());
-                    top = Math.max(top, insets.getDisplayCutout().getSafeInsetTop());
-                    right = Math.max(right, insets.getDisplayCutout().getSafeInsetRight());
-                    bottom = Math.max(bottom, insets.getDisplayCutout().getSafeInsetBottom());
-                }
-            }
-            root.setPadding(left, top, right, bottom);
-            return insets;
-        });
-        LinearLayout toolbar = new LinearLayout(activity);
-        TextView title = new TextView(activity);
-        title.setText("登录 YouTube Music");
-        title.setTextSize(16);
-        title.setSingleLine(true);
-        title.setEllipsize(TextUtils.TruncateAt.END);
-        title.setPadding(dp(12), 0, dp(12), 0);
-        Button cancel = new Button(activity);
-        cancel.setText("取消");
-        Button done = new Button(activity);
-        done.setText("完成");
-        toolbar.addView(cancel);
-        toolbar.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1));
-        toolbar.addView(done);
-        column.addView(toolbar);
-        WebView web = new WebView(activity);
-        web.getSettings().setJavaScriptEnabled(true);
-        web.getSettings().setDomStorageEnabled(true);
-        web.getSettings().setSupportZoom(true);
-        web.getSettings().setBuiltInZoomControls(true);
-        web.getSettings().setDisplayZoomControls(false);
-        web.setWebViewClient(new WebViewClient() {
-            @Override public boolean shouldOverrideUrlLoading(WebView value, WebResourceRequest request) {
-                String scheme = request.getUrl().getScheme();
-                if ("https".equals(scheme) || "http".equals(scheme)) return false;
-                if ("intent".equals(scheme)) {
-                    try {
-                        Intent intent = Intent.parseUri(request.getUrl().toString(), Intent.URI_INTENT_SCHEME);
-                        intent.addCategory(Intent.CATEGORY_BROWSABLE);
-                        intent.setComponent(null); intent.setSelector(null);
-                        activity.startActivity(intent);
-                    } catch (Exception error) { title.setText("无法打开此登录步骤，请在页面选择其他方式"); }
-                }
-                return true;
-            }
-        });
-        CookieManager cookies = CookieManager.getInstance();
-        cookies.setAcceptCookie(true);
-        cookies.setAcceptThirdPartyCookies(web, true);
-        column.addView(web, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
-        dialog.setContentView(column);
-        cancel.setOnClickListener(v -> dialog.cancel());
-        dialog.setOnCancelListener(value -> {
-            if (loginReply != null) { loginReply.reject("已取消登录"); loginReply = null; }
-        });
-        dialog.setOnDismissListener(value -> {
-            web.destroy();
-            loginDialog = null;
-        });
-        done.setOnClickListener(v -> {
-            String cookie = cookies.getCookie("https://music.youtube.com");
-            if (cookie == null || !cookie.contains("SAPISID=")) {
-                title.setText("请先完成 Google 登录");
-                return;
-            }
-            web.evaluateJavascript("(function(){var c=(window.yt&&window.yt.config_)||(window.ytcfg&&window.ytcfg.data_)||{};return JSON.stringify({visitorData:c.VISITOR_DATA||'',dataSyncId:c.DATASYNC_ID||'',authUser:String(c.SESSION_INDEX||0)});})()", encoded -> {
-                try {
-                    JSONObject context = new JSONObject((String) new JSONTokener(encoded).nextValue());
-                    Map<String, Object> result = new HashMap<>();
-                    result.put("cookie", cookie);
-                    result.put("visitorData", context.optString("visitorData"));
-                    result.put("dataSyncId", context.optString("dataSyncId"));
-                    result.put("authUser", context.optString("authUser", "0"));
-                    cookies.flush();
-                    loginReply.resolve(result);
-                    loginReply = null;
-                    dialog.dismiss();
-                } catch (Exception error) { title.setText("请进入 YouTube Music 后再点完成"); }
-            });
-        });
-        dialog.show();
-        dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        dialog.getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
-        dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-        column.requestApplyInsets();
-        String url = string(args, "url");
-        web.loadUrl(url.isEmpty() ? LOGIN_URL : url);
+        if (login != null) login.close();
+        login = new MetrolistLogin(activity, view, args, reply, () -> login = null);
     }
 
     private final class Download implements Runnable {
@@ -393,7 +277,7 @@ public final class MetrolistHost implements AutoCloseable {
         for (Download download : downloads.values()) download.cancel();
         io.shutdown();
         MetrolistAudio.detach(view);
-        if (loginDialog != null) loginDialog.cancel();
+        if (login != null) login.close();
         if (pickerReply != null) { pickerReply.reject("应用已关闭"); pickerReply = null; }
     }
 }

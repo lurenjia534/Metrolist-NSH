@@ -35,7 +35,7 @@ function Fixture() {
   return <View style={{ flex: 1, padding: 16, gap: 8 }}>
     <Text>{ready() ? "Ready" : "Initializing"}</Text>
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}><Each of={commands}>{command => <Button onPress={() => void run(command().work)}><Text>{command().name}</Text></Button>}</Each></View>
-    <Text>{`account:${JSON.stringify({ name: account.currentAccount()?.name, signedIn: account.signedIn(), activeId: account.activeId(), names: account.accounts().map(item => item.name), state: account.sessionStatus(), available: account.nativeLoginAvailable(), status: account.status(), error: account.error(), fixtureError: fixtureError() })}`}</Text>
+    <Text>{`account:${JSON.stringify({ name: account.currentAccount()?.name, signedIn: account.signedIn(), activeId: account.activeId(), names: account.accounts().map(item => item.name), state: account.sessionStatus(), available: account.nativeLoginAvailable(), nativeReady: account.nativeLoginReady(), nativeStage: account.nativeLoginStage(), nativeMessage: account.nativeLoginMessage(), busy: account.busy(), status: account.status(), error: account.error(), fixtureError: fixtureError() })}`}</Text>
     <Text>{`cloud:${JSON.stringify({ type: account.cloudType(), ids: account.cloudItems().map(item => item.id), liked: account.cloudLikedIds(), syncing: account.syncing(), lastSynced: account.lastSynced(), continuation: account.cloudContinuation(), channels: account.channels().map(item => item.name) })}`}</Text>
     <Scroll style={{ flex: 1 }} contentStyle={{ paddingBottom: 30 }}><If when={showPage()}><AccountPage /></If></Scroll>
   </View>;

@@ -1,6 +1,6 @@
 {
   "name": "metrolist-nsh",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "type": "module",
   "license": "GPL-3.0-only",
@@ -9,7 +9,7 @@
     "dev": "node --use-env-proxy --max-http-header-size=65536 server/dev.mjs",
     "build": "node scripts/build.mjs",
     "check": "node scripts/run-nsh.mjs check",
-    "test": "node scripts/run-nsh.mjs test",
+    "test": "node scripts/run-nsh.mjs test --web-host tests/native-login/host.js",
     "web": "node scripts/run-nsh.mjs run --target web",
     "linux": "node scripts/run-nsh.mjs run --target linux"
   }

@@ -1,5 +1,5 @@
 // Cache the app shell; music and online API responses stay live.
-const CACHE = "metrolist-shell-v4";
+const CACHE = "metrolist-shell-__APP_VERSION__";
 self.addEventListener("install", event => { self.skipWaiting(); });
 self.addEventListener("activate", event => {
   event.waitUntil(caches.keys().then(keys => Promise.all(

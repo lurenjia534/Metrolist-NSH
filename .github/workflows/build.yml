@@ -1,23 +1,136 @@
-name: Build Metrolist NSH
+name: Build and release Metrolist NSH
 
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Publish or update this version's GitHub Release after building
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
+concurrency:
+  group: metrolist-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  android:
-    name: Android universal APK
+  config:
     runs-on: ubuntu-24.04
+    outputs:
+      android_signing: ${{ steps.config.outputs.android_signing }}
+      ios_signing: ${{ steps.config.outputs.ios_signing }}
+      publish: ${{ steps.config.outputs.publish }}
+    steps:
+      - id: config
+        name: Resolve release and signing configuration
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          IOS_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
+          IOS_SIGNING_IDENTITY: ${{ secrets.IOS_SIGNING_IDENTITY }}
+          REQUEST_PUBLISH: ${{ inputs.publish_release }}
+        run: |
+          python3 - <<'PY'
+          import os
+          android = all(os.environ.get(k) for k in ('ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD'))
+          ios = all(os.environ.get(k) for k in ('IOS_CERTIFICATE_P12_BASE64', 'IOS_CERTIFICATE_PASSWORD', 'IOS_PROVISION_PROFILE_BASE64', 'IOS_SIGNING_IDENTITY'))
+          event = os.environ['GITHUB_EVENT_NAME']
+          ref = os.environ['GITHUB_REF']
+          publish = (event == 'push' and (ref == 'refs/heads/main' or ref.startswith('refs/tags/v'))) or (event == 'workflow_dispatch' and ref == 'refs/heads/main' and os.environ.get('REQUEST_PUBLISH') == 'true')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'android_signing={str(android).lower()}\nios_signing={str(ios).lower()}\npublish={str(publish).lower()}\n')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+              output.write('Android: existing preview signing configured.\n' if android else 'Android release is pending the existing preview signing secrets; other platforms continue. No replacement key will be generated.\n')
+              output.write('iOS: optional provisioned IPA enabled.\n' if ios else 'iOS: simulator and explicitly unsigned device artifacts will be built.\n')
+          PY
+
+  verify:
+    name: Shared application and gateway tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Resolve the absolute toolchain cache path
+        run: python -c "import os; from pathlib import Path; Path(os.environ['GITHUB_ENV']).open('a').write('METROLIST_TOOLCHAIN=' + (Path.cwd().parent / 'toolchain').resolve().as_posix() + '\n')"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.METROLIST_TOOLCHAIN }}/downloads
+            ${{ env.METROLIST_TOOLCHAIN }}/nsh-cache
+          key: nsh-verify-${{ runner.os }}-${{ hashFiles('scripts/nsh-toolchain.json') }}
+      - run: python scripts/install-nsh.py
+      - run: npm run check
+      - run: npm test
+      - run: node --test server/*.test.mjs
+
+  toolchain:
+    name: Preserve the fixed NSH build inputs
+    needs: [config, verify]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Resolve the absolute toolchain cache path
+        run: python -c "import os; from pathlib import Path; Path(os.environ['GITHUB_ENV']).open('a').write('METROLIST_TOOLCHAIN=' + (Path.cwd().parent / 'toolchain').resolve().as_posix() + '\n')"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.METROLIST_TOOLCHAIN }}/downloads
+          key: nsh-mirror-${{ hashFiles('scripts/nsh-toolchain.json') }}
+      - name: Verify and stage every locked runtime and its source
+        run: python scripts/mirror-nsh.py
+      - name: Publish the fixed dependency prerelease before app builds
+        if: needs.config.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python scripts/mirror-nsh.py --publish-only
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nsh-runtime-c5214aa-manifest
+          path: |
+            dist/toolchain/NSH-MIRROR-MANIFEST.json
+            dist/toolchain/SHA256SUMS.txt
+            dist/toolchain/LICENSE-APACHE.txt
+            dist/toolchain/NSH-PINNED-RUNTIME.md
+            dist/toolchain/nsh-toolchain.json
+          if-no-files-found: error
+          overwrite: true
+
+  android:
+    name: Android preview upgrades
+    needs: [config, verify, toolchain]
+    if: needs.config.outputs.android_signing == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Resolve the absolute toolchain cache path
+        run: python -c "import os; from pathlib import Path; Path(os.environ['GITHUB_ENV']).open('a').write('METROLIST_TOOLCHAIN=' + (Path.cwd().parent / 'toolchain').resolve().as_posix() + '\n')"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -25,106 +138,186 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: |
-            ../toolchain/downloads
-            ../toolchain/android-sdk
-            ../toolchain/media3
-            ../toolchain/nsh-android-source
+            ${{ env.METROLIST_TOOLCHAIN }}/downloads
+            ${{ env.METROLIST_TOOLCHAIN }}/android-sdk
+            ${{ env.METROLIST_TOOLCHAIN }}/media3
+            ${{ env.METROLIST_TOOLCHAIN }}/nsh-android-source
           key: android-${{ runner.os }}-${{ hashFiles('scripts/nsh-toolchain.json', 'android/media3-dependencies.json', 'scripts/build-android.py') }}
-      - name: Install matching NSH CLI and Android runtime
-        run: |
-          python3 scripts/install-nsh.py --component android
-          echo "$(realpath ../toolchain/nsh/bin)" >> "$GITHUB_PATH"
-      - name: Prepare optional persistent signing identity
+      - run: python scripts/install-nsh.py --component android
+      - name: Build and verify both APKs with the existing preview identity
         env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-        run: |
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            mkdir -p ../toolchain/signing
-            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > ../toolchain/signing/metrolist-release.jks
-            printf '%s' "$KEYSTORE_PASSWORD" > ../toolchain/signing/metrolist-password
-          fi
-      - name: Build Android host, media service and APK
-        run: |
-          NSH_BIN="$(command -v nsh)" python3 scripts/build-android.py --sdk ../toolchain/android-sdk --out releases/android
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: python scripts/release.py android
       - uses: actions/upload-artifact@v4
         with:
-          name: metrolist-android-universal
-          path: releases/android/
+          name: dist-android
+          path: dist/release/
           if-no-files-found: error
+          overwrite: true
 
   native:
-    name: ${{ matrix.target }} package
+    name: Desktop ${{ matrix.target }} ${{ matrix.arch }}
+    needs: [verify, toolchain]
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-24.04
             target: linux
-          - os: windows-latest
+            arch: x64
+          - os: windows-2025
             target: windows
+            arch: x64
           - os: macos-15
             target: macos
+            arch: arm64
+          - os: macos-15-intel
+            target: macos
+            arch: x64
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Linux runtime libraries
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-4-1 libwebkitgtk-6.0-4 libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Resolve the absolute toolchain cache path
+        run: python -c "import os; from pathlib import Path; Path(os.environ['GITHUB_ENV']).open('a').write('METROLIST_TOOLCHAIN=' + (Path.cwd().parent / 'toolchain').resolve().as_posix() + '\n')"
       - uses: actions/cache@v4
         with:
-          path: ../toolchain/downloads
-          key: nsh-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/nsh-toolchain.json') }}
-      - name: Install matching NSH CLI
-        shell: bash
-        run: |
-          python scripts/install-nsh.py
-          python -c "from pathlib import Path; print(Path('../toolchain/nsh/bin').resolve())" >> "$GITHUB_PATH"
-      - name: Type check
-        run: nsh check
-      - name: Shared state tests
-        run: nsh test
-      - name: Build native package
-        run: nsh package --target ${{ matrix.target }} --out dist/native
+          path: |
+            ${{ env.METROLIST_TOOLCHAIN }}/downloads
+            ${{ env.METROLIST_TOOLCHAIN }}/node-downloads
+          key: desktop-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('scripts/nsh-toolchain.json', 'scripts/node-toolchain.json') }}
+      - run: python scripts/install-nsh.py
+      - name: Build app, bundled Node and gateway; smoke-test the packaged gateway
+        run: python scripts/package-portable.py ${{ matrix.target }} --arch ${{ matrix.arch }} --out dist/release
       - uses: actions/upload-artifact@v4
         with:
-          name: metrolist-${{ matrix.target }}
-          path: dist/native/
+          name: dist-${{ matrix.target }}-${{ matrix.arch }}
+          path: dist/release/
           if-no-files-found: error
+          overwrite: true
+
+  ios:
+    name: iOS ARM64 simulator and device
+    needs: [config, verify, toolchain]
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Resolve the absolute toolchain cache path
+        run: python -c "import os; from pathlib import Path; Path(os.environ['GITHUB_ENV']).open('a').write('METROLIST_TOOLCHAIN=' + (Path.cwd().parent / 'toolchain').resolve().as_posix() + '\n')"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.METROLIST_TOOLCHAIN }}/downloads
+          key: ios-arm64-${{ hashFiles('scripts/nsh-toolchain.json') }}
+      - run: python scripts/install-nsh.py --component ios
+      - name: Build simulator and explicitly unsigned device archives
+        run: python scripts/build-ios.py
+      - name: Install, launch, check process liveness and capture the simulator UI
+        run: python scripts/smoke-ios.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-simulator-smoke
+          path: dist/smoke/
+          if-no-files-found: warn
+          overwrite: true
+      - name: Prepare optional Apple signing identity
+        if: needs.config.outputs.ios_signing == 'true'
+        env:
+          IOS_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
+          IOS_SIGNING_IDENTITY: ${{ secrets.IOS_SIGNING_IDENTITY }}
+        run: python scripts/release.py apple-prepare
+      - name: Build optional provisioned IPA
+        if: needs.config.outputs.ios_signing == 'true'
+        env:
+          IOS_SIGNING_IDENTITY: ${{ secrets.IOS_SIGNING_IDENTITY }}
+        run: python scripts/build-ios.py --signed-only
+      - name: Remove temporary Apple signing keychain
+        if: always() && env.IOS_KEYCHAIN_PATH != ''
+        run: security delete-keychain "$IOS_KEYCHAIN_PATH"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dist-ios
+          path: dist/release/
+          if-no-files-found: error
+          overwrite: true
 
   web:
-    name: Web bundle and local gateway
+    name: Web site distribution
+    needs: [verify, toolchain]
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Resolve the absolute toolchain cache path
+        run: python -c "import os; from pathlib import Path; Path(os.environ['GITHUB_ENV']).open('a').write('METROLIST_TOOLCHAIN=' + (Path.cwd().parent / 'toolchain').resolve().as_posix() + '\n')"
       - uses: actions/cache@v4
         with:
-          path: ../toolchain/downloads
+          path: ${{ env.METROLIST_TOOLCHAIN }}/downloads
           key: nsh-web-${{ runner.os }}-${{ hashFiles('scripts/nsh-toolchain.json') }}
-      - name: Install matching NSH CLI and web runtime
-        run: |
-          python3 scripts/install-nsh.py --component web
-          echo "$(realpath ../toolchain/nsh/bin)" >> "$GITHUB_PATH"
-      - name: Gateway tests
-        run: node --test server/*.test.mjs
-      - name: Build web app
-        run: npm run build
-      - name: Assemble local server distribution
-        run: |
-          mkdir -p dist/local/server dist/local/dist
-          cp -R dist/client dist/local/dist/client
-          cp server/*.mjs server/requirements.txt dist/local/server/
-          cp COPYING NOTICE.md README.md dist/local/
+      - run: python scripts/install-nsh.py --component web
+      - run: npm run build
+      - run: python scripts/package-portable.py web --out dist/release
       - uses: actions/upload-artifact@v4
         with:
-          name: metrolist-web-local-gateway
-          path: dist/local/
+          name: dist-web
+          path: dist/release/
           if-no-files-found: error
+          overwrite: true
+
+  release:
+    name: Publish versioned assets and checksums
+    needs: [config, verify, toolchain, android, native, ios, web]
+    if: always() && needs.config.outputs.publish == 'true' && needs.verify.result == 'success' && needs.toolchain.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: .nsh/release-inputs
+          merge-multiple: true
+      - name: Collect actual artifacts, source archive, manifest and SHA-256 list
+        env:
+          BUILD_RESULTS: ${{ toJSON(needs) }}
+        run: python scripts/release.py collect --inputs .nsh/release-inputs
+      - name: Create or update the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python scripts/release.py publish
+      - uses: actions/upload-artifact@v4
+        with:
+          name: final-release-files
+          path: dist/release/
+          if-no-files-found: error
+          overwrite: true

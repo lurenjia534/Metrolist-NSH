@@ -1,5 +1,5 @@
 import { batch, computed, host, Picker, platform, signal, Storage } from "nsh";
-import { accountRequest } from "./api";
+import { accountRequest, ApiRequestError } from "./api";
 import type { CatalogItem, Collection, Track } from "./model";
 
 export interface AccountCredentials { cookie: string; visitorData?: string; dataSyncId?: string; authUser?: string }
@@ -26,6 +26,9 @@ export const error = signal("");
 export const status = signal("");
 export const sessionStatus = signal<"none" | "saved" | "verifying" | "connected" | "error">("none");
 export const nativeLoginAvailable = signal(false);
+export const nativeLoginReady = signal(platform.os !== "android");
+export const nativeLoginStage = signal<"idle" | "opening" | "waiting" | "verifying" | "error">("idle");
+export const nativeLoginMessage = signal("");
 export const channels = signal<YouTubeChannel[]>([]);
 export const syncing = signal(false);
 export const syncProgress = signal("");
@@ -44,6 +47,7 @@ let savedAccounts: SavedAccount[] = [];
 let initialized = false;
 let cloudRequest = 0;
 let syncRequest = 0;
+let nativeLoginRequest = 0;
 let onAccountChanged: (() => void) | undefined;
 let onLibrarySynced: ((library: CloudLibrary) => void) | undefined;
 
@@ -89,8 +93,10 @@ export async function initializeAccounts() {
     if (signedIn()) { sessionStatus.set("saved"); void refreshAccount().then(() => syncEnabled() ? syncLibrary() : undefined).catch(fail); }
   }
   if (platform.os === "android") {
-    const available = await host.call<{ available: boolean }>("auth.available");
-    nativeLoginAvailable.set(available.available);
+    try {
+      const available = await host.call<{ available: boolean }>("auth.available");
+      nativeLoginAvailable.set(available.available);
+    } finally { nativeLoginReady.set(true); }
   }
 }
 export function setUseAccountForBrowse(value: boolean) {
@@ -129,9 +135,10 @@ export function parseSession(input: string | AccountCredentials): AccountCredent
   const cookie = text.match(/^cookie:\s*(.+)$/im)?.[1] || text;
   return { cookie, authUser: "0" };
 }
-async function validateLogin(credentials: AccountCredentials) {
-  sessionStatus.set("verifying"); status.set("正在验证 YouTube Music 会话…");
-  const result = await accountRequest<AccountResponse>("account/login", credentials, { method: "POST", body: JSON.stringify(credentials) });
+async function verifyLogin(credentials: AccountCredentials) {
+  return accountRequest<AccountResponse>("account/login", credentials, { method: "POST", body: JSON.stringify(credentials) });
+}
+async function saveVerifiedLogin(credentials: AccountCredentials, result: AccountResponse) {
   const merged = { ...credentials, ...result.session };
   const id = accountKey(result.account, merged);
   const previous = savedAccounts.find((item) => item.profile.id === id);
@@ -140,6 +147,10 @@ async function validateLogin(credentials: AccountCredentials) {
   display(account); await saveAccounts(); status.set(`已连接 ${account.profile.name}`);
   if (syncEnabled()) void syncLibrary().catch(fail);
   return account.profile;
+}
+async function validateLogin(credentials: AccountCredentials) {
+  sessionStatus.set("verifying"); status.set("正在验证 YouTube Music 会话…");
+  return saveVerifiedLogin(credentials, await verifyLogin(credentials));
 }
 export async function importSession(input: string | AccountCredentials) {
   const previousStatus = sessionStatus();
@@ -153,12 +164,55 @@ export async function importSessionFile() {
   if (files.length) return importSession(await files[0].file.text());
 }
 export async function loginNative() {
-  busy.set(true); error.set(""); status.set("请在 Google 页面完成登录，再点击完成。");
+  if (busy()) return;
+  const requestId = ++nativeLoginRequest;
+  let active = true;
+  let attemptId = "";
+  let verified: { attemptId: string; credentials: AccountCredentials; response: AccountResponse } | undefined;
+  busy.set(true); error.set(""); status.set("正在打开 Google 登录页…");
+  nativeLoginStage.set("opening"); nativeLoginMessage.set("正在打开 Google 登录页…");
+  const stopProgress = host.on("auth.progress", (payload: unknown) => {
+    const event = payload as { requestId: number; stage: "opening" | "waiting" | "reading" | "verifying" | "error"; message: string };
+    if (!active || event.requestId !== requestId) return;
+    nativeLoginStage.set(event.stage === "reading" ? "verifying" : event.stage);
+    nativeLoginMessage.set(event.message); status.set(event.message);
+  });
+  const stopSession = host.on("auth.session", (payload: unknown) => {
+    const event = payload as { requestId: number; attemptId: string; credentials: AccountCredentials };
+    if (!active || event.requestId !== requestId || event.attemptId === attemptId) return;
+    attemptId = event.attemptId;
+    verified = undefined;
+    nativeLoginStage.set("verifying"); nativeLoginMessage.set("正在验证 YouTube Music 账号…");
+    status.set(nativeLoginMessage());
+    void (async () => {
+      try {
+        const response = await verifyLogin(event.credentials);
+        if (!active || event.attemptId !== attemptId) return;
+        verified = { attemptId: event.attemptId, credentials: event.credentials, response };
+        await host.call("auth.complete", { attemptId: event.attemptId, ok: true, name: response.account.name });
+      } catch (reason) {
+        if (!active || event.attemptId !== attemptId) return;
+        verified = undefined;
+        const message = reason instanceof Error ? reason.message : String(reason);
+        nativeLoginStage.set("error"); nativeLoginMessage.set(message); status.set(message);
+        await host.call("auth.complete", { attemptId: event.attemptId, ok: false, message, ...(reason instanceof ApiRequestError ? { status: reason.status } : {}) });
+      }
+    })().catch(fail);
+  });
   try {
-    const credentials = await host.call<AccountCredentials>("auth.login", { url: "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fmusic.youtube.com" }, { timeout: 0 });
-    return await validateLogin(credentials);
-  } catch (reason) { sessionStatus.set(signedIn() ? "saved" : "none"); status.set("未完成此次 Google 登录。"); fail(reason); throw reason; }
-  finally { busy.set(false); }
+    const result = await host.call<{ cancelled?: boolean; completed?: boolean; attemptId?: string }>("auth.login", { requestId, selectAccount: signedIn() }, { timeout: 0 });
+    active = false;
+    if (result.cancelled) {
+      status.set("已取消此次登录，当前账号保持不变。");
+      return;
+    }
+    if (!result.completed || !verified || result.attemptId !== verified.attemptId) throw new Error("YouTube Music 账号验证尚未完成，请重新登录。");
+    return await saveVerifiedLogin(verified.credentials, verified.response);
+  } catch (reason) { status.set("未完成此次 Google 登录。"); fail(reason); throw reason; }
+  finally {
+    active = false; stopSession(); stopProgress(); busy.set(false);
+    nativeLoginStage.set("idle"); nativeLoginMessage.set("");
+  }
 }
 export async function refreshAccount() {
   const account = selected();

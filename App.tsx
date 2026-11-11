@@ -20,6 +20,7 @@ import { ToastHost } from "./src/components/Toasts";
 import { Dialogs } from "./src/components/Dialogs";
 import { TrackRow } from "./src/components/Music";
 import logo from "./assets/metrolist-icon.png";
+import appInfo from "./nsh.json";
 
 const sidePlayer = signal(true);
 const systemHeader = platform.os === "ios" || platform.os === "android";
@@ -30,7 +31,7 @@ function NavItem(props: { page: nav.Page; label: string; icon: string; count?: n
 }
 function Sidebar() {
   return <View testID="desktop-sidebar" style={{ width: 216, backgroundColor: c().panel, paddingHorizontal: 16, paddingTop: 28, paddingBottom: 16, borderRightWidth: 1, borderColor: c().line, gap: 20 }}>
-    <View style={{ flexDirection: "row", gap: 12, alignItems: "center", paddingHorizontal: 8, paddingBottom: 8 }}><Image src={logo} style={{ width: 38, height: 38, borderRadius: 12 }} /><View style={{ gap: 3 }}><Label size={22} weight="700">Metrolist</Label><Label size={10} color={c().faint}>NSH · 0.4</Label></View></View>
+    <View style={{ flexDirection: "row", gap: 12, alignItems: "center", paddingHorizontal: 8, paddingBottom: 8 }}><Image src={logo} style={{ width: 38, height: 38, borderRadius: 12 }} /><View style={{ gap: 3 }}><Label size={22} weight="700">Metrolist</Label><Label size={10} color={c().faint}>{`NSH · ${appInfo.version}`}</Label></View></View>
     <View style={{ gap: 5 }}><Each of={primary}>{item => <NavItem page={item().page} label={item().label} icon={item().icon} />}</Each></View>
     <View style={{ height: 1, backgroundColor: c().line, marginHorizontal: 12 }} />
     <View style={{ gap: 3 }}><NavItem page="liked" label="喜欢的音乐" icon="heart" count={s.likedIds().length} /><NavItem page="downloads" label="下载" icon="download" count={s.downloading().length} /><NavItem page="history" label="最近播放" icon="clock" /><NavItem page="stats" label="聆听统计" icon="stats" /><NavItem page="together" label="一起听" icon="users" /></View>

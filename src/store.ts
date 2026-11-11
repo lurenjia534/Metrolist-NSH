@@ -51,6 +51,8 @@ export const lyrics = signal<Lyrics | null>(null);
 export const lyricsLoading = signal(false);
 export const lyricsError = signal("");
 export const downloadJobs = signal<DownloadJob[]>([]);
+export const downloadAvailable = computed(() => platform.os === "web" || platform.os === "android" || !!settings().apiBase.trim());
+export const downloadSetupMessage = "当前直连模式可在线播放。下载前，请在“设置 → 连接 → 音乐服务”填写支持下载的服务地址。";
 export const downloading = computed(() => downloadJobs().filter((job) => ["queued", "resolving", "downloading"].includes(job.status)).map((job) => job.id));
 export const downloads = computed(() => downloadJobs().filter((job) => job.status === "completed").map((job): Track => ({ ...job.track, source: "audio", url: job.url })));
 export const likedTracks = computed(() => likedIds().map((id) => tracks().find((track) => track.id === id)).filter((track): track is Track => !!track));
@@ -243,7 +245,7 @@ export function updateSettings(patch: Partial<Settings>) {
   if (patch.repeat !== undefined) player.repeat.set(patch.repeat);
   void saveSettings();
   if (patch.audioQuality !== undefined || patch.apiBase !== undefined) void player.reloadPlayback();
-  if (patch.apiBase !== undefined) void loadHome();
+  if (patch.apiBase !== undefined) { void loadHome(); void refreshDownloads(); }
 }
 
 export function addTracks(items: Track[], persist = true) {
@@ -668,6 +670,7 @@ async function waitForNativeDownload(id: string, controller: AbortController): P
   }
 }
 export async function downloadTrack(track: Track, quality: AudioQuality = settings().audioQuality): Promise<string | undefined> {
+  if (!downloadAvailable()) throw new Error(downloadSetupMessage);
   const controller = new AbortController();
   downloadRuns.set(track.id, controller);
   const now = Date.now();
@@ -733,7 +736,7 @@ export async function exportDownloaded(id: string) {
   }
 }
 export async function refreshDownloads() {
-  if ((platform.os === "web" || platform.os === "android")) return;
+  if (platform.os === "web" || platform.os === "android" || !downloadAvailable()) return;
   try {
     const result = await api.fetchDownloads();
     downloadJobs.set(result.downloads);
