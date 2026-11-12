@@ -10,15 +10,18 @@ import subprocess
 from release import ROOT, APP, VERSION, CONFIG, OUTPUT, report_artifact, run
 from nsh_path import NSH, NSH_ENV
 from nsh_archives import LOCK as NSH_LOCK
+from spotify_ios_sdk import ensure_sdk, build_environment, embed_framework, inspect_framework
 
 
 def package(target, directory, icon, signing=False):
+    spotify_sdk = ensure_sdk()
     command = [NSH, 'package', '--target', target,
                '--id', CONFIG['iosApplicationId'], '--icon', icon, '--out', directory]
     if signing:
         command += ['--sign', os.environ['IOS_SIGNING_IDENTITY'], '--profile', os.environ['IOS_PROVISION_PROFILE']]
-    run(*command, cwd=ROOT, env=NSH_ENV)
+    run(*command, cwd=ROOT, env=build_environment(NSH_ENV, spotify_sdk))
     app = directory / (APP['name'] + '.app')
+    embed_framework(app, target, spotify_sdk, os.environ['IOS_SIGNING_IDENTITY'] if signing else None)
     legal = app / 'legal'
     shutil.copytree(ROOT / 'third-party', legal / 'third-party', dirs_exist_ok=True)
     for filename in ('COPYING', 'NOTICE.md'):
@@ -44,7 +47,8 @@ def inspect(app, target, signing):
     return {'target': target, 'arch': architecture, 'signing': signing,
             'applicationId': info['CFBundleIdentifier'], 'minimumOSVersion': info.get('MinimumOSVersion'),
             'nshRuntimeCommit': NSH_LOCK['revision'], 'runtime': 'nsh-native',
-            'bundledNode': False, 'bundledGateway': False}
+            'bundledNode': False, 'bundledGateway': False,
+            'spotifyAppRemote': inspect_framework(app)}
 
 
 def main(signed_only):

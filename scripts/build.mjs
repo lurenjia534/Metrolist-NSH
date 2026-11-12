@@ -16,6 +16,7 @@ const client = join(root, "dist/client");
 rmSync(client, { recursive: true, force: true });
 mkdirSync(join(root, "dist/server"), { recursive: true });
 cpSync(join(output, packageName), client, { recursive: true });
+for (const module of ["spotify.js", "spotify-api.js"]) cpSync(join(root, "web", module), join(client, module));
 cpSync(join(root, "third-party"), join(client, "legal/third-party"), { recursive: true });
 cpSync(join(root, "NOTICE.md"), join(client, "legal/NOTICE.md"));
 cpSync(join(root, "COPYING"), join(client, "legal/GPL-3.0.txt"));

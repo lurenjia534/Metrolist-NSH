@@ -1,0 +1,16 @@
+{
+  "sdk": "Spotify App Remote 0.8.0",
+  "source": "https://github.com/spotify/android-sdk/tree/v0.8.0-appremote_v2.1.0-auth",
+  "artifacts": [
+    {
+      "file": "spotify-app-remote-release-0.8.0.aar",
+      "url": "https://raw.githubusercontent.com/spotify/android-sdk/v0.8.0-appremote_v2.1.0-auth/app-remote-lib/spotify-app-remote-release-0.8.0.aar",
+      "sha256": "b5a6dd880eaf01f63a871cba9ef7af77c341f8a94ffc8fdf2e9021f9a9d4c198"
+    },
+    {
+      "file": "gson-2.15.0.jar",
+      "url": "https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.15.0/gson-2.15.0.jar",
+      "sha256": "96d3dd843dc2911de01cdabcd50064cb9e860353102a0a78c96fd833d396fc7d"
+    }
+  ]
+}

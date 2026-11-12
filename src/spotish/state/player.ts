@@ -392,7 +392,7 @@ export function playFrom(contextUri: string, trackUri: string, track?: Track): v
  * a free account plays its album, the track's context. */
 export function playTrack(track: { uri: string; albumUri?: string } & Partial<Track>): void {
   const full = "name" in track && track.name ? (track as Track) : undefined;
-  if (player().premium === true || !track.albumUri) {
+  if (backend.kind === "host" || player().premium === true || !track.albumUri) {
     send(picked(track.uri, player().contextUri, full), () => backend.playTrack(track.uri));
     return;
   }

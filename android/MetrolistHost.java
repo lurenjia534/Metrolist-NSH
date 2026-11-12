@@ -43,10 +43,12 @@ public final class MetrolistHost implements AutoCloseable {
     private File exportFile;
     private String exportContent;
     private MetrolistLogin login;
+    private final MetrolistSpotify spotify;
 
     public MetrolistHost(Activity activity, NshView view) {
         this.activity = activity;
         this.view = view;
+        spotify = new MetrolistSpotify(activity, view);
         music = new File(activity.getFilesDir(), "nsh/" + activity.getPackageName() + "/music");
         music.mkdirs();
         view.handle("app.capabilities", (data, reply) -> reply.resolve(object("platform", "android", "login", true, "downloads", true, "audioImport", true, "libraryImport", true, "exports", true, "audioEngine", MetrolistAudio.ENGINE)));
@@ -249,6 +251,11 @@ public final class MetrolistHost implements AutoCloseable {
         return true;
     }
 
+    public void onStart() { spotify.onStart(); }
+    public void onResume() { spotify.onResume(); }
+    public void onStop() { spotify.onStop(); }
+    public boolean onNewIntent(Intent intent) { return spotify.onNewIntent(intent); }
+
     private Map<String, Object> importAudio(Uri uri) throws Exception {
         String name = "音频";
         try (Cursor cursor = activity.getContentResolver().query(uri, new String[] {OpenableColumns.DISPLAY_NAME}, null, null, null)) {
@@ -277,6 +284,7 @@ public final class MetrolistHost implements AutoCloseable {
         for (int read; (read = input.read(buffer)) != -1;) output.write(buffer, 0, read);
     }
     @Override public void close() {
+        spotify.close();
         for (Download download : downloads.values()) download.cancel();
         io.shutdown();
         MetrolistAudio.detach(view);

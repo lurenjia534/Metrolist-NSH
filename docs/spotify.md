@@ -1,6 +1,6 @@
 # Spotify 独立工作区
 
-Metrolist NSH 0.7 将 [Spotish](https://github.com/huacnlee/spotish/tree/63d320103cf87e3731844b54e71df7f786724a90)
+Metrolist NSH 0.8 将 [Spotish](https://github.com/huacnlee/spotish/tree/63d320103cf87e3731844b54e71df7f786724a90)
 的原生界面、动画和 Rust 播放核心嵌入应用。顶部工作区切换器选择
 YouTube Music 或 Spotify；两边各自拥有账号、曲库、导航和播放器。
 
@@ -9,13 +9,17 @@ YouTube Music 或 Spotify；两边各自拥有账号、曲库、导航和播放�
 | 平台 | Spotify 工作区 | 播放方式 |
 | --- | --- | --- |
 | Linux、macOS、Windows | 实际账号、浏览和播放 | Rust 启动已安装的 Chromium 系浏览器，通过 CDP 操作 Spotify Web Player |
-| Web | 明确标注的界面演示 | 虚构目录、模拟播放器状态，没有 Spotify 音频 |
-| Android、iOS | 明确标注的界面演示 | 同一 TSX 的手机布局、虚构目录与动画，没有 Spotify 音频 |
+| Web | OAuth PKCE、真实账号、搜索、曲库与浏览器播放 | 官方 Web Playback SDK 创建当前浏览器的 Spotify Connect 设备 |
+| Android | OAuth PKCE、真实数据与手机播放 | 官方 App Remote 0.8.0，播放前切到手机本机设备 |
+| iOS | OAuth PKCE、真实数据与手机播放 | Rust / Objective-C 桥接官方 Spotify iOS SDK 5.0.1，由本机 Spotify 应用播放 |
 
 桌面需要 Chrome、Chromium、Microsoft Edge 或 Brave，以及浏览器可用的
 Widevine 模块和 Spotify 账号。应用不捆绑浏览器或 Widevine。
-移动端和网页不能按桌面方式启动、持有和控制这个后台浏览器；桌面远程控制
-也尚未实现。YouTube Music 在各平台继续使用其现有播放链路。
+Web 与手机分别使用官方播放器 SDK；页面仍由同一套 NSH TSX 绘制。普通启动
+不选择 DemoBackend，登录失败也不会换成示例目录。YouTube Music 继续使用原播放链路。
+
+上游在这个提交中的 Web / Android / iOS 默认是 DemoBackend；0.7 沿用了这个
+分支。0.8 替换了这个分支，桌面 Rust/CDP 核心与原 UI、14 种灯光保持集成。
 
 ## 开始使用
 
@@ -30,6 +34,45 @@ Premium 的逐曲播放能力也由原播放器提供。广告照常播放。
 桌面应用不需要 Node.js。TSX 在 NSH 的 QuickJS 中运行，Rust 持有浏览器进程、
 CDP WebSocket、会话与原生平台集成。浏览器只负责 Spotify 网页播放器，用户看到
 的工作区由 NSH 原生组件绘制。
+
+### Web 与手机登录
+
+1. 在 [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) 创建或选择自己的应用。
+2. 添加 Redirect URI：Web 使用连接页面显示的完整站点地址；当前公开 Site 为
+   `https://metrolist-nsh-miku.lurenjia534.chatgpt.site/`。Android / iOS 为
+   `metrolist-spotify://callback`，与发行包注册的 scheme 一致。
+3. 在 Metrolist 的 Spotify 连接页面填入该应用的 **Client ID**，点「保存并登录 Spotify」。
+   只使用公开 Client ID，PKCE 不需要在前端放 Client Secret。连接设置保存在当前设备。
+4. 在授权页面登录并允许访问，返回后载入自己的音乐库、最近播放、收藏专辑、歌单与搜索。
+
+Android 还须在 Spotify 应用设置中登记实际安装包名和签名 SHA-1；正式 preview 包名
+为 `app.miku.metrolist.preview`（默认源码构建为 `app.miku.metrolist`），Activity 为 `com.longbridge.nsh.AppActivity`。
+自行构建时使用该 APK 的实际 application ID 与签名，不要把另一份签名摘要当成本包配置。
+iOS 登记实际 Bundle ID，真机须安装 Spotify。iOS 构建会下载固定版本的官方动态框架，
+将对应设备 / 模拟器切片嵌入应用的 `Frameworks`，设置运行时搜索路径并随应用签名。
+
+Web 播放需要 Premium，使用手机 Safari 时第一次播放由触摸手势激活 SDK。
+iOS App Remote 与手机 Safari 的音量由设备音量键控制；界面显示「使用设备音量」。
+原生手机后台音频由 Spotify 应用持有，Metrolist 回到前台后重新订阅真实播放状态。
+
+Spotify 开发模式的账号授权、应用额度与 API 权限按其当前开发者配置执行。
+这里没有借用其他应用 Client ID，也没有内置任何账号或访问令牌。
+开发者规则与平台行为参考 [Web Playback SDK](https://developer.spotify.com/documentation/web-playback-sdk)、
+[Android SDK](https://developer.spotify.com/documentation/android)、
+[iOS SDK](https://developer.spotify.com/documentation/ios) 和
+[PKCE](https://developer.spotify.com/documentation/web-api/tutorials/code-pkce-flow)。
+
+### Web / 手机的数据来源
+
+`web/spotify-api.js` 供 Web 和原生 HostBackend 共用。首页由当前账号的最近播放、
+歌单和收藏专辑组成；搜索、专辑、艺人发行、收藏与歌单来自 Spotify Web API。
+歌单读取使用 2026 的 `/playlists/{id}/items` 结构，收藏使用 `/me/library`，
+原生队列定位保留原始条目索引，包含非歌曲条目占用的位置。
+
+官方开发模式 API 不再提供艺人热门歌曲，且只向拥有者 / 协作者提供部分歌单的内容；
+服务拒绝访问时显示其实际错误。Web / 手机的歌词由真实曲目元数据查询 LRCLIB，
+同步时间与提供方显示在歌词界面。桌面继续使用原 Spotish 网页桥的数据与歌词。
+这些差异来自 [Spotify 2026 API 变更](https://developer.spotify.com/documentation/web-api/references/changes/february-2026)。
 
 ### 手动选择浏览器或配置目录
 
@@ -117,7 +160,10 @@ Spotify 的操作通过其网页播放器和页面使用的数据完成。上游
 | --- | --- |
 | `App.tsx`、`src/providers.ts` | 应用壳、工作区恢复 / 切换、播放交接与主题 |
 | `src/spotish/App.tsx` | 可挂载的 Spotify 工作区与平台集成生命周期 |
-| `src/spotish/backend/` | Rust 引擎接口与显式演示后端 |
+| `src/spotish/backend/` | 桌面 EngineBackend、Web / 手机 HostBackend、显式测试 DemoBackend |
+| `web/spotify.js`、`web/spotify-api.js` | 顶层浏览器 SDK / PKCE 与跨平台真实目录、收藏和歌词 |
+| `android/MetrolistSpotify.java`、`android/SpotifyProtocol.java` | Android PKCE、App Remote、状态与控制 |
+| `native/src/spotish/mobile/` | iOS Rust 导出、Objective-C SDK 桥、真实封面取色 |
 | `src/spotish/state/`、`data/` | Spotify 独立状态、会话与账号缓存 |
 | `src/spotish/pages/`、`shells/`、`components/` | 页面、桌面 / 手机布局、动画和音乐灯光 |
 | `src/spotish/bridge/bridge.js` | 注入 Spotify Web Player 的浏览器桥 |
@@ -140,6 +186,7 @@ SPOTISH_DEMO=1 python3 scripts/run-nsh.py test tests/spotify-native.test.tsx
 cargo test --manifest-path native/Cargo.toml
 node --check src/spotish/bridge/bridge.js
 node --test src/spotish/bridge/tests/*.test.mjs
+node --test web/spotify*.test.mjs
 node src/spotish/bridge/gen-source.mjs --check
 ```
 
@@ -152,7 +199,9 @@ node src/spotish/bridge/gen-source.mjs
 
 `tests/spotify-ui.test.tsx` 在显式演示后端验证上游交互；
 `tests/spotify-switching.test.tsx` 验证服务间暂停、导航恢复、存储隔离和移动端
-演示标记。Rust 测试使用录制的响应与测试服务，着色器测试使用项目当前 NSH
+真实后端选择。`tests/spotify-connected.test.tsx` 使用协议测试 Host 验证实际
+HostBackend 的连接、账号与播放状态链路，不等同于 Spotify 账号出声验收。
+Rust 测试使用录制的响应与测试服务，着色器测试使用项目当前 NSH
 编译全部导入的 WGSL。
 
 `tests/spotify-native.test.tsx` 用 Rust 录制数据模式验证真实原生回调：
@@ -172,4 +221,4 @@ SPOTISH_BENCH=1 python3 scripts/run-nsh.py test --target linux --fps -v tests/sp
 基准涵盖播放静止页、首页与长歌单滚动、导航切换、反复打开 Now Playing，以及
 多页访问后的静止状态；它们仅在显式启用时执行。
 
-本次实际执行结果与尚未验证的项目见 [0.7 发布说明](releases-0.7.0.md)。
+本次实际执行结果与尚未验证的项目见 [0.8 发布说明](releases-0.8.0.md)。

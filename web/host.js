@@ -1,5 +1,8 @@
-// Browser file storage and operating-system media controls. Playback is NSH AudioPlayer.
+// Browser files, media controls, and the real Spotify Web Playback SDK.
+import { createSpotifyHost } from "./spotify.js";
+
 export function createHost(shell) {
+  const spotify = createSpotifyHost(shell);
   const objectURLs = new Map();
   const downloads = new Map();
   let database;
@@ -151,5 +154,8 @@ export function createHost(shell) {
       return { available: true, ...(await installPrompt.userChoice) };
     },
   };
-  return { call(name, args) { return commands[name](args); } };
+  return {
+    call(name, args) { return name.startsWith("app.spotify.") ? spotify.call(name, args) : commands[name](args); },
+    dispose() { spotify.dispose(); },
+  };
 }

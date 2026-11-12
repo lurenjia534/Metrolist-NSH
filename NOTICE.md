@@ -24,7 +24,13 @@ Metrolist、InnerTubeX 与 Metroserver 的源代码许可证为 GPL-3.0。NSH �
 
 Spotish 使用 Tabler Icons 3.19.0，Copyright (c) 2020–2024 Paweł Kuna，MIT 许可证全文见 [TABLER-LICENSE-MIT](third-party/spotish/TABLER-LICENSE-MIT)。上游 NOTICE 中对 Spotify AB 的特别授权只涉及原作者的 Spotish 作品，不构成对本工程其他代码的额外授权。分发二进制时同时附带 `third-party/spotish/` 中的许可证与说明。
 
-Spotify 工作区通过用户已安装的浏览器和用户账号运行 Spotify 自己的 Web Player；不包含 Widevine、Spotify 音频或浏览器发行包。Spotish 的广告行为保留：不屏蔽或跳过 Spotify 广告，免费账号与 Premium 的播放能力由 Spotify 原播放器决定。Spotify 是 Spotify AB 的商标；Metrolist NSH 和 Spotish 均未获得 Spotify 的官方合作或背书。
+桌面 Spotify 工作区通过用户已安装的浏览器和用户账号运行 Spotify 自己的 Web Player；不包含 Widevine、Spotify 音频或浏览器发行包。Spotish 的广告行为保留：不屏蔽或跳过 Spotify 广告，免费账号与 Premium 的播放能力由 Spotify 原播放器决定。Spotify 是 Spotify AB 的商标；Metrolist NSH 和 Spotish 均未获得 Spotify 的官方合作或背书。
+
+## Spotify 官方 SDK
+
+0.8 的 Web 接入在运行时载入 [Spotify Web Playback SDK](https://developer.spotify.com/documentation/web-playback-sdk)。Android 使用 [Spotify App Remote 0.8.0](https://github.com/spotify/android-sdk/tree/v0.8.0-appremote_v2.1.0-auth)，下载地址和摘要见 `android/spotify-dependencies.json`；Gson 2.15.0 使用 Apache-2.0。iOS 使用 [Spotify iOS SDK 5.0.1](https://github.com/spotify/ios-sdk/tree/0b3e54771738ad5e64f22c8e5e19ca76d6becc6c)，固定来源见 `scripts/spotify-ios-sdk.json`。
+
+这些 Spotify SDK 遵循 Spotify Developer Terms 与其分发包所附条款，项目的 GPL-3.0-only 不替换 SDK 自身条款。iOS 发行包保留 `legal/spotify-ios-sdk/` 中的上游 README 和第三方 Licenses。SDK 播放使用用户自己的 Spotify 会话，应用不附带音乐音频或账号令牌。
 
 ## 音乐目录与视觉素材
 

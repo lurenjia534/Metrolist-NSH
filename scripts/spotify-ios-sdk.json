@@ -1,0 +1,7 @@
+{
+  "repository": "spotify/ios-sdk",
+  "version": "5.0.1",
+  "revision": "0b3e54771738ad5e64f22c8e5e19ca76d6becc6c",
+  "archive": "https://codeload.github.com/spotify/ios-sdk/tar.gz/0b3e54771738ad5e64f22c8e5e19ca76d6becc6c",
+  "sha256": "35911dc9a75c4497b73c2c845c08f277f7dcf007253391b5e9f7ca8c1459b5bb"
+}

@@ -11,6 +11,7 @@ import { aboutOpen, finishFirstRun, firstRunOpen, setAboutOpen, setShortcutsOpen
 import { REGION_KEYS } from "../components/ui/regions";
 import { cancelSignIn, health, signedIn, signIn } from "../state/session";
 import { Logo } from "../ui/logo";
+import { connectedBackend } from "../state/engine";
 
 const DISCLAIMER = "Metrolist uses Spotish’s native interface and playback engine. Neither project is affiliated with Spotify.";
 
@@ -115,7 +116,7 @@ export function AboutDialog() {
         <View class="gap-2" selectable={!terminal}>
           <Text class="text-sm font-bold text-foreground">{DISCLAIMER}</Text>
           <Text class="text-sm text-muted-foreground">
-            It plays through Spotify's own web player, so a Spotify account is needed and Spotify's terms apply. Spotify, its
+            It plays through Spotify's player in your browser or the Spotify app on your phone. A Spotify account is needed and Spotify's terms apply. Spotify, its
             logo and all music, artwork and trademarks belong to Spotify and the rights holders.
           </Text>
           <View class="flex-row flex-wrap gap-x-4 gap-y-1">
@@ -158,7 +159,7 @@ export function SigningInDialog() {
           Log in to Spotify
         </Text>
         <Text class="text-center text-sm text-muted-foreground">
-          Log in in the Spotify window, then close it to finish.
+          {connectedBackend ? "在 Spotify 授权页面登录并允许连接，完成后会返回这里。" : "Log in in the Spotify window, then close it to finish."}
         </Text>
         <ActionButton label="Cancel" onPress={cancelSignIn} />
       </View>

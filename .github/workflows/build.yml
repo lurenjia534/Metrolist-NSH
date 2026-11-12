@@ -91,6 +91,7 @@ jobs:
           node --check src/spotish/bridge/bridge.js
           node --test src/spotish/bridge/tests/bridge.test.mjs
           node src/spotish/bridge/gen-source.mjs --check
+          node --test web/spotify-api.test.mjs web/spotify.test.mjs
       - run: python scripts/run-nsh.py check
       - run: python scripts/run-nsh.py build
       - run: python scripts/run-nsh.py test --web-host tests/native-login/host.js

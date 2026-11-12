@@ -98,8 +98,8 @@ test("Spotify preferences stay separate when switching back to YouTube Music", a
 });
 
 for (const platform of ["web", "android", "ios"] as const) {
-  test(`${platform} restores Spotify as an explicit demo and can return to YouTube Music`, async () => {
-    const app = await open("../App.tsx", {
+  test(`${platform} restores the real Spotify connection and can return to YouTube Music`, async () => {
+    const app = await open("./spotify-connected/app.tsx", {
       width: 390,
       height: 844,
       platform,
@@ -107,7 +107,6 @@ for (const platform of ["web", "android", "ios"] as const) {
       storage: { ...storage, "metrolist.provider": "spotify" },
       network,
       host: {
-        ...host,
         handlers: {
           ...host.handlers,
           "app.audio.settings": null,
@@ -116,26 +115,27 @@ for (const platform of ["web", "android", "ios"] as const) {
         },
       },
     });
-    await app.waitFor("id:spotify-demo-banner");
-    expect(app.texts()).toContain("Spotify 预览 · 示例数据");
+    await app.waitFor("id:spotify-connect");
+    await app.waitFor("id:spotify-client-id");
+    expect(app.shows("id:spotify-demo-banner")).toBe(false);
+    expect(app.texts()).not.toContain("Good evening, Ada");
     await app.press("id:provider-youtube");
     await app.waitFor("id:metrolist-app");
     await app.waitFor("id:nav-mobile-home");
     await app.press("id:provider-spotify");
-    await app.waitFor("id:spotify-demo-banner");
+    await app.waitFor("id:spotify-connect");
     expect(app.storage()["metrolist.provider"]).toBe("spotify");
   });
 }
 
 test("Android hands notification and headset controls to the selected workspace", async () => {
-  const app = await open("../App.tsx", {
+  const app = await open("./spotify-connected/app.tsx", {
     width: 390,
     height: 844,
     platform: "android",
     storage,
     network,
     host: {
-      ...host,
       handlers: {
         ...host.handlers,
         "app.audio.settings": null,
@@ -155,7 +155,7 @@ test("Android hands notification and headset controls to the selected workspace"
   expect(controlSettings().at(-1)).toMatchObject({ remoteControlled: false });
 
   await app.press("id:provider-spotify");
-  await app.waitFor("id:spotify-demo-banner");
+  await app.waitFor("id:spotify-connect");
   // Android's media service handles play/pause directly, so the native
   // command gate must change as well as the JS host-event handler.
   expect(controlSettings().at(-1)).toMatchObject({ remoteControlled: true });
