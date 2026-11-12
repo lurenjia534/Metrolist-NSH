@@ -185,6 +185,15 @@ async fn transfer(
 }
 
 pub(super) fn copy_into(source: &Path, directory: &str, name: &str) -> Result<SavedFile, String> {
+    let input = source.to_string_lossy();
+    let source = if input.starts_with("file:") {
+        url::Url::parse(&input)
+            .map_err(|e| e.to_string())?
+            .to_file_path()
+            .map_err(|_| "The file URL must reference a local path".to_string())?
+    } else {
+        source.to_path_buf()
+    };
     std::fs::create_dir_all(directory).map_err(|e| e.to_string())?;
     let name = filename(name);
     let destination = Path::new(directory)

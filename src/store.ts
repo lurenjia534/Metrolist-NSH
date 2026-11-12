@@ -1,7 +1,7 @@
 import { batch, computed, host, openUrl, Picker, platform, setColorScheme, signal, Storage } from "nsh";
 import { mkdir, writeFile } from "fs/promises";
 import process from "process";
-import { fileURLToPath, pathToFileURL } from "url";
+import { pathToFileURL } from "url";
 import { NativeFiles } from "metrolist/native";
 import seed from "../assets/catalog-seed.json";
 import * as api from "./api";
@@ -682,7 +682,7 @@ function audioFilename(track: Track, mimeType = "") {
 }
 async function nativeDownload(id: string, source: StreamInfo, name: string, controller: AbortController) {
   const transfer = source.url.startsWith("file:")
-    ? NativeFiles.copyInto(fileURLToPath(source.url), nativeDownloadsDirectory, name)
+    ? NativeFiles.copyInto(source.url, nativeDownloadsDirectory, name)
     : NativeFiles.download({ id, url: source.url, name, directory: nativeDownloadsDirectory, headers: source.headers || {} });
   downloadTransfers.set(id, transfer);
   const polling = setInterval(() => {

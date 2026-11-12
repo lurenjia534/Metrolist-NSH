@@ -115,7 +115,7 @@ impl NativeFiles {
         }
     }
 
-    /// Copies an existing file into the app's music directory without buffering it in JavaScript.
+    /// Copies an absolute path or file URL into the music directory without buffering it in JavaScript.
     pub async fn copy_into(
         source: String,
         directory: String,

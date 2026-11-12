@@ -140,6 +140,28 @@ async fn streams_more_than_eight_mib_and_copies_the_saved_file() {
     server.abort();
 }
 
+#[test]
+fn copies_file_urls_and_literal_paths_with_unicode_spaces_and_percent_signs() {
+    let directory = std::env::temp_dir().join(format!("metrolist-copy-{}", unique()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let name = "原音频 100%20 完成.m4a";
+    let source = directory.join(name);
+    let bytes = payload(65539);
+    std::fs::write(&source, &bytes).unwrap();
+    let file_url = url::Url::from_file_path(&source).unwrap();
+    assert!(file_url.as_str().contains("%20"));
+    assert!(file_url.as_str().contains("%2520"));
+    let copies = directory.join("copies");
+    for input in [&source, Path::new(file_url.as_str())] {
+        let copied = copy_into(input, copies.to_str().unwrap(), name).unwrap();
+        assert_eq!(copied.name, name);
+        assert_eq!(copied.bytes, bytes.len() as u64);
+        assert_eq!(std::fs::read(copied.destination).unwrap(), bytes);
+    }
+    assert_eq!(std::fs::read(source).unwrap(), bytes);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
 #[tokio::test]
 async fn cancellation_interrupts_a_stalled_response_and_removes_partial_file() {
     let (origin, server) = server().await;
