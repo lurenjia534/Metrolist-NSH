@@ -229,6 +229,34 @@ test("on a phone, the library drawer has the whole sidebar", async () => {
   await app.waitFor("Good evening, Ada");
 });
 
+test("on a narrow phone, card playback, the mini player and full playback controls remain independent", async () => {
+  const app = await phone({ premium: true });
+  await app.setViewport(320, 640);
+  await app.waitFor("Good evening, Ada");
+  const card = "id:page-home >> role:button[Morning Static, Playlist · Demo]";
+  const tracks = collection("spotify:playlist:morningstatic")!.tracks;
+
+  // The card's dedicated Play starts its music without opening the card.
+  await app.press(`${card} >> role:button[Play]`);
+  await app.waitFor("id:mini-player >> role:button[Pause]");
+  expect(app.shows("id:page-home")).toBe(true);
+  expect(app.shows("Soft starts for slow mornings.")).toBe(false);
+
+  // Pause stays distinct from the adjacent button that opens Now Playing.
+  await app.press("id:mini-player >> role:button[Pause]");
+  await app.waitFor("id:mini-player >> role:button[Play]");
+  expect(app.shows("id:now-playing-content")).toBe(false);
+  await app.press(`id:mini-player >> role:button[Open Now Playing: ${tracks[0].name}]`);
+  await app.waitFor("id:now-playing-content >> role:button[Play]");
+  await app.press("id:now-playing-content >> role:button[Play]");
+  await app.waitFor("id:now-playing-content >> role:button[Pause]");
+  await app.press("id:now-playing-content >> role:button[Next]");
+  await app.waitFor(`id:now-playing-content >> text:${tracks[1].name}`);
+  await app.press("id:now-playing-content >> role:button[Close Now Playing]");
+  await app.waitFor("id:now-playing-content", { state: "gone" });
+  await app.waitFor(`id:mini-player >> text:${tracks[1].name}`);
+});
+
 test("the sidebar folds away and comes back", async () => {
   const app = await desktop();
   await app.waitFor("Good evening, Ada");
@@ -419,6 +447,7 @@ test("choosing the sort in use again runs it the other way", async () => {
   await app.waitFor(`role:button[${tracks[0].name}, ${tracks[0].artists}]`);
 
   await app.press("role:button[Sort tracks: Custom order]");
+  await app.waitFor("role:menuitemcheckbox[Title]");
   await app.press("role:menuitemcheckbox[Title]");
   await app.waitFor("role:button[Sort tracks: Title ↑]");
   const first = app.texts();

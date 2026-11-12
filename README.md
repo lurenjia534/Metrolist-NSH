@@ -1,4 +1,4 @@
-# Metrolist NSH · 0.7.0
+# Metrolist NSH · 0.7.1
 
 使用 [Native Shell（nsh）](https://github.com/longbridge/nsh) 编写的 Metrolist 移植版。共享 TSX 界面、个人曲库、播放队列和纯音频播放器，面向现代浏览器、桌面系统与具备相应运行时的手机平台。
 
@@ -13,6 +13,8 @@
 **Android 0.7 沿用 0.5 / 0.6 的 `app.miku.metrolist.preview` 和同一签名，应用名为 `Metrolist NSH Preview`。** 可覆盖升级并保留账号、曲库与下载；最低 Android 8 / API 26。0.4 使用的 `app.miku.metrolist.next` 与它是不同应用，可从旧版导出曲库再导入。正式 Android 发布使用持久签名；构建检查产生的测试签名文件不作为正式升级包。
 
 ### 0.7：独立 Spotify 工作区
+
+0.7.1 改善手机触摸操作：卡片播放按钮在手机布局中直接显示，迷你播放器播放键使用至少 44px 的触摸区域。此修复不会让演示后端获得真实 Spotify 音频；平台现状和后续接入要求见 [0.7.1 发布说明](docs/releases-0.7.1.md)。
 
 从顶部选择 **Spotify** 即可进入独立界面：侧栏音乐库、首页推荐、搜索、专辑 / 艺人 / 歌单、曲目排序、悬浮播放器、全屏 Now Playing 和同步歌词均沿用 Spotish 的实现。播放器和全屏页共有 14 种音乐灯光效果，并支持每曲随机；按压层、图标变形、列表波浪入场、封面翻转、导航和歌词动画由 NSH 绘制。
 

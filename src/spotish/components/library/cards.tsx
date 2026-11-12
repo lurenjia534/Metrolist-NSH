@@ -1,3 +1,4 @@
+// Adapted for Metrolist NSH; see third-party/spotish/README.md.
 // Cards: playlists, albums, artists and tracks as tiles, in rows that
 // scroll sideways or in a wrapping grid.
 
@@ -6,6 +7,7 @@ import { type Item, opens } from "../../backend/types";
 import { open } from "../../nav";
 import { isPlayingContext, playItem, toggleCollection } from "../../state/player";
 import { ready } from "../../state/session";
+import { layout } from "../layout";
 import { Cover, focusRing, keyRing, PlayButton, Pressable, SectionTitle, terminal } from "../ui/controls";
 import { createListKeys, KEYS_VIEWABILITY, type ListGroup, type ListKeys } from "../ui/list-keys";
 import type { IconName } from "../ui/icons";
@@ -37,8 +39,8 @@ const playInset = (card: number) => Math.round(playSize(card) / PHI ** 2);
 
 /** One card: picture, name, and what it is. With its row's `wave`, it rises
  * in after the cards before it (`index`) each time the page is entered, and
- * on its own when it is scrolled into view. On hover it shows its play
- * button. */
+ * on its own when it is scrolled into view. Phones keep the play button
+ * visible; other layouts reveal it on hover. */
 export function Card(props: {
   item: Item;
   index?: number;
@@ -52,6 +54,8 @@ export function Card(props: {
   keys?: ListKeys;
 }) {
   const width = () => props.width ?? CARD_WIDTH;
+  const phone = () => layout() === "phone";
+  const buttonSize = () => phone() ? Math.max(44, playSize(width())) : playSize(width());
   const playing = () => isPlayingContext(props.item.uri);
   const play = () => (opens(props.item) ? toggleCollection(props.item.uri) : playItem(props.item));
   // Made once, here: inside the Button's style it would be made (and
@@ -101,10 +105,10 @@ export function Card(props: {
           <View
             style={{ right: playInset(width()), bottom: playInset(width()) }}
             class={`absolute transition duration-200 ease-out group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100 motion-reduce:transition-none ${
-              playing() ? "translate-y-0 scale-100 opacity-100" : "translate-y-3 scale-75 opacity-0"
+              phone() || playing() ? "translate-y-0 scale-100 opacity-100" : "translate-y-3 scale-75 opacity-0"
             }`}
           >
-            <PlayButton focusable={!props.keys} playing={playing()} size={playSize(width())} disabled={!ready()} onPress={play} />
+            <PlayButton focusable={!props.keys} playing={playing()} size={buttonSize()} disabled={!ready()} onPress={play} />
           </View>
         </If>
       </View>

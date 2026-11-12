@@ -1,6 +1,6 @@
 # Android APK 构建与原生播放
 
-当前源码版本为 **0.7.0**。可升级发行使用 `python3 scripts/release.py android`，沿用 `app.miku.metrolist.preview` 和原 0.5 preview 签名。下面的播放链路与签名方式继承自 0.5.1；0.7 的 Spotify 工作区在 Android 上为明确标注的界面演示，详见 [0.7 发布说明](releases-0.7.0.md)。
+当前源码版本为 **0.7.1**。可升级发行使用 `python3 scripts/release.py android`，沿用 `app.miku.metrolist.preview` 和原 0.5 preview 签名。下面的播放链路与签名方式继承自 0.5.1；0.7 的 Spotify 工作区在 Android 上为明确标注的界面演示，详见 [0.7 发布说明](releases-0.7.0.md) 与 [手机触摸修复](releases-0.7.1.md)。
 
 ## 0.5.1 的 Android 播放链路
 
