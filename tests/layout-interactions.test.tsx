@@ -5,14 +5,13 @@ const beta = { ...alpha, id: "layout-beta", title: "Beta layout song" };
 const gamma = { ...alpha, id: "layout-gamma", title: "Gamma layout song" };
 const playlist = { id: "layout-playlist", name: "Layout playlist", tracks: [alpha, beta, gamma], createdAt: 1, updatedAt: 1 };
 const storage = {
-  "metrolist.settings": JSON.stringify({ autoRadio: false, apiBase: "http://127.0.0.1:8787", libraryView: "grid" }),
+  "metrolist.settings": JSON.stringify({ autoRadio: false, apiBase: "https://gateway.test", libraryView: "grid" }),
   "metrolist.library": JSON.stringify({ version: 2, exportedAt: "", tracks: [alpha, beta, gamma], likedIds: [], history: [], playlists: [playlist], libraryIds: [alpha.id, beta.id, gamma.id], savedCollections: [], searchHistory: [], listenEvents: [] }),
 };
 const network = {
-  "GET http://127.0.0.1:8787/api/home": { body: { sections: [] } },
-  "GET http://127.0.0.1:8787/api/download": { body: { downloads: [] } },
-  "GET http://127.0.0.1:8787/api/suggestions?q=*": { body: { query: "Layout", suggestions: [] } },
-  "GET http://127.0.0.1:8787/api/search?q=Layout&type=all": { body: { query: "Layout", type: "all", items: [alpha, beta] } },
+  "GET https://gateway.test/api/home": { body: { sections: [] } },
+  "GET https://gateway.test/api/suggestions?q=*": { body: { query: "Layout", suggestions: [] } },
+  "GET https://gateway.test/api/search?q=Layout&type=all": { body: { query: "Layout", type: "all", items: [alpha, beta] } },
 };
 
 for (const { width, height } of [{ width: 340, height: 640 }, { width: 800, height: 360 }, { width: 800, height: 1100 }]) test(`Android ${width}x${height} keeps search, library, dialogs, playlist editing and lyric settings usable`, async () => {

@@ -76,7 +76,7 @@ public final class MetrolistHost implements AutoCloseable {
         }));
         view.handle("files.download", (data, reply) -> {
             Map<String, Object> args = arguments(data);
-            Download download = new Download(string(args, "id"), string(args, "url"), reply);
+            Download download = new Download(string(args, "id"), string(args, "url"), arguments(args.get("headers")), reply);
             downloads.put(download.id, download);
             io.execute(download);
         });
@@ -149,11 +149,12 @@ public final class MetrolistHost implements AutoCloseable {
 
     private final class Download implements Runnable {
         final String id, url;
+        final Map<String, Object> headers;
         final NshHostReply reply;
         volatile boolean cancelled;
         volatile URLConnection connection;
         volatile InputStream input;
-        Download(String id, String url, NshHostReply reply) { this.id = id; this.url = url; this.reply = reply; }
+        Download(String id, String url, Map<String, Object> headers, NshHostReply reply) { this.id = id; this.url = url; this.headers = headers; this.reply = reply; }
         void cancel() {
             cancelled = true;
             if (connection instanceof HttpURLConnection) ((HttpURLConnection) connection).disconnect();
@@ -164,6 +165,8 @@ public final class MetrolistHost implements AutoCloseable {
             File part = new File(file.getPath() + ".part");
             try {
                 connection = new URL(url).openConnection();
+                for (Map.Entry<String, Object> header : headers.entrySet()) connection.setRequestProperty(header.getKey(), String.valueOf(header.getValue()));
+                connection.setRequestProperty("Accept-Encoding", "identity");
                 if (connection instanceof HttpURLConnection) {
                     int status = ((HttpURLConnection) connection).getResponseCode();
                     if (status < 200 || status >= 300) throw new IOException("下载返回 HTTP " + status);

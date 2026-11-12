@@ -3,16 +3,15 @@ import type { App } from "nsh/test";
 
 const online = { id: "video", title: "Video song", artist: "Online artist", album: "Album", artwork: "", duration: 60, source: "youtube" };
 const catalog = { ...online, id: "catalog", title: "Catalog song" };
-const storage = { "metrolist.settings": JSON.stringify({ apiBase: "http://127.0.0.1:8787", autoRadio: false }) };
+const storage = { "metrolist.settings": JSON.stringify({ apiBase: "https://gateway.test", autoRadio: false }) };
 const network = {
-  "GET http://127.0.0.1:8787/api/home": { body: { sections: [] } },
-  "GET http://127.0.0.1:8787/api/download": { body: { downloads: [] } },
-  "GET http://127.0.0.1:8787/api/lyrics?*": { body: { plainLyrics: "Line", syncedLyrics: "", lines: [], instrumental: false } },
-  "GET http://127.0.0.1:8787/api/stream?id=video&quality=auto*": { body: { url: "https://audio.test/auto.m4a", quality: "auto", mimeType: "audio/mp4", bitrate: 128000 } },
-  "GET http://127.0.0.1:8787/api/stream?id=video&quality=high*": { body: { url: "https://audio.test/high.m4a", quality: "high", mimeType: "audio/mp4", bitrate: 256000 } },
+  "GET https://gateway.test/api/home": { body: { sections: [] } },
+  "GET https://gateway.test/api/lyrics?*": { body: { plainLyrics: "Line", syncedLyrics: "", lines: [], instrumental: false } },
+  "GET https://gateway.test/api/stream?id=video&quality=auto*": { body: { url: "https://audio.test/auto.m4a", quality: "auto", mimeType: "audio/mp4", bitrate: 128000 } },
+  "GET https://gateway.test/api/stream?id=video&quality=high*": { body: { url: "https://audio.test/high.m4a", quality: "high", mimeType: "audio/mp4", bitrate: 256000 } },
 };
 const read = (app: App, name: string) => JSON.parse(app.texts().find((text) => text.startsWith(`${name}:`))!.slice(name.length + 1));
-const settings = (extra: object) => ({ "metrolist.settings": JSON.stringify({ apiBase: "http://127.0.0.1:8787", autoRadio: false, ...extra }) });
+const settings = (extra: object) => ({ "metrolist.settings": JSON.stringify({ apiBase: "https://gateway.test", autoRadio: false, ...extra }) });
 
 test("pure audio quality changes preserve paused position and resolve the selected quality", async () => {
   const app = await open("./runtime-fixture.tsx", { width: 1440, height: 940, platform: "linux", network, storage });
@@ -30,7 +29,7 @@ test("pure audio quality changes preserve paused position and resolve the select
 test("pausing an unresolved source prevents later autoplay and the next play uses new quality", async () => {
   const app = await open("./runtime-fixture.tsx", { width: 1440, height: 940, platform: "linux", clock: {}, storage, network: {
     ...network,
-    "GET http://127.0.0.1:8787/api/stream?id=video&quality=auto*": { delay: 60000, body: { url: "https://audio.test/old.m4a" } },
+    "GET https://gateway.test/api/stream?id=video&quality=auto*": { delay: 60000, body: { url: "https://audio.test/old.m4a" } },
   } });
   await app.press("Start video"); await app.waitFor("Loading");
   await app.press("Pause"); await app.press("High quality");
@@ -63,7 +62,7 @@ test("duplicate queue rows move independently and paused removal plus repeat kee
 test("changing quality during resolution keeps play intent and disposes the obsolete request", async () => {
   const app = await open("./runtime-fixture.tsx", { width: 1440, height: 940, platform: "linux", clock: {}, storage, network: {
     ...network,
-    "GET http://127.0.0.1:8787/api/stream?id=video&quality=auto*": { delay: 60000, body: { url: "https://audio.test/obsolete.m4a" } },
+    "GET https://gateway.test/api/stream?id=video&quality=auto*": { delay: 60000, body: { url: "https://audio.test/obsolete.m4a" } },
   } });
   await app.press("Start video"); await app.waitFor("Loading");
   await app.press("High quality"); await app.waitFor("Playing");
@@ -74,7 +73,7 @@ test("changing quality during resolution keeps play intent and disposes the obso
 
 test("catalog results remain outside the library until saved and unlike preserves a saved song", async () => {
   const app = await open("./runtime-fixture.tsx", { width: 1440, height: 940, platform: "linux", storage, network: {
-    ...network, "GET http://127.0.0.1:8787/api/search?q=Catalog&type=all": { body: { query: "Catalog", type: "all", items: [catalog] } },
+    ...network, "GET https://gateway.test/api/search?q=Catalog&type=all": { body: { query: "Catalog", type: "all", items: [catalog] } },
   } });
   await app.press("Search catalog");
   expect(read(app, "library").ids).toEqual([]);
@@ -118,9 +117,9 @@ test("automatic radio appends distinct recommendations and guests wait for the r
   const radioSong = { ...online, id: "radio", title: "Radio song" };
   const app = await open("./runtime-fixture.tsx", { width: 1440, height: 940, platform: "linux", storage: settings({ autoRadio: true }), network: {
     ...network,
-    "GET http://127.0.0.1:8787/api/next?id=video": { body: { tracks: [online, radioSong, radioSong] } },
-    "GET http://127.0.0.1:8787/api/next?id=radio": { body: { tracks: [online, radioSong] } },
-    "GET http://127.0.0.1:8787/api/stream?id=radio*": { body: { url: "https://audio.test/radio.m4a" } },
+    "GET https://gateway.test/api/next?id=video": { body: { tracks: [online, radioSong, radioSong] } },
+    "GET https://gateway.test/api/next?id=radio": { body: { tracks: [online, radioSong] } },
+    "GET https://gateway.test/api/stream?id=radio*": { body: { url: "https://audio.test/radio.m4a" } },
   } });
   await app.press("Start video");
   await app.waitUntil(() => read(app, "queue").ids.length === 2);
@@ -131,24 +130,28 @@ test("automatic radio appends distinct recommendations and guests wait for the r
   expect(read(app, "queue")).toMatchObject({ ids: ["alpha", "beta"], index: 0, playing: false });
 });
 
-test("download failure can retry into managed offline audio and then remove its data", async () => {
+test("native download failure retries into device-owned offline audio independently of the catalog service", async () => {
   let attempts = 0;
-  const complete = { id: "video", track: online, quality: "auto", status: "completed", progress: 1, bytes: 9437307, totalBytes: 9437307, destination: "/music/video.m4a", url: "http://127.0.0.1:8787/api/offline?id=video", name: "Video song.m4a", createdAt: 1, updatedAt: 2 };
-  const app = await open("./runtime-fixture.tsx", { width: 1440, height: 940, platform: "linux", storage, network: {
-    ...network,
-    "POST http://127.0.0.1:8787/api/download": () => ({ body: ++attempts === 1 ? { ...complete, status: "failed", error: "Fixture stream failure" } : complete }),
-    "GET http://127.0.0.1:8787/api/download?id=video": { body: { ...complete, status: "failed", error: "Fixture stream failure" } },
-    "DELETE http://127.0.0.1:8787/api/download?id=video": { body: { id: "video", status: "cancelled" } },
-  } });
+  const saved = { name: "Video song.m4a", destination: "/music/video.m4a", url: "file:///music/video.m4a", bytes: 9437307 };
+  const app = await open("./runtime-fixture.tsx", { width: 1440, height: 940, platform: "linux", storage, network, host: { handlers: {
+    "app.test.files.download": () => {
+      if (++attempts === 1) throw new Error("Fixture stream failure");
+      return saved;
+    },
+    "app.test.files.remove": null,
+  } } });
   await app.press("Download");
   await app.waitUntil(() => read(app, "downloads")[0]?.status === "failed");
   await app.press("Retry download");
   await app.waitUntil(() => read(app, "downloads")[0]?.status === "completed");
   expect(read(app, "downloads")[0].bytes).toBe(9437307);
+  const resolved = app.requests().filter(request => request.url.includes("/api/stream")).length;
   await app.press("Start video"); await app.waitFor("Playing");
-  expect(app.audio().filter((call) => call.command === "open")[0].src).toBe(complete.url);
-  expect(app.requests().some((request) => request.url.includes("/api/stream"))).toBe(false);
+  expect(app.audio().filter((call) => call.command === "open")[0].src).toBe(saved.url);
+  expect(app.requests().filter(request => request.url.includes("/api/stream"))).toHaveLength(resolved);
+  expect(app.requests().some(request => request.url.includes("/api/download") || request.url.includes("/api/offline"))).toBe(false);
   await app.press("Remove download");
+  expect(app.host.calls().some(call => call.name === "app.test.files.remove" && (call.data as { destination: string }).destination === saved.destination)).toBe(true);
   expect(read(app, "downloads")).toEqual([]);
   expect(JSON.parse(app.storage()["metrolist.downloads"])).toEqual([]);
 });
@@ -190,4 +193,31 @@ test("blocked autoplay resumes the retained AudioPlayer and initializes lyrics a
   expect(app.audio().filter((call) => call.command === "open")).toHaveLength(1);
   expect(app.host.calls().filter((call) => call.name === "app.metadata")).toHaveLength(1);
   expect(app.requests().filter((request) => request.url.includes("/api/lyrics"))).toHaveLength(1);
+});
+
+test("a failed native replacement preserves the previous offline file until a successful replacement is saved", async () => {
+  let attempts = 0;
+  const old = { id: "video", track: online, quality: "auto", status: "completed", progress: 1, bytes: 100,
+    destination: "/music/original.m4a", url: "file:///music/original.m4a", name: "Video song.m4a", createdAt: 1, updatedAt: 2 };
+  const saved = { name: "Video song.m4a", destination: "/music/replacement.m4a", url: "file:///music/replacement.m4a", bytes: 9437307 };
+  const app = await open("./runtime-fixture.tsx", { width: 1440, height: 940, platform: "linux", network, storage: {
+    ...storage, "metrolist.downloads": JSON.stringify([old]),
+  }, host: { handlers: {
+    "app.test.files.download": () => {
+      if (++attempts === 1) throw new Error("Replacement unavailable");
+      return saved;
+    },
+    "app.test.files.remove": null,
+  } } });
+  await app.waitUntil(() => read(app, "downloads")[0]?.status === "completed");
+  await app.press("Download");
+  await app.waitUntil(() => !!read(app, "downloads")[0]?.error?.includes("Replacement unavailable"));
+  expect(read(app, "downloads")[0]).toMatchObject({ status: "completed", destination: old.destination, url: old.url, bytes: old.bytes });
+  expect(app.host.calls().filter(call => call.name === "app.test.files.remove")).toHaveLength(0);
+  await app.press("Start video"); await app.waitFor("Playing");
+  expect(app.audio().find(call => call.command === "open")!.src).toBe(old.url);
+  await app.press("Download");
+  await app.waitUntil(() => read(app, "downloads")[0]?.url === saved.url);
+  expect(read(app, "downloads")[0]).toMatchObject({ status: "completed", destination: saved.destination, bytes: saved.bytes });
+  expect(app.host.calls().filter(call => call.name === "app.test.files.remove").map(call => call.data)).toEqual([{ destination: old.destination }]);
 });

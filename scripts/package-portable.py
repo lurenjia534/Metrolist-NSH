@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Package desktop apps with their own Node gateway, or archive the web build."""
+"""Package the native NSH desktop application, or archive the separate web build."""
 import argparse
 import hashlib
 import json
-import os
 from pathlib import Path
 import platform
 import plistlib
@@ -11,13 +10,13 @@ import shutil
 import subprocess
 import tarfile
 import zipfile
+from nsh_path import NSH, NSH_ENV
 
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES = ROOT / 'scripts/portable'
-APP = json.loads((ROOT / 'nsh.json').read_text())
+APP = json.loads((ROOT / 'nsh.json').read_text(encoding='utf-8'))
 VERSION = APP['version']
-NODE = json.loads((ROOT / 'scripts/node-toolchain.json').read_text())
-TOOLCHAIN = ROOT.parent / 'toolchain'
+NSH_LOCK = json.loads((ROOT / 'scripts/nsh-toolchain.json').read_text())
 
 
 def run(*args, **options):
@@ -51,33 +50,36 @@ def copy_notices(destination):
     shutil.copy2(TEMPLATES / 'NSH-LICENSE-APACHE.txt', destination / 'licenses/NSH-APACHE-2.0.txt')
 
 
-def bundle_node(target, arch, destination):
-    item = NODE['archives'][f'{target}-{arch}']
-    archive = TOOLCHAIN / 'node-downloads' / item['file']
-    archive.parent.mkdir(parents=True, exist_ok=True)
-    if not archive.exists():
-        temporary = archive.with_name(archive.name + '.part')
-        run('curl', '--fail', '--location', '--silent', '--show-error', '--output', temporary,
-            NODE['downloadBase'] + '/' + item['file'])
-        temporary.replace(archive)
-    if digest(archive) != item['sha256']:
-        raise RuntimeError(f'Node archive checksum mismatch: {archive}')
-    destination.mkdir(parents=True, exist_ok=True)
-    executable = destination / ('node.exe' if target == 'windows' else 'node')
-    if target == 'windows':
-        with zipfile.ZipFile(archive) as package:
-            prefix = archive.name.removesuffix('.zip')
-            executable.write_bytes(package.read(prefix + '/node.exe'))
-            (destination / 'NODE-LICENSE.txt').write_bytes(package.read(prefix + '/LICENSE'))
+def verify_native_package(app, target):
+    """Inspect the packaged executable and bundle; this is not a GUI smoke test."""
+    if target == 'macos':
+        bundle = app / (APP['name'] + '.app')
+        info = plistlib.loads((bundle / 'Contents/Info.plist').read_bytes())
+        executable = bundle / 'Contents/MacOS' / info['CFBundleExecutable']
+        resources = bundle / 'Contents/Resources/nsh'
     else:
-        with tarfile.open(archive) as package:
-            prefix = archive.name.removesuffix('.tar.gz').removesuffix('.tar.xz')
-            binary = package.getmember(prefix + '/bin/node')
-            license_file = package.getmember(prefix + '/LICENSE')
-            executable.write_bytes(package.extractfile(binary).read())
-            (destination / 'NODE-LICENSE.txt').write_bytes(package.extractfile(license_file).read())
-        executable.chmod(0o755)
-    return executable
+        executable = app / (APP['name'] + ('.exe' if target == 'windows' else ''))
+        resources = app / 'nsh'
+    with executable.open('rb') as stream:
+        magic = stream.read(4)
+    formats = {'linux': (b'\x7fELF',), 'windows': (b'MZ',),
+               'macos': (b'\xcf\xfa\xed\xfe', b'\xfe\xed\xfa\xcf', b'\xca\xfe\xba\xbe', b'\xbe\xba\xfe\xca')}
+    if not any(magic.startswith(prefix) for prefix in formats[target]):
+        raise RuntimeError(f'{executable} is not a native {target} executable')
+    if not (resources / 'bundle.nshc').stat().st_size:
+        raise RuntimeError('The packaged NSH application bundle is empty')
+    metadata = json.loads((resources / 'app.json').read_text(encoding='utf-8'))
+    if metadata['id'] != APP['id'] or metadata['version'] != VERSION:
+        raise RuntimeError('Packaged NSH metadata differs from nsh.json')
+    if metadata.get('window') != APP['window']:
+        raise RuntimeError('Packaged window metadata differs from nsh.json')
+    obsolete = [path.relative_to(app).as_posix() for path in app.rglob('*')
+                if path.name in ('node', 'node.exe', 'gateway', 'MetrolistLauncher', 'Launcher.cs', 'portable.json')]
+    if obsolete:
+        raise RuntimeError('Desktop package includes obsolete gateway files: ' + ', '.join(obsolete))
+    return {'nativeExecutable': executable.relative_to(app).as_posix(),
+            'nativeExecutableSha256': digest(executable), 'nativeBundleSha256': digest(resources / 'bundle.nshc'),
+            'nativePackageCheck': 'passed', 'bundledNode': False, 'bundledGateway': False}
 
 
 def archive_directory(app, archive, target):
@@ -121,59 +123,34 @@ def package(target, output, arch):
         return
 
     native_out = ROOT / 'releases' / f'{target}-{arch}'
-    run('node', ROOT / 'scripts/run-nsh.mjs', 'package', '--target', target,
-        '--out', native_out, cwd=ROOT)
+    run(NSH, 'package', '--target', target, '--out', native_out, cwd=ROOT, env=NSH_ENV)
     app = native_out / APP['name']
     if target == 'macos':
         shutil.rmtree(app, ignore_errors=True)
         app.mkdir(parents=True)
         bundle = app / (APP['name'] + '.app')
         shutil.move(str(native_out / bundle.name), bundle)
-        resources = bundle / 'Contents/Resources'
-        executable = '../MacOS/' + APP['name']
-        launcher = bundle / 'Contents/MacOS/MetrolistLauncher'
-        shutil.copy2(TEMPLATES / 'macos/launch.sh', launcher)
-        launcher.chmod(0o755)
-        plist_path = bundle / 'Contents/Info.plist'
-        info = plistlib.loads(plist_path.read_bytes())
-        info['CFBundleExecutable'] = 'MetrolistLauncher'
-        plist_path.write_bytes(plistlib.dumps(info))
     else:
-        resources = app
-        extension = '.exe' if target == 'windows' else ''
-        executable = APP['name'] + '-native' + extension
-        (app / (APP['name'] + extension)).rename(app / executable)
-        if target == 'linux':
-            shutil.copy2(TEMPLATES / 'linux/start.sh', app / APP['name'])
-            (app / APP['name']).chmod(0o755)
-            shutil.copy2(TEMPLATES / 'linux/start.sh', app / 'start.sh')
-            (app / 'start.sh').chmod(0o755)
-        else:
-            compiler = Path(os.environ['WINDIR']) / 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
-            run(compiler, '/nologo', '/target:winexe', '/optimize+',
-                f'/out:{app / (APP["name"] + ".exe")}', f'/win32icon:{app / "nsh/icon.ico"}',
-                TEMPLATES / 'windows/Launcher.cs')
-            shutil.copy2(TEMPLATES / 'windows/start.cmd', app / 'start.cmd')
-    node = bundle_node(target, arch, resources / 'runtime')
-    shutil.copytree(TEMPLATES / 'gateway', resources / 'gateway', dirs_exist_ok=True)
-    copy_service(resources / 'gateway/server')
-    (resources / 'portable.json').write_text(json.dumps({'version': VERSION, 'executable': executable}) + '\n')
+        # c5214aa omits window settings from its Linux and Windows app.json.
+        metadata = app / 'nsh/app.json'
+        info = json.loads(metadata.read_text(encoding='utf-8'))
+        info['window'] = APP['window']
+        metadata.write_text(json.dumps(info, ensure_ascii=False) + '\n', encoding='utf-8')
     copy_notices(app)
+    shutil.copy2(ROOT / 'native/Cargo.lock', app / 'licenses/MetrolistNative-Cargo.lock')
+    shutil.copy2(ROOT / '.nsh/rust/Cargo.lock', app / 'licenses/NativeRuntime-Cargo.lock')
     shutil.copy2(TEMPLATES / target / 'START_HERE.md', app / 'START_HERE.md')
     if target == 'macos':
-        run('codesign', '--force', '--deep', '--sign', '-', '--timestamp=none', bundle)
         run('codesign', '--verify', '--deep', '--strict', bundle)
-    actual_node = subprocess.check_output([str(node), '--version'], text=True).strip()
-    if actual_node != 'v' + NODE['version']:
-        raise RuntimeError(f'Wrong embedded Node version: {actual_node}')
-    run(node, '--use-env-proxy', '--max-http-header-size=65536', resources / 'gateway/launch.mjs', '--check')
-    if target == 'windows':
-        run(app / (APP['name'] + '.exe'), '--check')
+    package_check = verify_native_package(app, target)
     extension = 'tar.gz' if target == 'linux' else 'zip'
     archive = output / f'Metrolist-NSH-{VERSION}-{target}-{arch}.{extension}'
     archive_directory(app, archive, target)
-    build_info(archive, {'target': target, 'arch': arch, 'nodeVersion': actual_node,
-                        'bundledGateway': True, 'gatewayHealthCheck': 'passed',
+    rustc = subprocess.check_output(['rustc', '--version'], env=NSH_ENV, text=True).strip()
+    build_info(archive, {'target': target, 'arch': arch, 'runtime': 'nsh-native', **package_check,
+                        'nshRuntimeCommit': NSH_LOCK['revision'], 'rustCompiler': rustc,
+                        'nativeModule': 'metrolist/native', 'nativeCargoLockSha256': digest(ROOT / 'native/Cargo.lock'),
+                        'runtimeCargoLockSha256': digest(ROOT / '.nsh/rust/Cargo.lock'),
                         'signing': 'ad-hoc' if target == 'macos' else 'unsigned'})
 
 

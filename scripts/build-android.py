@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the NSH Android APK and its small Java host without Gradle or Rust."""
+"""Build the NSH Rust runtime and Media3 Java host into an Android APK without Gradle."""
 
 from __future__ import annotations
 
@@ -310,7 +310,6 @@ def main() -> None:
     tools = sdk_tools(toolchain, sdk)
     source, runtime = runtime_sources(toolchain, nsh)
     jars, aars = media3_dependencies(toolchain)
-    native_alignment = elf_alignment(runtime / "lib")
     revision = source_revision()
     work = PROJECT / ".nsh" / "android-build"
     keystore, password = signing(toolchain, args, java)
@@ -331,6 +330,14 @@ def main() -> None:
     completed = media_manifest(work / "package" / f"{source_name}.apk", work, metadata, sdk, tools, java,
                                version, build, keystore, args.alias, env, source, runtime, jars, aars)
     shutil.copy2(completed, apk)
+    packaged_libraries = work / "verified-libraries"
+    shutil.rmtree(packaged_libraries, ignore_errors=True)
+    with zipfile.ZipFile(apk) as package:
+        for abi in args.abi.split(","):
+            destination = packaged_libraries / abi / "libnsh.so"
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(package.read(f"lib/{abi}/libnsh.so"))
+    native_alignment = elf_alignment(packaged_libraries)
     run(java, "-jar", tools / "lib" / "apksigner.jar", "verify", "--verbose", "--print-certs", apk)
     run(tools / ("zipalign.exe" if os.name == "nt" else "zipalign"), "-c", "-P", "16", "4", apk)
     checksum = digest(apk)

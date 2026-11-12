@@ -8,14 +8,15 @@ import plistlib
 import shutil
 import subprocess
 from release import ROOT, APP, VERSION, CONFIG, OUTPUT, report_artifact, run
+from nsh_path import NSH, NSH_ENV
 
 
 def package(target, directory, icon, signing=False):
-    command = ['node', ROOT / 'scripts/run-nsh.mjs', 'package', '--target', target,
+    command = [NSH, 'package', '--target', target,
                '--id', CONFIG['iosApplicationId'], '--icon', icon, '--out', directory]
     if signing:
         command += ['--sign', os.environ['IOS_SIGNING_IDENTITY'], '--profile', os.environ['IOS_PROVISION_PROFILE']]
-    run(*command, cwd=ROOT)
+    run(*command, cwd=ROOT, env=NSH_ENV)
     return directory / (APP['name'] + '.app')
 
 
@@ -31,7 +32,8 @@ def inspect(app, target, signing):
         raise RuntimeError(f'Expected the pinned ARM64 iOS runtime; found {architecture}')
     return {'target': target, 'arch': architecture, 'signing': signing,
             'applicationId': info['CFBundleIdentifier'], 'minimumOSVersion': info.get('MinimumOSVersion'),
-            'nshRuntimeCommit': 'c5214aa'}
+            'nshRuntimeCommit': 'c5214aa', 'runtime': 'nsh-native',
+            'bundledNode': False, 'bundledGateway': False}
 
 
 def main(signed_only):

@@ -26,7 +26,7 @@ export function songCommands(track: Track): CommandItem[] {
     ] : []),
     { label: saved ? "从音乐库移除" : "加入音乐库", icon: saved ? "bookmark" : "library", run: () => saved ? s.removeFromLibrary(track.id) : s.addToLibrary(track) },
     ...(track.source === "youtube" ? [{ label: "歌曲电台", icon: "radio", disabled: p.remoteControlled(), run: () => { void s.startRadio(track); } }] : []),
-    { label: s.downloading().includes(track.id) ? "正在下载…" : "下载", icon: "download", disabled: s.downloading().includes(track.id), run: () => { if (!s.downloadAvailable()) { say(s.downloadSetupMessage); return; } void s.downloadTrack(track).catch(s.showError); say("已加入下载"); } },
+    { label: s.downloading().includes(track.id) ? "正在下载…" : "下载", icon: "download", disabled: s.downloading().includes(track.id), run: () => { void s.downloadTrack(track).catch(s.showError); say("已加入下载"); } },
     ...(track.artistId ? [{ label: "查看歌手", icon: "artist", run: () => { nav.fullPlayer.set(false); nav.browse({ id: track.artistId!, browseId: track.artistId!, title: track.artist, subtitle: "", artwork: "", type: "artist" }); } }] : []),
     ...(track.albumId ? [{ label: "查看专辑", icon: "album", run: () => { nav.fullPlayer.set(false); nav.browse({ id: track.albumId!, browseId: track.albumId!, title: track.album || "专辑", subtitle: track.artist, artwork: track.artwork, type: "album" }); } }] : []),
     { label: "分享链接", icon: "share", run: () => shareTrack(track), separator: true },

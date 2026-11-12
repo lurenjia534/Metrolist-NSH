@@ -17,7 +17,6 @@ function fixture() {
   const network = {
     "GET https://gateway.test/api/account": { body: profile },
     "GET https://gateway.test/api/home": { body: { sections: [] } },
-    "GET https://gateway.test/api/download": { body: { downloads: [] } },
     "GET https://gateway.test/api/suggestions?q=*": { body: { query: "Cloud", suggestions: [] } },
     "GET https://gateway.test/api/search?q=Cloud&type=all": { body: { query: "Cloud", type: "all", items: [alpha] } },
     "GET https://gateway.test/api/account/library?type=playlists": () => ({ body: { type: "playlists", items: playlists } }),
