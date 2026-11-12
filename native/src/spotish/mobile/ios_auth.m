@@ -18,10 +18,10 @@ NSString *MSPErrorText(NSError *error) {
 }
 
 static NSString *base64url(NSData *data) {
-    return [[[[data base64EncodedStringWithOptions:0]
-              stringByReplacingOccurrencesOfString:@"+" withString:@"-"]
-             stringByReplacingOccurrencesOfString:@"/" withString:@"_"]
-            stringByReplacingOccurrencesOfString:@"=" withString:@""] copy];
+    NSString *encoded = [data base64EncodedStringWithOptions:0];
+    encoded = [encoded stringByReplacingOccurrencesOfString:@"+" withString:@"-"];
+    encoded = [encoded stringByReplacingOccurrencesOfString:@"/" withString:@"_"];
+    return [encoded stringByReplacingOccurrencesOfString:@"=" withString:@""];
 }
 
 static NSString *randomToken(NSUInteger length, NSError **error) {

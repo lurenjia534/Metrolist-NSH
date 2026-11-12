@@ -264,7 +264,7 @@ jobs:
           GSK_DEBUG: renderer
           GDK_DEBUG: vulkan,frames
           LIBGL_ALWAYS_SOFTWARE: '1'
-        run: env -u WAYLAND_DISPLAY xvfb-run -a --server-args="-screen 0 1920x1200x24" dbus-run-session -- python scripts/run-nsh.py test --target linux tests/spotify-visual.test.tsx --web-host tests/native-login/host.js
+        run: env -u WAYLAND_DISPLAY xvfb-run -a --server-args="-screen 0 1920x1200x24" dbus-run-session -- python scripts/run-nsh.py test --target linux tests/spotify-visual.test.tsx
       - name: Launch the desktop application
         if: runner.os != 'Linux'
         run: python scripts/smoke-desktop.py ${{ matrix.target }} --arch ${{ matrix.arch }}

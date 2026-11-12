@@ -191,8 +191,9 @@ node src/spotish/bridge/gen-source.mjs --check
 ```
 
 Node 只用于此处的构建期桥接测试和已有 Web 开发任务，不进入桌面发行包运行链路。
-所有 NSH 测试命令显式指定 `tests/native-login/host.js`：测试运行器使用此测试宿主，
-实际网页使用的 `web/host.js` 和 Spotify SDK 模块仍由浏览器加载。
+无 `--target` 的 NSH 无界面测试显式指定 `--web-host tests/native-login/host.js`。
+带 `--target linux` / `--target macos` 的原生测试没有网页宿主，不能传入 `--web-host`；
+实际网页使用的 `web/host.js` 和 Spotify SDK 模块由浏览器加载。
 桥接源有修改时运行生成命令，不直接改生成文件：
 
 ```sh
@@ -215,8 +216,8 @@ Rust 测试使用录制的响应与测试服务，着色器测试使用项目当
 
 ```sh
 python3 -c "from pathlib import Path; Path('dist/smoke').mkdir(parents=True, exist_ok=True)"
-METROLIST_SPOTIFY_VISUAL=1 python3 scripts/run-nsh.py test --target linux tests/spotify-visual.test.tsx --web-host tests/native-login/host.js
-SPOTISH_BENCH=1 python3 scripts/run-nsh.py test --target linux --fps -v tests/spotify-bench.test.tsx --web-host tests/native-login/host.js
+METROLIST_SPOTIFY_VISUAL=1 python3 scripts/run-nsh.py test --target linux tests/spotify-visual.test.tsx
+SPOTISH_BENCH=1 python3 scripts/run-nsh.py test --target linux --fps -v tests/spotify-bench.test.tsx
 ```
 
 截图写入 `dist/smoke/spotify-*.png`。Linux CI 在打包烟测后执行原生截图并上传。
