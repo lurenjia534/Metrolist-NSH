@@ -3,7 +3,7 @@
 // covers everywhere, 8 rows on Home, playlists of 60). They measure, they do
 // not check, so they run only when asked:
 //
-//   SPOTISH_BENCH=1 nsh test --target macos --fps -v tests/spotify-bench.test.tsx
+//   SPOTISH_BENCH=1 python3 scripts/run-nsh.py test --target macos --fps -v tests/spotify-bench.test.tsx --web-host tests/native-login/host.js
 //
 // (or `--target linux`: the platform follows the machine's.)
 // Each scenario logs a `bench:` mark before its per-second perf lines.

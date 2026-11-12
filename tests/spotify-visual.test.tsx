@@ -1,5 +1,5 @@
 // Native rendering evidence, run explicitly or by the Linux packaging job.
-// METROLIST_SPOTIFY_VISUAL=1 python3 scripts/run-nsh.py test --target linux tests/spotify-visual.test.tsx
+// METROLIST_SPOTIFY_VISUAL=1 python3 scripts/run-nsh.py test --target linux tests/spotify-visual.test.tsx --web-host tests/native-login/host.js
 import { resolve } from "path";
 import process from "process";
 import { expect, open, test as plainTest } from "nsh/test";

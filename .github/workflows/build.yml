@@ -102,7 +102,7 @@ jobs:
       - name: Verify native Spotify subscriptions across workspace remounts
         env:
           SPOTISH_DEMO: '1'
-        run: python scripts/run-nsh.py test tests/spotify-native.test.tsx
+        run: python scripts/run-nsh.py test tests/spotify-native.test.tsx --web-host tests/native-login/host.js
       - run: node --test server/*.test.mjs
 
   toolchain:
@@ -264,7 +264,7 @@ jobs:
           GSK_DEBUG: renderer
           GDK_DEBUG: vulkan,frames
           LIBGL_ALWAYS_SOFTWARE: '1'
-        run: env -u WAYLAND_DISPLAY xvfb-run -a --server-args="-screen 0 1920x1200x24" dbus-run-session -- python scripts/run-nsh.py test --target linux tests/spotify-visual.test.tsx
+        run: env -u WAYLAND_DISPLAY xvfb-run -a --server-args="-screen 0 1920x1200x24" dbus-run-session -- python scripts/run-nsh.py test --target linux tests/spotify-visual.test.tsx --web-host tests/native-login/host.js
       - name: Launch the desktop application
         if: runner.os != 'Linux'
         run: python scripts/smoke-desktop.py ${{ matrix.target }} --arch ${{ matrix.arch }}

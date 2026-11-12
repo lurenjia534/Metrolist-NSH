@@ -219,7 +219,7 @@ npm run dev
 python3 scripts/run-nsh.py check
 python3 scripts/run-nsh.py build
 python3 scripts/run-nsh.py test --web-host tests/native-login/host.js
-SPOTISH_DEMO=1 python3 scripts/run-nsh.py test tests/spotify-native.test.tsx
+SPOTISH_DEMO=1 python3 scripts/run-nsh.py test tests/spotify-native.test.tsx --web-host tests/native-login/host.js
 cargo test --manifest-path native/Cargo.toml
 # 可选 Node 测试还验证共享业务与 Web 服务
 node --test server/*.test.mjs
