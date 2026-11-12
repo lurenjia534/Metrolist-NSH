@@ -71,11 +71,15 @@ test("failed session validation never creates an account or reports a successful
 
 test("account and channel switching validates the new credentials and sends the selected session on later requests", async () => {
   const app = await open("./account-fixture.tsx", { width: 1280, height: 900, platform: "web", storage, network: network() });
-  await app.press("Import A"); await app.press("Import B");
+  await app.press("Import A"); await app.waitUntil(() => !read(app, "account").busy);
+  await app.press("Import B"); await app.waitUntil(() => !read(app, "account").busy);
   expect(read(app, "account").names).toEqual(["Fixture B", "Fixture A"]);
-  await app.press("Use A"); await app.press("Refresh account");
+  await app.press("Use A"); await app.waitUntil(() => !read(app, "account").busy);
+  await app.press("Refresh account"); await app.waitUntil(() => read(app, "account").state !== "verifying");
   expect(read(app, "account")).toMatchObject({ name: "Fixture A", state: "connected" });
-  await app.press("Load channels"); await app.press("Select channel"); await app.press("Load liked");
+  await app.press("Load channels"); await app.waitUntil(() => !read(app, "account").busy);
+  await app.press("Select channel"); await app.waitUntil(() => !read(app, "account").busy);
+  await app.press("Load liked"); await app.waitUntil(() => app.requests().some(request => request.url.includes("account/library")));
   expect(read(app, "account").name).toBe("Fixture B");
   const lastLibrary = app.requests().filter(request => request.url.includes("account/library")).at(-1)!;
   expect(credentials(lastLibrary)).toMatchObject({ authUser: "1", dataSyncId: "fixture-b-sync" });

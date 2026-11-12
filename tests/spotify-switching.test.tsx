@@ -37,6 +37,7 @@ test("switching keeps each service's page and queue and pauses the previous play
   await app.press("id:nav-search");
   await app.type("id:search-input", "Workspace");
   await app.submit("id:search-input");
+  await app.waitFor("id:play-track-workspace-youtube");
   await app.press("id:play-track-workspace-youtube");
   await app.waitFor("id:mini-player");
   await app.waitUntil(() => app.host.calls().some((call) => call.name === "app.playback" && (call.data as { playing?: boolean }).playing === true));
