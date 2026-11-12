@@ -13,6 +13,7 @@ import { AppPage } from "../components/page";
 import { connectedBackend } from "../state/engine";
 import { signedIn } from "../state/session";
 import { SpotifyConnectionPage } from "./connect";
+import { errorOf } from "../backend/types";
 
 /** The greeting. It rises in only when made with `entrance` (the page
  * opening): made again as the list's header, it just shows. */
@@ -39,7 +40,7 @@ export function HomePage() {
           <View class={terminal ? "gap-1" : `gap-8 px-3 ${pageEnd()}`}>
             <Greeting text="Home" entrance />
             <If when={home.error()} else={<CardsSkeleton />}>
-              <ErrorState message="Home didn't load." onRetry={home.refetch} />
+              <ErrorState message="Home didn't load." detail={errorOf(home.error()).message} onRetry={home.refetch} />
             </If>
           </View>
         }

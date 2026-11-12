@@ -12,6 +12,13 @@ static NSString *json(id object) {
     return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
 }
 
+static BOOL foreground(void) {
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (scene.activationState == UISceneActivationStateForegroundActive) return YES;
+    }
+    return NO;
+}
+
 @interface MSPRemote : NSObject <SPTAppRemoteDelegate, SPTAppRemotePlayerStateDelegate, SPTAppRemoteUserAPIDelegate>
 @property(nonatomic) MSPReply reply;
 @property(nonatomic) MSPEvent event;
@@ -53,10 +60,11 @@ static NSString *json(id object) {
                              [pending[@"redirectUri"] isEqualToString:_oauth.redirectUri];
         __weak MSPRemote *weakSelf = self;
         _oauth.changed = ^{ [weakSelf publish]; };
+        // The pinned NSH standalone host uses one UIWindowScene (iOS 15+).
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(didBecomeActive:)
-            name:UIApplicationDidBecomeActiveNotification object:nil];
+            name:UISceneDidActivateNotification object:nil];
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(willResignActive:)
-            name:UIApplicationWillResignActiveNotification object:nil];
+            name:UISceneWillDeactivateNotification object:nil];
     }
     return self;
 }
@@ -142,7 +150,7 @@ static NSString *json(id object) {
         // Keep the SDK token obtained by its app-switch authorization for
         // reconnects. The independent PKCE token still serves the Web API.
         self.remote.connectionParameters.accessToken = token;
-        if (UIApplication.sharedApplication.applicationState == UIApplicationStateActive) [self.remote connect];
+        if (foreground()) [self.remote connect];
     };
     if (self.remoteAccessToken.length) connectWithToken(self.remoteAccessToken, nil);
     else [self.oauth token:connectWithToken];
@@ -163,7 +171,7 @@ static NSString *json(id object) {
 
 - (void)appRemoteDidEstablishConnection:(SPTAppRemote *)remote {
     if (remote != self.remote) return;
-    if (!self.active || UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
+    if (!self.active || !foreground()) {
         [remote disconnect];
         return;
     }
@@ -222,7 +230,7 @@ static NSString *json(id object) {
 
 - (void)appRemote:(SPTAppRemote *)remote didDisconnectWithError:(NSError *)error {
     if (remote != self.remote) return;
-    if (error && self.active && UIApplication.sharedApplication.applicationState == UIApplicationStateActive) {
+    if (error && self.active && foreground()) {
         NSError *failure = MSPError(@"E_CONNECTION", error.localizedDescription);
         [self setFailure:failure];
         [self finishConnections:failure];
@@ -288,11 +296,20 @@ static NSString *json(id object) {
 - (void)pauseOwnedPlayback:(MSPConnection)completion {
     if (self.remote.isConnected) {
         SPTAppRemote *remote = self.remote;
+        NSUInteger generation = self.generation;
         [remote.playerAPI pause:^(id result, NSError *error) {
             if (error) { completion(MSPError(@"E_PLAYBACK", error.localizedDescription)); return; }
+            if (generation != self.generation || remote != self.remote || !remote.isConnected) {
+                completion(MSPError(@"E_CANCELLED", @"The Spotify connection changed before pause completed."));
+                return;
+            }
             [remote.playerAPI getPlayerState:^(id state, NSError *stateError) {
                 if (stateError) { completion(MSPError(@"E_PLAYBACK", stateError.localizedDescription)); return; }
-                if (remote == self.remote) [self playerStateDidChange:state];
+                if (generation != self.generation || remote != self.remote) {
+                    completion(MSPError(@"E_CANCELLED", @"The Spotify connection changed before pause completed."));
+                    return;
+                }
+                [self playerStateDidChange:state];
                 completion(nil);
             }];
         }];
@@ -311,12 +328,20 @@ static NSString *json(id object) {
 
 - (void)control:(uint64_t)requestId method:(NSString *)method parameters:(NSDictionary *)parameters {
     SPTAppRemote *remote = self.remote;
+    NSUInteger generation = self.generation;
     SPTAppRemoteCallback done = ^(id result, NSError *error) {
         if (error) { [self reject:requestId error:MSPError(@"E_PLAYBACK", error.localizedDescription)]; return; }
+        if (generation != self.generation || remote != self.remote || !self.active || !remote.isConnected) {
+            [self reject:requestId error:MSPError(@"E_CANCELLED", @"The Spotify connection changed during playback.")];
+            return;
+        }
         [remote.playerAPI getPlayerState:^(id state, NSError *stateError) {
             if (stateError) [self reject:requestId error:MSPError(@"E_PLAYBACK", stateError.localizedDescription)];
+            else if (generation != self.generation || remote != self.remote || !self.active) {
+                [self reject:requestId error:MSPError(@"E_CANCELLED", @"The Spotify connection changed during playback.")];
+            }
             else {
-                if (remote == self.remote) [self playerStateDidChange:state];
+                [self playerStateDidChange:state];
                 [self answer:requestId value:[self snapshot]];
             }
         }];
@@ -333,6 +358,10 @@ static NSString *json(id object) {
     } else if ([method isEqualToString:@"toggle"]) {
         [remote.playerAPI getPlayerState:^(id result, NSError *error) {
             if (error) { done(nil, error); return; }
+            if (generation != self.generation || remote != self.remote || !self.active || !remote.isConnected) {
+                [self reject:requestId error:MSPError(@"E_CANCELLED", @"Playback was cancelled when the Spotify workspace changed.")];
+                return;
+            }
             id<SPTAppRemotePlayerState> state = result;
             if (state.isPaused) [remote.playerAPI resume:done];
             else [remote.playerAPI pause:done];
@@ -350,6 +379,10 @@ static NSString *json(id object) {
         }
         [remote.contentAPI fetchContentItemForURI:uri callback:^(id result, NSError *error) {
             if (error) { done(nil, error); return; }
+            if (generation != self.generation || remote != self.remote || !self.active || !remote.isConnected) {
+                [self reject:requestId error:MSPError(@"E_CANCELLED", @"Playback was cancelled when the Spotify workspace changed.")];
+                return;
+            }
             id<SPTAppRemoteContentItem> context = result;
             [remote.playerAPI playItem:context skipToTrackIndex:index.integerValue callback:done];
         }];
@@ -463,7 +496,7 @@ static NSString *json(id object) {
             self.waitingForSpotify = NO;
             [NSUserDefaults.standardUserDefaults removeObjectForKey:MSPRemoteAuthorizationKey];
             self.healthStatus = @"starting";
-            if (self.active && UIApplication.sharedApplication.applicationState == UIApplicationStateActive) [self.remote connect];
+            if (self.active && foreground()) [self.remote connect];
         } else if (failure.length) {
             NSError *error = MSPError(@"E_AUTH", failure);
             [self setFailure:error];

@@ -27,7 +27,27 @@ Web 音频要求 Premium；原生手机需要安装 Spotify，并登记真实应
 
 ## 验证记录
 
-版本提交前填写本次实际执行的编译与测试结果。
+| 检查 | 本次结果 |
+| --- | --- |
+| `nsh check` / TypeScript / 原生导出 | 本地通过 |
+| Web 发行构建 | WASM runtime 与部署包构建通过，版本 0.8.0 / build 10 |
+| Web SDK / PKCE / API / 歌词协议 | 24 / 24 通过 |
+| 正常 HostBackend 连接与实际响应映射 | Web、Android、iOS 共 3 / 3 通过 |
+| 工作区交接 / 恢复 / Android 媒体控制 | 6 / 6 通过 |
+| 完整 NSH 回归 | 240 项：229 通过、0 失败、11 项按条件跳过（原生截图、压力场景等） |
+| Android 官方 SDK | 全部 Java 宿主编译、D8、PKCE 与真实 SDK 模型 / 取色测试通过 |
+| Rust 真实封面调色板 | 新增单元测试通过 |
+| macOS / iOS / Windows / Linux 发行构建 | 以 [PR #7 的平台 checks](https://github.com/lurenjia534/Metrolist-NSH/pull/7/checks) 为准；Linux 本地检查不代替 Apple SDK 编译 |
+
+连接用例使用明确标识的 Host 协议夹具，测试生产 HostBackend、Spotify HTTP 请求
+与数据映射，不走 DemoBackend。它们检查未登录没有虚构曲库、真实形状的账号数据、
+收藏成功的空 200 响应、授权后工作区恢复、切换后状态订阅，以及手机歌单前有
+非歌曲条目时仍将正确原始索引交给 SDK。
+
+另外逐目录核对了上游的 34 个 shell/page/component 生产文件，未发现意外漏移植。
+自动更新归 Metrolist 发布流程，未启用会更新到独立 Spotish 的上游 updater；
+手机 / Web 的音乐灯光保留上游时间驱动模式，尚无真实音频频谱采样。iOS 音量
+使用设备音量键。这些平台差异没有伪装成已完成的能力。
 
 没有可供本次验证的 Spotify Developer 应用 / 已授权账号，也没有连接真实手机。
 协议与 UI 测试验证代码请求、回调和状态交接；它们不证明实际账号、DRM 音频输出、

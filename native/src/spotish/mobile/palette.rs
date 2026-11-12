@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+// Adapted from Spotish's cover palette; see third-party/spotish/README.md.
 //! Spotish's cover palette algorithm applied to the actual image pixels.
 
 use base64::{Engine, engine::general_purpose::STANDARD};

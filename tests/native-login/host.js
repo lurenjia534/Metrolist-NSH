@@ -9,9 +9,11 @@ export function createHost(player) {
       calls.push({ name, data });
       player.hostEvent("test.calls", calls);
       if (name.startsWith("app.spotify.")) return spotify(name.slice("app.spotify.".length), data || {});
+      if (name === "app.start" || name === "app.metadata" || name === "app.playback") return null;
+      if (name === "app.url") return { origin: "https://gateway.test" };
       if (name === "auth.available") return { available: true, method: "webview" };
       if (name === "auth.logout") return { cleared: true };
-      if (name === "app.audio.snapshot" || name === "app.audio.settings") return null;
+      if (name === "app.audio.snapshot" || name === "app.audio.settings" || name === "app.audio.pause") return null;
       if (name === "auth.test.emit") { player.hostEvent(data.event, data.payload); return null; }
       if (name === "auth.test.auto") { auto = data; return null; }
       if (name === "auth.login") {

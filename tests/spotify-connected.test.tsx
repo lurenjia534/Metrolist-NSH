@@ -30,17 +30,13 @@ const network = {
 
 for (const platform of ["web", "android", "ios"] as const) {
   test(`${platform} connects the normal backend, loads the account and keeps subscriptions after switching`, async () => {
-    const app = await open("./spotify-connected/app.tsx", {
+    const app = await open("../SpotifyConnectedTest.tsx", {
       platform, width: platform === "web" ? 1280 : 390, height: 1060,
       storage: {
         "metrolist.provider": "spotify",
         "metrolist.settings": JSON.stringify({ autoRadio: false, apiBase: "https://gateway.test" }),
       },
       network,
-      host: { handlers: {
-        "app.start": null, "app.metadata": null, "app.playback": null,
-        "app.audio.settings": null, "app.audio.snapshot": null, "auth.available": { available: false },
-      } },
     });
     await app.waitFor("id:spotify-connect");
     await app.waitFor("id:spotify-client-id");
@@ -50,17 +46,24 @@ for (const platform of ["web", "android", "ios"] as const) {
 
     await app.type("id:spotify-client-id", "protocol-public-client-id");
     await app.press("role:button[保存并登录 Spotify]");
-    await app.waitFor("role:button[Owned Protocol Playlist]");
+    const playlistCard = "role:button[Owned Protocol Playlist, Protocol Account]";
+    await app.waitFor(playlistCard);
     await app.waitUntil(() => app.storage()["spotify:session:account"] === "protocol-stable-account");
     expect(app.storage()["metrolist.provider"]).toBe("spotify");
     const profileRequest = app.requests().find(request => request.url === "https://api.spotify.com/v1/me")!;
     expect(profileRequest.headers.authorization ?? profileRequest.headers.Authorization).toBe("Bearer protocol-account-token");
 
-    await app.press("role:button[Owned Protocol Playlist]");
+    await app.press(playlistCard);
     await app.waitFor("role:button[Protocol Song One, Protocol Artist]");
     await app.press("role:button[Protocol Song One, Protocol Artist]");
     const bar = platform === "web" ? "id:player" : "id:mini-player";
     await app.waitFor(`${bar} >> role:button[Pause]`);
+    const contextCalls = () => (JSON.parse(app.storage()["test.spotify.calls"] || "[]") as { name: string; data: { uri?: string; trackUri?: string; index?: number } }[])
+      .filter(call => call.name === "app.spotify.playContext");
+    await app.waitUntil(() => contextCalls().length === 1);
+    expect(contextCalls()[0].data.uri).toBe("spotify:playlist:protocolplaylist");
+    expect(contextCalls()[0].data.trackUri).toBe("spotify:track:protocol1");
+    if (platform !== "web") expect(contextCalls()[0].data.index).toBe(2);
     expect(app.audio().filter(command => command.command === "open")).toHaveLength(0);
 
     if (platform === "web") {

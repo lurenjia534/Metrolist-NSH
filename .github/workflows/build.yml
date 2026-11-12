@@ -93,6 +93,10 @@ jobs:
           node src/spotish/bridge/gen-source.mjs --check
           node --test web/spotify-api.test.mjs web/spotify.test.mjs
       - run: python scripts/run-nsh.py check
+      - name: Compile the Android Spotify SDK host and verify its protocol
+        run: python tests/android-spotify/run.py
+      - name: Verify native cover colors use actual image pixels
+        run: cargo test --manifest-path native/Cargo.toml spotish::mobile::palette::tests
       - run: python scripts/run-nsh.py build
       - run: python scripts/run-nsh.py test --web-host tests/native-login/host.js
       - name: Verify native Spotify subscriptions across workspace remounts

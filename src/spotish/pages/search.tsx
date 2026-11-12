@@ -4,7 +4,7 @@
 
 import { effect, resource, Scroll, token, untracked, View } from "nsh";
 import { Input } from "nsh/base";
-import type { SearchResults } from "../backend/types";
+import { errorOf, type SearchResults } from "../backend/types";
 import { AppPage } from "../components/page";
 import { narrowDesktopHeader, pageEnd, wideTracks } from "../components/layout";
 import { CardRow } from "../components/library/cards";
@@ -83,7 +83,7 @@ export function SearchPage() {
             data={shown()}
             placeholder={
               <If when={results.state() === "errored"} else={<SearchSkeleton />}>
-                <ErrorState message="Search didn't work." onRetry={results.refetch} />
+                <ErrorState message="Search didn't work." detail={errorOf(results.error()).message} onRetry={results.refetch} />
               </If>
             }
           >

@@ -142,7 +142,7 @@ Spotify 的操作通过其网页播放器和页面使用的数据完成。上游
 
 **Random** 在换曲时选择不同效果。颜色来自封面，偏好保存在
 `spotify:visual:effect`。Linux 使用可用的 `parec` / PulseAudio 或 PipeWire
-音频监测，macOS 14.2+ 使用 Core Audio 进程音频捕获；Windows 及无法采集音频
+音频监测，macOS 14.2+ 使用 Core Audio 进程音频捕获；Windows、Web、Android、iOS 及无法采集音频
 的场景保留灯光的基础动画，不声称具备实际频谱跟随。Linux 可安装
 `pulseaudio-utils` 提供 `parec`。
 

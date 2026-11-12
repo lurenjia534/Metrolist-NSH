@@ -24,6 +24,12 @@ const host = {
   params: { backend: "demo", premium: true },
   handlers: { "app.start": null, "app.metadata": null, "app.playback": null },
 };
+const unconfiguredSpotify = {
+  player: {}, signedIn: false, authRevision: 0, deviceId: "",
+  health: { status: "failed", error: { code: "E_CONFIG", message: "Configure Spotify to connect." } },
+  configuration: { clientId: "", redirectUri: "app.miku.metrolist://spotify-callback", configured: false },
+  capabilities: { volume: false, lyrics: true },
+};
 
 test("switching keeps each service's page and queue and pauses the previous player", async () => {
   const app = await open("../App.tsx", { width: 1440, height: 940, platform: "web", storage, network, host });
@@ -99,21 +105,13 @@ test("Spotify preferences stay separate when switching back to YouTube Music", a
 
 for (const platform of ["web", "android", "ios"] as const) {
   test(`${platform} restores the real Spotify connection and can return to YouTube Music`, async () => {
-    const app = await open("./spotify-connected/app.tsx", {
+    const app = await open("../SpotifyConnectedTest.tsx", {
       width: 390,
       height: 844,
       platform,
       safeArea: { top: 24, right: 0, bottom: 24, left: 0 },
       storage: { ...storage, "metrolist.provider": "spotify" },
       network,
-      host: {
-        handlers: {
-          ...host.handlers,
-          "app.audio.settings": null,
-          "app.audio.snapshot": null,
-          "auth.available": { available: false },
-        },
-      },
     });
     await app.waitFor("id:spotify-connect");
     await app.waitFor("id:spotify-client-id");
@@ -129,7 +127,7 @@ for (const platform of ["web", "android", "ios"] as const) {
 }
 
 test("Android hands notification and headset controls to the selected workspace", async () => {
-  const app = await open("./spotify-connected/app.tsx", {
+  const app = await open("../SpotifyConnectedTest.tsx", {
     width: 390,
     height: 844,
     platform: "android",
@@ -138,6 +136,9 @@ test("Android hands notification and headset controls to the selected workspace"
     host: {
       handlers: {
         ...host.handlers,
+        "app.spotify.snapshot": unconfiguredSpotify,
+        "app.spotify.setActive": unconfiguredSpotify,
+        "app.spotify.pause": null,
         "app.audio.settings": null,
         "app.audio.pause": null,
         "app.audio.play": null,

@@ -13,8 +13,8 @@ export type RepeatMode = "off" | "context" | "track";
 /** Where the session is. */
 export type HealthStatus = "starting" | "ready" | "signingIn" | "failed";
 
-/** A failure the backend reports: a stable `code` to branch on, a `message`
- * for logs (never shown to the user as it is). */
+/** A failure the backend reports: a stable `code` and the actual service or
+ * player explanation, shown when the user needs it to fix the connection. */
 export interface BackendError {
   code: string;
   message: string;
