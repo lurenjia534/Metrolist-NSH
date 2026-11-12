@@ -2,7 +2,7 @@
 
 版本标识：**0.9.0 / build 11**。本轮主要完善 YouTube Music 工作区中整理音乐、选择歌曲、搜索与连续播放的操作流程。
 
-实现与验证跟踪：[PR #8](https://github.com/lurenjia534/Metrolist-NSH/pull/8)。本记录先说明已写入代码的行为；自动化检查、各平台工件和站点部署的结果将在对应任务结束后补充。
+实现与验证跟踪：[PR #8](https://github.com/lurenjia534/Metrolist-NSH/pull/8)。应用代码提交 `605d7a3938b859077989333d2a7bc342808ef3a0` 已通过完整验证，结果见下文；各平台发行工件以发布页列出的实际产物为准。
 
 ## 曲库与歌单
 
@@ -48,18 +48,24 @@ UI 继续使用 NSH TSX；音乐播放沿用 Android Media3 和其他平台 NSH 
 
 ## 验证记录
 
-| 检查 | 本次状态 |
-| --- | --- |
-| NSH 类型检查、原生构建与完整无界面回归 | 等待本轮 CI 结果核对 |
-| `tests/library-selection.test.tsx` | 已新增：过滤/排序后选择、重复条目精确移除、批量下一首、历史移除、长按区间及云端喜欢串行操作；执行结果待核对 |
-| `tests/search-discovery.test.tsx` | 已新增：链接与时间戳、实际播放请求、browse/返回状态、建议填入、分类钻取及手机发现入口；执行结果待核对 |
-| `tests/sleep-queue.test.tsx` | 已新增：定时截止、自然结束/循环/电台、Android 音频事件、取消、批量队列及随机下一首；执行结果待核对 |
-| `tests/player-experience.test.tsx` | 已新增：340 宽睡眠对话框/倒计时、歌词字号/复制/偏移重置及队列重复条目；执行结果待核对 |
-| Web 构建与现有 Site 更新 | 等待构建、部署和线上版本核对 |
-| Android / Linux / Windows / macOS / iOS 发行工件 | 以本轮 Actions 与发布页的实际结果为准，尚未在此记录完成结果 |
-| 真实设备登录、出声和后台持续播放 | 本轮尚未完成设备验收 |
+应用代码的完整验证记录：[Actions #30](https://github.com/lurenjia534/Metrolist-NSH/actions/runs/43303118202)，对应提交 `605d7a3938b859077989333d2a7bc342808ef3a0`。以下结果来自实际执行；之后的发布说明更新不改变应用代码。
 
-本地构建在取得本轮测试结果前遇到工作目录空间耗尽，后续验证转至 GitHub Actions。新增交互用例使用目录/音源协议夹具和可控时间，检查请求、状态与操作结果；真实设备音频输出另行验收。
+| 检查 | 本次结果 |
+| --- | --- |
+| NSH 类型检查、Rust Host 检查与原生 bundle 构建 | 通过 |
+| 完整 NSH / Rust 回归 | **252 通过、0 失败、11 跳过**；跳过项需要性能、原生录音/系统总线或图形宿主等运行条件 |
+| Spotify bridge / Web 接入 / 音乐服务端 | **26 / 24 / 55 项通过，均 0 失败** |
+| Android Spotify SDK Host 编译及协议检查 | 通过 |
+| Spotify 原生订阅重挂载专项 | 通过，使用 `SPOTISH_DEMO=1` 的协议测试环境 |
+| `tests/library-selection.test.tsx` | **5/5 通过**：过滤/排序后选择、重复条目精确移除、批量下一首与歌单、历史移除、长按区间及云端喜欢串行同步 |
+| `tests/search-discovery.test.tsx` | **5/5 通过**：链接与时间戳、原生播放请求、browse/返回状态、建议填入、分类钻取及手机发现入口 |
+| `tests/sleep-queue.test.tsx` | **10/10 通过**：定时截止、自然结束/循环/电台、Android 音频事件、取消、批量队列及随机下一首 |
+| `tests/player-experience.test.tsx` | **3/3 通过**：340px 定时器与队列操作、桌面歌词实际字号、对齐、偏移重置与剪贴板 |
+| Web 生产构建 | 通过；沿用固定 NSH 与原始 Web 编译配置，生成 0.9.0 / build 11 客户端和音乐网关 |
+| Android / Linux / Windows / macOS / iOS 发行工件 | main 发布流水线继续构建；具体平台、签名状态与校验和见 [GitHub Releases](https://github.com/lurenjia534/Metrolist-NSH/releases) |
+| 真实设备登录、出声和后台持续播放 | 本轮未做设备试听验收；协议与交互测试不等同于真实音频输出验收 |
+
+新增交互用例使用目录/音源协议夹具和可控时间，检查实际请求、状态变化、列表顺序、呈现字号与操作结果。Web 包在独立构建环境完成；线上版本可通过站点的 `/version.json` 核对。
 
 可从源码运行这组集中检查：
 
