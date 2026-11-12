@@ -88,7 +88,7 @@ function matches(query: string, ...fields: string[]) {
   return normalized(query).trim().split(/\s+/).every((word) => text.includes(word));
 }
 function trackSeconds(id: string) { return listenEvents().filter((event) => event.trackId === id).reduce((sum, event) => sum + event.seconds, 0); }
-function sortTracks(items: Track[], sort: LibrarySort | PlaylistSort, descending: boolean) {
+export function sortTracks(items: Track[], sort: LibrarySort | PlaylistSort, descending: boolean) {
   if (sort === "custom") return [...items];
   if (sort === "recent") return descending ? [...items] : [...items].reverse();
   const result = [...items].sort((a, b) => sort === "artist" ? a.artist.localeCompare(b.artist) || a.title.localeCompare(b.title)
@@ -527,6 +527,13 @@ export function removeFromPlaylist(id: string, trackId: string, rowIndex?: numbe
   } : item));
   void saveLibrary();
 }
+export function removePlaylistEntries(id: string, indices: number[]) {
+  const selected = new Set(indices);
+  playlists.update(items => items.map(item => item.id === id ? {
+    ...item, tracks: item.tracks.filter((_, index) => !selected.has(index)), updatedAt: Date.now(),
+  } : item));
+  void saveLibrary();
+}
 export function playlistEntries(id: string, query = "", sort: PlaylistSort = "custom", descending = false): PlaylistEntry[] {
   const entries = (playlists().find((item) => item.id === id)?.tracks || []).map((track, index) => ({ track, index }))
     .filter(({ track }) => matches(query, track.title, track.artist, track.album));
@@ -552,6 +559,11 @@ export function sortPlaylist(id: string, sort: PlaylistSort, descending = false)
 }
 
 export function clearHistory() { history.set([]); void saveLibrary(); }
+export function removeHistory(trackIds: string[]) {
+  const selected = new Set(trackIds);
+  history.update(items => items.filter(track => !selected.has(track.id)));
+  void saveLibrary();
+}
 export function clearStatistics() { listenEvents.set([]); void saveLibrary(); }
 
 export async function importUrl(value: string): Promise<Track | Playlist> {

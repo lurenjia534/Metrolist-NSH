@@ -16,6 +16,9 @@ export const rate = signal(1);
 export const shuffle = signal(false);
 export const repeat = signal<RepeatMode>("off");
 export const sleepUntil = signal<number | null>(null);
+export const sleepAfterTrack = signal(false);
+export const sleepRemaining = signal(0);
+export const sleepActive = computed(() => sleepUntil() !== null || sleepAfterTrack());
 export const playbackError = signal("");
 export const playbackErrorCode = signal("");
 export const streamInfo = signal<StreamInfo | null>(null);
@@ -81,7 +84,7 @@ function cancelPreparation() {
 function prepareUpcoming() {
   const track = queue()[upcomingIndex()];
   upNext.set(track);
-  if (!track || repeat() === "one" || remoteControlled()) { cancelPreparation(); return; }
+  if (!track || repeat() === "one" || remoteControlled() || sleepAfterTrack()) { cancelPreparation(); return; }
   const context = options.sourceContext?.() || "";
   if (prepared?.track.id === track.id && prepared.track.url === track.url && prepared.context === context
       && (!prepared.source?.expiresAt || prepared.source.expiresAt > Date.now() + 60000)) {
@@ -401,7 +404,7 @@ function finishPlaybackStart() {
     const track = currentTrack()!;
     if (platform.os === "web") void host.call("app.metadata", track).catch(surfaceError);
     options.onTrack?.(track);
-    if (!remoteControlled() && options.autoRadio?.() && repeat() === "off" && queue().length - currentIndex() <= 3) void extendRadio();
+    if (!remoteControlled() && !sleepAfterTrack() && options.autoRadio?.() && repeat() === "off" && queue().length - currentIndex() <= 3) void extendRadio();
   }
   updateMediaSession();
   prepareUpcoming();
@@ -429,6 +432,7 @@ export function playAt(index: number) {
 }
 export async function resumePlayback() {
   if (!currentTrack() || playRequested) return;
+  if (duration() > 0 && position() >= duration()) seek(0);
   playRequested = true;
   if (!player || (playbackError() && playbackErrorCode() !== "not-allowed")) {
     await loadCurrent(position(), true, !!playbackError());
@@ -494,6 +498,7 @@ export function extendRadio(): Promise<Track[]> {
 
 async function advance(ended: boolean) {
   if (!workspaceActive() || !queue().length) return;
+  if (ended && sleepAfterTrack()) { pause(); cancelSleepTimer(); return; }
   if (ended && remoteControlled()) { pause(); return; }
   if (ended && repeat() === "one") {
     startListening(currentTrack()!);
@@ -554,22 +559,34 @@ export function cycleRepeat() {
   prepareUpcoming();
   options?.onPreferences?.();
 }
-export function addToQueue(track: Track) {
-  const index = queue().length;
-  queue.update((items) => [...items, track]);
-  if (currentIndex() < 0) currentIndex.set(0);
-  else shuffleBag.splice(Math.floor(Math.random() * (shuffleBag.length + 1)), 0, index);
+export function addTracksToQueue(tracks: Track[]) {
+  if (!tracks.length) return;
+  const start = queue().length;
+  batch(() => {
+    queue.update(items => [...items, ...tracks]);
+    if (currentIndex() < 0) currentIndex.set(0);
+  });
+  for (let index = start; index < queue().length; index++) {
+    if (index !== currentIndex()) shuffleBag.splice(Math.floor(Math.random() * (shuffleBag.length + 1)), 0, index);
+  }
   changed();
 }
-export function playNext(track: Track) {
+export function playNextTracks(tracks: Track[]) {
+  if (!tracks.length) return;
   const index = currentIndex() + 1;
-  queue.update((items) => [...items.slice(0, index), track, ...items.slice(index)]);
-  shuffleBag = shuffleBag.map((item) => item >= index ? item + 1 : item);
-  visited = visited.map((item) => item >= index ? item + 1 : item);
-  if (currentIndex() < 0) currentIndex.set(0);
-  else shuffleBag.push(index);
+  batch(() => {
+    queue.update(items => [...items.slice(0, index), ...tracks, ...items.slice(index)]);
+    if (currentIndex() < 0) currentIndex.set(0);
+  });
+  const remap = (item: number) => item >= index ? item + tracks.length : item;
+  shuffleBag = shuffleBag.map(remap);
+  visited = visited.map(remap);
+  // The shuffle bag pops from its end; a batch must play in its displayed order.
+  shuffleBag.push(...tracks.map((_, offset) => index + offset).filter(item => item !== currentIndex()).reverse());
   changed();
 }
+export function addToQueue(track: Track) { addTracksToQueue([track]); }
+export function playNext(track: Track) { playNextTracks([track]); }
 export function removeFromQueue(index: number) {
   const selected = currentIndex();
   const resume = playRequested || playing();
@@ -590,14 +607,25 @@ export function removeFromQueue(index: number) {
   }
   changed();
 }
-export function moveQueue(from: number, to: number) {
-  if (from === to || from < 0 || to < 0 || from >= queue().length || to >= queue().length) return;
+function reorderQueue(from: number, to: number) {
   const items = [...queue()];
   items.splice(to, 0, items.splice(from, 1)[0]);
   const remap = (index: number) => index === from ? to : from < index && to >= index ? index - 1 : from > index && to <= index ? index + 1 : index;
   batch(() => { queue.set(items); currentIndex.set(remap(currentIndex())); });
   shuffleBag = shuffleBag.map(remap);
   visited = visited.map(remap);
+}
+export function moveQueue(from: number, to: number) {
+  if (from === to || from < 0 || to < 0 || from >= queue().length || to >= queue().length) return;
+  reorderQueue(from, to);
+  changed();
+}
+export function moveQueueNext(index: number) {
+  if (index === currentIndex() || index < 0 || index >= queue().length) return;
+  const target = currentIndex() + (index < currentIndex() ? 0 : 1);
+  reorderQueue(index, target);
+  shuffleBag = shuffleBag.filter(item => item !== target);
+  shuffleBag.push(target);
   changed();
 }
 export function clearQueue() {
@@ -608,6 +636,7 @@ export function clearQueue() {
   if (platform.os === "android") void nativeCommand("stop").catch(surfaceError);
   listening = undefined;
   batch(() => { queue.set([]); queueTitle.set(""); currentIndex.set(-1); position.set(0); duration.set(0); playbackError.set(""); playbackErrorCode.set(""); playbackPhase.set("idle"); playbackTiming.set(null); });
+  resetSleepTimer();
   visited = [];
   shuffleBag = [];
   updateMediaSession();
@@ -665,8 +694,31 @@ export async function applyRemoteState(state: RemotePlaybackState) {
     changed();
   } finally { syncingRemote.set(false); }
 }
-export function setSleepTimer(minutes: number) {
+function resetSleepTimer() {
   if (sleepTimer !== undefined) clearTimeout(sleepTimer);
-  sleepUntil.set(minutes > 0 ? Date.now() + minutes * 60000 : null);
-  sleepTimer = minutes > 0 ? setTimeout(() => { pause(); sleepUntil.set(null); sleepTimer = undefined; }, minutes * 60000) : undefined;
+  sleepTimer = undefined;
+  batch(() => { sleepUntil.set(null); sleepAfterTrack.set(false); sleepRemaining.set(0); });
+}
+function tickSleepTimer() {
+  const remaining = sleepUntil()! - Date.now();
+  sleepRemaining.set(Math.max(0, Math.ceil(remaining / 1000)));
+  if (remaining <= 0) { pause(); resetSleepTimer(); }
+  else sleepTimer = setTimeout(tickSleepTimer, Math.min(1000, remaining));
+}
+export function cancelSleepTimer() {
+  resetSleepTimer();
+  prepareUpcoming();
+}
+export function setSleepTimer(minutes: number) {
+  resetSleepTimer();
+  if (minutes > 0) {
+    sleepUntil.set(Date.now() + minutes * 60000);
+    tickSleepTimer();
+  }
+  prepareUpcoming();
+}
+export function setSleepAfterTrack() {
+  resetSleepTimer();
+  sleepAfterTrack.set(true);
+  cancelPreparation();
 }
