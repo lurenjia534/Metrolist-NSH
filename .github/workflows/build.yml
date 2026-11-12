@@ -222,7 +222,7 @@ jobs:
           toolchain: "1.99.1"
       - name: Install native Linux libraries and display
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y clang llvm libclang-dev pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-good gstreamer1.0-libav libegl-mesa0 libgl1-mesa-dri mesa-vulkan-drivers at-spi2-core libxtst6 xvfb xauth x11-utils
+        run: sudo apt-get update && sudo apt-get install -y clang llvm libclang-dev pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-good gstreamer1.0-libav libegl-mesa0 libgl1-mesa-dri libglx-mesa0 mesa-vulkan-drivers at-spi2-core libxtst6 fonts-noto-cjk xvfb xauth x11-utils
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -253,9 +253,9 @@ jobs:
         env:
           METROLIST_SPOTIFY_VISUAL: '1'
           GDK_BACKEND: x11
-          GSK_RENDERER: cairo
-          # NSH's WGSL renderer uses wgpu independently of GTK's renderer;
-          # Mesa supplies software GL/Vulkan on runners without a GPU.
+          # Cover flips use 3D transforms, which Cairo replaces with error
+          # markers. Mesa software OpenGL preserves those transforms in CI.
+          GSK_RENDERER: gl
           LIBGL_ALWAYS_SOFTWARE: '1'
         run: env -u WAYLAND_DISPLAY xvfb-run -a --server-args="-screen 0 1920x1200x24" dbus-run-session -- python scripts/run-nsh.py test --target linux tests/spotify-visual.test.tsx
       - name: Launch the desktop application
