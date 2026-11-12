@@ -21,6 +21,9 @@ import { Dialogs } from "./src/components/Dialogs";
 import { TrackRow } from "./src/components/Music";
 import logo from "./assets/metrolist-icon.png";
 import appInfo from "./nsh.json";
+import { ProviderSwitcher, providerRail } from "./src/components/ProviderSwitcher";
+import { activeProvider, initializeProviders, providerError, providersReady, selectProvider, switchingProvider } from "./src/providers";
+import { SpotifyWorkspace } from "./src/spotish/App";
 
 const sidePlayer = signal(true);
 const systemHeader = platform.os === "ios" || platform.os === "android";
@@ -75,11 +78,7 @@ function Screen(props: { route: nav.Route }) {
 function SidePlayer() {
   return <View style={{ width: 280, backgroundColor: c().panel, borderLeftWidth: 1, borderColor: c().line, padding: 20, paddingTop: 28, gap: 20 }}><View style={{ flexDirection: "row", alignItems: "center" }}><Label size={16} weight="600" style={{ flex: 1 }}>正在播放</Label><Tool icon="expand" label="打开播放器" onPress={() => nav.showPlayer()} /></View><Press label="打开封面" onPress={() => nav.showPlayer()}><Art track={p.currentTrack()} size={240} radius={16} /></Press><View style={{ gap: 8 }}><Label size={20} weight="600" lines={2}>{p.currentTrack()?.title}</Label><Label color={c().sub} size={14}>{p.currentTrack()?.artist}</Label></View><View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}><Label size={13} color={c().sub}>接下来</Label><Tool icon="queue" label="完整队列" onPress={() => nav.showPlayer("queue")} /></View><Scroll style={{ flex: 1 }} scrollbar={false}><Each of={p.queue().slice(p.currentIndex() + 1, p.currentIndex() + 9)}>{(track, index) => <TrackRow compact track={track()} onPlay={() => action(() => p.playAt(p.currentIndex() + index() + 1))} />}</Each><If when={p.currentIndex() >= p.queue().length - 1}><Label size={12} color={c().faint}>{s.settings().autoRadio ? "播放结束后继续电台推荐" : "已到队列末尾"}</Label></If></Scroll><Pill label="歌词" icon="lyrics" onPress={() => nav.showPlayer("lyrics")} /></View>;
 }
-function App() {
-  if (platform.os === "web") void host.call("app.start").catch(s.showError);
-  account.setAccountHooks({ onChange: () => { p.invalidatePreparation(); void s.loadHome(); } });
-  void s.initialize().then(() => account.initializeAccounts()).catch(s.showError);
-  void together.initializeTogether().catch(s.showError);
+function YouTubeWorkspace() {
   keymap.bind({ "space": () => { if (!p.remoteControlled()) void action(p.togglePlay); }, "mod+k": () => nav.navigate("search", true), "mod+right": () => { if (!p.remoteControlled()) void action(p.next); }, "mod+left": () => { if (!p.remoteControlled()) void action(p.previous); } });
   return <View testID="metrolist-app" style={{ flex: 1, minWidth: 0, minHeight: 0, backgroundColor: c().bg, paddingBottom: narrow() ? 0 : "env(safe-area-inset-bottom)" }}>
     <View style={{ flex: 1, minHeight: 0, flexDirection: "row" }}><If when={!narrow()}><Sidebar /></If><View style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
@@ -94,6 +93,31 @@ function App() {
     <MiniPlayer /><If when={narrow()}><BottomNav /></If>
     <FullPlayer /><Dialogs /><CloudDialogs />
     <ToastHost />
+  </View>;
+}
+
+function App() {
+  if (platform.os === "web") void host.call("app.start").catch(s.showError);
+  account.setAccountHooks({ onChange: () => { p.invalidatePreparation(); void s.loadHome(); } });
+  // Host subscriptions live with the application, so switching workspaces does
+  // not detach Android playback events or progress from background downloads.
+  void s.initialize().then(async () => {
+    await initializeProviders();
+    await account.initializeAccounts();
+  }).catch(s.showError);
+  void together.initializeTogether().catch(s.showError);
+  keymap.bind("mod+shift+1", () => void selectProvider("youtube"));
+  keymap.bind("mod+shift+2", () => void selectProvider("spotify"));
+  return <View testID="metrolist-shell" style={{ flex: 1, minWidth: 0, minHeight: 0, flexDirection: providerRail() ? "row" : "column", backgroundColor: c().bg }}>
+    <ProviderSwitcher />
+
+    <View style={{ flex: 1, minHeight: 0, minWidth: 0, pointerEvents: switchingProvider() ? "none" : "auto" }}>
+      <If when={providerError()}><View testID="provider-error" style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 18, paddingVertical: 8, gap: 12, backgroundColor: c().selected }}><Label size={13} style={{ flex: 1 }}>{providerError()}</Label><Tool icon="close" label="关闭切换提示" onPress={() => providerError.set("")} /></View></If>
+      <If when={providersReady()}>
+        <If when={activeProvider() === "youtube"}><YouTubeWorkspace /></If>
+        <If when={activeProvider() === "spotify"}><SpotifyWorkspace /></If>
+      </If>
+    </View>
   </View>;
 }
 mount(App);

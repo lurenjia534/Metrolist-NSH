@@ -121,7 +121,7 @@ def sdk_tools(toolchain: Path, sdk: Path) -> Path:
 
 def runtime_sources(toolchain: Path, nsh: Path) -> tuple[Path, Path]:
     version = subprocess.check_output([str(nsh), "--version"], text=True).strip()
-    if f"({RUNTIME_COMMIT} " not in version:
+    if not re.search(rf"\({re.escape(RUNTIME_COMMIT)}(?: |\))", version):
         raise RuntimeError(f"This Android host needs NSH {RUNTIME_COMMIT}; found {version}. Run scripts/install-nsh.py --component android.")
     dist = nsh.resolve().parent.parent
     runtime = dist / "runtime" / "android" / "release"
@@ -136,7 +136,7 @@ def runtime_sources(toolchain: Path, nsh: Path) -> tuple[Path, Path]:
     metadata = json.loads((dist / "components" / "android.json").read_text())
     if metadata["commit"] != RUNTIME_COMMIT:
         raise RuntimeError(f"This host build uses NSH {RUNTIME_COMMIT}; found {metadata['commit']}. Keep the matching NSH distribution for this release.")
-    source = toolchain / "nsh-android-source"
+    source = toolchain / "nsh-android-source" / NSH_TOOLCHAIN["revision"]
     if not (source / "com" / "longbridge" / "nsh" / "NshView.java").exists():
         archive = fetch_archive('source', toolchain)
         with tarfile.open(archive) as package:
@@ -280,6 +280,10 @@ def media_manifest(apk: Path, work: Path, metadata: dict, sdk: Path, tools: Path
         output.write(PROJECT / "android" / "THIRD_PARTY_NOTICES.md", "assets/legal/THIRD_PARTY_NOTICES.md", compress_type=zipfile.ZIP_DEFLATED)
         output.write(PROJECT / "scripts" / "portable" / "NSH-LICENSE-APACHE.txt", "assets/legal/Apache-2.0.txt", compress_type=zipfile.ZIP_DEFLATED)
         output.write(PROJECT / "COPYING", "assets/legal/GPL-3.0.txt", compress_type=zipfile.ZIP_DEFLATED)
+        output.write(PROJECT / "NOTICE.md", "assets/legal/NOTICE.md", compress_type=zipfile.ZIP_DEFLATED)
+        for notice in sorted((PROJECT / "third-party").rglob("*")):
+            if notice.is_file():
+                output.write(notice, "assets/legal/third-party/" + notice.relative_to(PROJECT / "third-party").as_posix(), compress_type=zipfile.ZIP_DEFLATED)
     aligned = work / "media-signed.apk"
     run(tools / ("zipalign.exe" if os.name == "nt" else "zipalign"), "-P", "16", "-f", "4", unsigned, aligned)
     run(java, "-jar", tools / "lib" / "apksigner.jar", "sign", "--ks", keystore, "--ks-key-alias", alias,

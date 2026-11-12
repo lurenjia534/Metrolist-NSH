@@ -1,10 +1,12 @@
 import { expect, open, test } from "nsh/test";
 import type { App } from "nsh/test";
+import { mediaFile } from "./local-media/files";
 
 const handlers = {
   "app.metadata": null, "app.playback": null,
   "files.cancelDownload": null, "files.removeDownload": null,
-  "files.download": { destination: "/music/retried.m4a", url: "file:///music/retried.m4a", bytes: 1024 },
+  "files.download": { destination: "Moonfall.m4a", url: "local:moon-failed", bytes: 1024 },
+  "files.resolve": (data: { id: string }) => ({ url: `blob:https://music.test/${data.id}` }),
 };
 const fixture = () => open("./downloads-ui-fixture.tsx", { width: 1000, height: 1600, platform: "web", host: { handlers } });
 const calls = (app: App, name: string) => app.host.calls().filter(call => call.name === name);
@@ -24,7 +26,8 @@ test("download search combines with status filters and plays only matching compl
   await app.press("id:download-play-visible");
   await app.waitUntil(() => app.audio().some(call => call.command === "open"));
   expect(app.texts()).toContain('["moon-one","moon-two"]');
-  expect(app.audio().find(call => call.command === "open")!.src).toBe("file:///music/moon-one.m4a");
+  expect(app.audio().find(call => call.command === "open")!.src).toBe("blob:https://music.test/moon-one");
+  expect(calls(app, "files.resolve")[0].data).toEqual({ id: "moon-one" });
   await app.clear("id:download-search"); await app.type("id:download-search", "missing song");
   expect(app.texts()).toContain("没有匹配的下载");
   await app.press("id:download-show-all");
@@ -90,7 +93,7 @@ test("desktop downloads reveal the saved native file in the file manager", async
   expect(app.shows("id:download-export-moon-one")).toBe(true);
   await app.press("id:download-reveal-moon-one");
   await app.waitUntil(() => calls(app, "app.test.files.reveal").length === 1);
-  expect(calls(app, "app.test.files.reveal")[0].data).toEqual({ destination: "/music/moon-one.m4a" });
+  expect(calls(app, "app.test.files.reveal")[0].data).toEqual({ destination: mediaFile("moon-one.wav").destination });
 });
 
 test("iOS downloaded audio keeps playback and removal without offering desktop-only file actions", async () => {

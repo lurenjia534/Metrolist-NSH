@@ -1,8 +1,8 @@
 {
   "name": "Metrolist",
   "id": "app.miku.metrolist",
-  "version": "0.6.0",
-  "build": 7,
+  "version": "0.7.0",
+  "build": 8,
   "rust": "native",
   "appearance": "dark",
   "icon": "assets/icon.png",
@@ -39,6 +39,13 @@
       "app.*"
     ],
     "audio": true,
+    "process": {
+      "env": [
+        "SPOTISH_DEMO",
+        "SPOTISH_BENCH",
+        "METROLIST_SPOTIFY_VISUAL"
+      ]
+    },
     "picker": true,
     "clipboard": true,
     "statusBar": true,
@@ -64,7 +71,11 @@
     "infoPlist": {
       "NSAppTransportSecurity": {
         "NSAllowsLocalNetworking": true,
-        "NSExceptionDomains": { "127.0.0.1": { "NSExceptionAllowsInsecureHTTPLoads": true } }
+        "NSExceptionDomains": {
+          "127.0.0.1": {
+            "NSExceptionAllowsInsecureHTTPLoads": true
+          }
+        }
       }
     }
   },
@@ -72,8 +83,13 @@
     "infoPlist": {
       "NSAppTransportSecurity": {
         "NSAllowsLocalNetworking": true,
-        "NSExceptionDomains": { "127.0.0.1": { "NSExceptionAllowsInsecureHTTPLoads": true } }
-      }
+        "NSExceptionDomains": {
+          "127.0.0.1": {
+            "NSExceptionAllowsInsecureHTTPLoads": true
+          }
+        }
+      },
+      "NSAudioCaptureUsageDescription": "Metrolist listens to the Spotify music it plays so its visual effects move with the beat. The sound never leaves this Mac."
     }
   },
   "web": {

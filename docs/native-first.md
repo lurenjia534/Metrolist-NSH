@@ -22,7 +22,7 @@ Linux 的 `Metrolist`、Windows 的 `Metrolist.exe`、macOS 应用包中的原�
 
 ## 从源码运行
 
-安装匹配的 NSH CLI、Rust 1.99.1 与对应系统编译依赖。工具链安装和下面的辅助命令使用 Python 3.11+：
+安装匹配的 NSH 0.5.0（`f4d68f7`）CLI、Rust 1.99.1 与对应系统编译依赖。工具链安装和下面的辅助命令使用 Python 3.11+：
 
 ```sh
 python3 scripts/install-nsh.py
@@ -34,7 +34,7 @@ python3 scripts/package-portable.py linux
 
 Windows 将 `python3` 改为 `python`。原生运行脚本还接受 `linux`、`windows`、`macos` 等 NSH 目标；`NSH_BIN` 指定 CLI，`NSH_CACHE` 指定组件缓存。项目 Rust 模块由 `nsh build` / `nsh package` 编译和静态链接，运行安装包不需要 Rust 或 Python。
 
-iOS 的原生下载可在应用内离线播放；音频导出到 Files 尚未实现。桌面音频导入、导出和“在文件管理器中显示”使用 NSH 原生对话框与 Rust 文件能力。
+iOS 的原生下载可在应用内离线播放。NSH 0.5 下，iOS 本地文件通过应用已有的 Rust loopback 媒体通道流式读取，支持 GET、HEAD 和 Range；持久记录仍保存原文件地址，暂停和恢复复用当前来源。桌面继续直接读取应用数据目录内的音频。iOS 音频导出到 Files 尚未实现；桌面音频导入、导出和“在文件管理器中显示”使用 NSH 原生对话框与 Rust 文件能力。
 
 Linux 构建需要 GTK 4.14+、WebKitGTK 6.0、GStreamer 开发库、pkg-config 和 clang；运行需要对应共享库。macOS 构建使用 Xcode 工具链，Windows 使用 MSVC 工具链。
 

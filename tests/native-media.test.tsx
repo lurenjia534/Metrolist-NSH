@@ -1,5 +1,6 @@
 import { expect, open, test } from "nsh/test";
 import type { App } from "nsh/test";
+import { mediaFile } from "./local-media/files";
 
 const headers = { "User-Agent": "native-source-profile", Origin: "https://music.youtube.com", Referer: "https://music.youtube.com/" };
 const relay = (id: string) => ({ id, url: `http://127.0.0.1:49321/audio/${id}` });
@@ -45,7 +46,7 @@ test("a native relay resolved after switching tracks is released without startin
 });
 
 test("local files and headerless HTTP sources play directly without registering native relays", async () => {
-  const app = await open("./native-media-fixture.tsx", { platform: "windows", host: { handlers: {
+  const app = await open("../.nsh/local-media/native-media.tsx", { platform: "windows", host: { handlers: {
     "app.test.media.prepare": relay("unexpected"),
     "app.test.media.release": null,
   } } });
@@ -54,5 +55,5 @@ test("local files and headerless HTTP sources play directly without registering 
   await app.press("Clear");
   expect(prepareCalls(app)).toEqual([]);
   expect(releaseCalls(app)).toEqual([]);
-  expect(app.audio().filter(call => call.command === "open").map(call => call.src)).toEqual(["file:///music/offline.m4a", "https://audio.test/direct.mp3"]);
+  expect(app.audio().filter(call => call.command === "open").map(call => call.src)).toEqual([mediaFile("offline.wav").url, "https://audio.test/direct.mp3"]);
 });

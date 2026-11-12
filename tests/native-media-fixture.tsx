@@ -3,12 +3,13 @@ import { Button } from "nsh/base";
 import { NativeMedia, type MediaSource } from "metrolist/native";
 import * as p from "../src/playback";
 import type { StreamInfo, Track } from "../src/model";
+import { mediaFile } from "./local-media/files";
 
 const headers = { "User-Agent": "native-source-profile", Origin: "https://music.youtube.com", Referer: "https://music.youtube.com/" };
 const sources: Record<string, StreamInfo> = {
   signed: { url: "https://audio.test/signed.m4a?signature=fixture", headers },
   replacement: { url: "https://audio.test/replacement.m4a?signature=fixture", headers },
-  local: { url: "file:///music/offline.m4a", headers },
+  local: { url: mediaFile("offline.wav").url, headers },
   direct: { url: "https://audio.test/direct.mp3" },
 };
 const track = (id: string): Track => ({ id, title: id, artist: "Fixture", album: "Native media", artwork: "", duration: 60, source: "audio", url: sources[id].url });

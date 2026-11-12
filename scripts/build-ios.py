@@ -9,6 +9,7 @@ import shutil
 import subprocess
 from release import ROOT, APP, VERSION, CONFIG, OUTPUT, report_artifact, run
 from nsh_path import NSH, NSH_ENV
+from nsh_archives import LOCK as NSH_LOCK
 
 
 def package(target, directory, icon, signing=False):
@@ -17,7 +18,17 @@ def package(target, directory, icon, signing=False):
     if signing:
         command += ['--sign', os.environ['IOS_SIGNING_IDENTITY'], '--profile', os.environ['IOS_PROVISION_PROFILE']]
     run(*command, cwd=ROOT, env=NSH_ENV)
-    return directory / (APP['name'] + '.app')
+    app = directory / (APP['name'] + '.app')
+    legal = app / 'legal'
+    shutil.copytree(ROOT / 'third-party', legal / 'third-party', dirs_exist_ok=True)
+    for filename in ('COPYING', 'NOTICE.md'):
+        shutil.copy2(ROOT / filename, legal / filename)
+    # Notices are part of the bundle's signed resources.
+    if signing or target == 'ios-simulator':
+        identity = os.environ['IOS_SIGNING_IDENTITY'] if signing else '-'
+        run('codesign', '--force', '--sign', identity,
+            '--preserve-metadata=entitlements,requirements,flags', app)
+    return app
 
 
 def archive_app(app, destination):
@@ -32,7 +43,7 @@ def inspect(app, target, signing):
         raise RuntimeError(f'Expected the pinned ARM64 iOS runtime; found {architecture}')
     return {'target': target, 'arch': architecture, 'signing': signing,
             'applicationId': info['CFBundleIdentifier'], 'minimumOSVersion': info.get('MinimumOSVersion'),
-            'nshRuntimeCommit': 'c5214aa', 'runtime': 'nsh-native',
+            'nshRuntimeCommit': NSH_LOCK['revision'], 'runtime': 'nsh-native',
             'bundledNode': False, 'bundledGateway': False}
 
 
@@ -68,7 +79,11 @@ def main(signed_only):
         device = package('ios', base / 'signed', icon, signing=True)
         run('codesign', '--verify', '--deep', '--strict', device)
         ipa = OUTPUT / f'Metrolist-NSH-{VERSION}-ios-device-arm64-signed.ipa'
-        shutil.copy2(base / 'signed' / (APP['name'] + '.ipa'), ipa)
+        payload = base / 'signed-ipa/Payload'
+        shutil.rmtree(payload.parent, ignore_errors=True)
+        payload.mkdir(parents=True)
+        shutil.copytree(device, payload / device.name)
+        archive_app(payload, ipa)
         report_artifact(ipa, **inspect(device, 'ios-device', 'provisioned'))
 
 

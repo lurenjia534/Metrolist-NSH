@@ -16,6 +16,9 @@ const client = join(root, "dist/client");
 rmSync(client, { recursive: true, force: true });
 mkdirSync(join(root, "dist/server"), { recursive: true });
 cpSync(join(output, packageName), client, { recursive: true });
+cpSync(join(root, "third-party"), join(client, "legal/third-party"), { recursive: true });
+cpSync(join(root, "NOTICE.md"), join(client, "legal/NOTICE.md"));
+cpSync(join(root, "COPYING"), join(client, "legal/GPL-3.0.txt"));
 writeFileSync(join(client, "sw.js"), readFileSync(join(root, "web/sw.js"), "utf8").replaceAll("__APP_VERSION__", appMetadata.version));
 writeFileSync(join(client, "version.json"), JSON.stringify({ version: appMetadata.version, build: appMetadata.build }) + "\n");
 

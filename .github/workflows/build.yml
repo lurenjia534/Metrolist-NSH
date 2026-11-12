@@ -86,8 +86,18 @@ jobs:
             ~/.cargo/git
           key: nsh-verify-${{ runner.os }}-${{ hashFiles('scripts/nsh-toolchain.json', 'native/Cargo.toml', 'native/Cargo.lock') }}
       - run: python scripts/install-nsh.py
+      - name: Verify the Spotify browser bridge and generated bundle source
+        run: |
+          node --check src/spotish/bridge/bridge.js
+          node --test src/spotish/bridge/tests/bridge.test.mjs
+          node src/spotish/bridge/gen-source.mjs --check
       - run: python scripts/run-nsh.py check
+      - run: python scripts/run-nsh.py build
       - run: python scripts/run-nsh.py test --web-host tests/native-login/host.js
+      - name: Verify native Spotify subscriptions across workspace remounts
+        env:
+          SPOTISH_DEMO: '1'
+        run: python scripts/run-nsh.py test tests/spotify-native.test.tsx
       - run: node --test server/*.test.mjs
 
   toolchain:
@@ -118,7 +128,7 @@ jobs:
         run: python scripts/mirror-nsh.py --publish-only
       - uses: actions/upload-artifact@v4
         with:
-          name: nsh-runtime-c5214aa-manifest
+          name: nsh-runtime-f4d68f7-manifest
           path: |
             dist/toolchain/NSH-MIRROR-MANIFEST.json
             dist/toolchain/SHA256SUMS.txt
@@ -212,7 +222,7 @@ jobs:
           toolchain: "1.99.1"
       - name: Install native Linux libraries and display
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y clang llvm libclang-dev pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-good gstreamer1.0-libav xvfb xauth x11-utils
+        run: sudo apt-get update && sudo apt-get install -y clang llvm libclang-dev pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-good gstreamer1.0-libav libegl-mesa0 libgl1-mesa-dri libglx-mesa0 mesa-vulkan-drivers at-spi2-core libxtst6 fonts-noto-cjk xvfb xauth x11-utils
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -231,8 +241,25 @@ jobs:
         run: python scripts/package-portable.py ${{ matrix.target }} --arch ${{ matrix.arch }} --out dist/release
       - name: Launch the Linux application under Xvfb
         if: runner.os == 'Linux'
-        # GTK portal/accessibility lookups need a session bus, as in the pinned NSH Linux CI.
-        run: dbus-run-session -- xvfb-run -a python scripts/smoke-desktop.py linux --arch ${{ matrix.arch }}
+        env:
+          GDK_BACKEND: x11
+          GSK_RENDERER: cairo
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        # Start the session bus inside Xvfb so portal and accessibility
+        # services inherit its DISPLAY and XAUTHORITY.
+        run: env -u WAYLAND_DISPLAY xvfb-run -a --server-args="-screen 0 1920x1200x24" dbus-run-session -- python scripts/smoke-desktop.py linux --arch ${{ matrix.arch }}
+      - name: Capture the native Spotify workspace and music lights
+        if: runner.os == 'Linux'
+        env:
+          METROLIST_SPOTIFY_VISUAL: '1'
+          GDK_BACKEND: x11
+          # Cover flips need GTK's 3D renderer. Select software Vulkan
+          # explicitly: GTK's automatic selection skips CPU Vulkan devices.
+          GSK_RENDERER: vulkan
+          GSK_DEBUG: renderer
+          GDK_DEBUG: vulkan,frames
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: env -u WAYLAND_DISPLAY xvfb-run -a --server-args="-screen 0 1920x1200x24" dbus-run-session -- python scripts/run-nsh.py test --target linux tests/spotify-visual.test.tsx
       - name: Launch the desktop application
         if: runner.os != 'Linux'
         run: python scripts/smoke-desktop.py ${{ matrix.target }} --arch ${{ matrix.arch }}

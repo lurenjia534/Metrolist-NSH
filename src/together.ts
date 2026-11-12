@@ -146,7 +146,8 @@ function fromRoom(state: Body): TogetherRoom {
 }
 
 let socket: WebSocketConnection | undefined;
-let connecting: Promise<void> | undefined;
+let connecting: Promise<WebSocketConnection | undefined> | undefined;
+let connectionAttempt = 0;
 let sessionToken = "";
 let clockOffset = 0;
 let bestRoundTrip = Infinity;
@@ -183,29 +184,36 @@ function clearRoom() {
   player.remoteControlled.set(false);
   batch(() => { room.set(null); role.set("none"); userId.set(""); pendingJoinRequests.set([]); suggestions.set([]); waitingForApproval.set(false); bufferingUsers.set([]); });
 }
-export async function connect() {
-  if (connection() === "connected") return;
+export async function connect(): Promise<WebSocketConnection | undefined> {
+  if (connection() === "connected") return socket;
   if (connecting) return connecting;
+  const attempt = ++connectionAttempt;
   connecting = (async () => {
     batch(() => { connection.set("connecting"); error.set(""); status.set("正在连接一起听服务…"); });
     clockReady = false; clockOffset = 0; bestRoundTrip = Infinity;
     const opened = await openSocket(serverUrl());
+    if (attempt !== connectionAttempt) { opened.dispose(); return; }
     socket = opened;
     connection.set("connected"); status.set("已连接，可以创建或加入房间");
     void readMessages(opened);
-    await send("client_capabilities", { supportsProtobuf: true, supportsCompression: false, clientVersion: "Metrolist NSH/0.2.0" });
+    await opened.write(encodeMessage("client_capabilities", { supportsProtobuf: true, supportsCompression: false, clientVersion: "Metrolist NSH/0.2.0" }));
+    if (attempt !== connectionAttempt || socket !== opened) return;
     ping();
     pingTimer = setInterval(ping, 25000);
     syncTimer = setInterval(() => { void publishPlayback().catch(fail); signalReady(); }, 300);
-    if (sessionToken) await send("reconnect", { sessionToken });
-  })().catch((reason) => { connection.set("error"); fail(reason); }).finally(() => { connecting = undefined; });
+    if (sessionToken) await opened.write(encodeMessage("reconnect", { sessionToken }));
+    if (attempt === connectionAttempt && socket === opened) return opened;
+  })().catch((reason) => {
+    if (attempt === connectionAttempt) { connection.set("error"); fail(reason); }
+    return undefined;
+  }).finally(() => { if (attempt === connectionAttempt) connecting = undefined; });
   return connecting;
 }
 async function readMessages(opened: WebSocketConnection) {
   try {
     for (;;) {
       const bytes = await opened.read();
-      if (bytes === null) break;
+      if (socket !== opened || bytes === null) break;
       if (typeof bytes === "string") throw new Error("一起听服务返回了非 Protobuf 消息");
       const message = decodeMessage(bytes);
       handleMessage(message.type, message.payload);
@@ -215,21 +223,25 @@ async function readMessages(opened: WebSocketConnection) {
   finally { if (socket === opened) { socket = undefined; clearTimers(); player.remoteControlled.set(false); } }
 }
 export async function disconnect() {
+  connectionAttempt++; connecting = undefined;
   const opened = socket; socket = undefined; clearTimers(); clearRoom();
   batch(() => { connection.set("disconnected"); status.set("已断开连接"); });
-  if (opened) await opened.close(1000, "User disconnected");
+  if (opened) {
+    try { await opened.close(1000, "User disconnected"); }
+    finally { opened.dispose(); }
+  }
 }
 export async function createRoom() {
-  await connect();
-  if (connection() !== "connected") return;
+  const opened = await connect();
+  if (!opened || socket !== opened || connection() !== "connected") return;
   error.set(""); status.set("正在创建房间…");
-  await send("create_room", { username: username().trim() }).catch(fail);
+  await opened.write(encodeMessage("create_room", { username: username().trim() })).catch((reason) => { if (socket === opened) fail(reason); });
 }
 export async function joinRoom(code: string) {
-  await connect();
-  if (connection() !== "connected") return;
+  const opened = await connect();
+  if (!opened || socket !== opened || connection() !== "connected") return;
   waitingForApproval.set(true); error.set(""); status.set("等待主持人批准加入");
-  await send("join_room", { roomCode: code.trim().toUpperCase(), username: username().trim() }).catch(fail);
+  await opened.write(encodeMessage("join_room", { roomCode: code.trim().toUpperCase(), username: username().trim() })).catch((reason) => { if (socket === opened) fail(reason); });
 }
 export async function leaveRoom() {
   await send("leave_room").catch(fail); clearRoom(); status.set("已离开房间");
@@ -362,13 +374,23 @@ function signalReady() {
   lastReadyTrack = track.id;
   void send("buffer_ready", { trackId: track.id }).catch(fail);
 }
-async function action(name: string, payload: Body = {}) {
-  const capturedAtServerTime = ["play", "pause", "seek"].includes(name) ? Math.round(serverNow()) : undefined;
-  await send("playback_action", { action: name, ...payload, capturedAtServerTime });
-}
 /** Publishes the host's actual player; server queues contain upcoming tracks only. */
 export async function publishPlayback() {
   if (!isHost() || !room() || player.syncingRemote()) return;
+  const opened = socket!;
+  const token = sessionToken;
+  const ownsRoom = () => socket === opened && sessionToken === token && isHost();
+  const action = async (name: string, payload: Body = {}) => {
+    if (!ownsRoom()) return false;
+    const capturedAtServerTime = ["play", "pause", "seek"].includes(name) ? Math.round(serverNow()) : undefined;
+    try {
+      await opened.write(encodeMessage("playback_action", { action: name, ...payload, capturedAtServerTime }));
+    } catch (reason) {
+      if (ownsRoom()) throw reason;
+      return false;
+    }
+    return ownsRoom();
+  };
   const current = player.currentTrack();
   if (current && current.source !== "youtube") { error.set("一起听同步 YouTube 曲目；本地音频不会发送到房间"); return; }
   const upcoming = player.queue().slice(player.currentIndex() + 1).filter((track) => track.source === "youtube");
@@ -378,17 +400,17 @@ export async function publishPlayback() {
   lastHostSnapshot = snapshot;
   const trackChanged = !previous || snapshot.track !== previous.track;
   const queueChanged = !previous || snapshot.queue !== previous.queue;
-  if (trackChanged && current) await action("change_track", { trackId: current.id, trackInfo: toWire(current), queue: upcoming.map(toWire), queueTitle: "一起听" });
-  if (trackChanged && !current && previous?.track) await action("pause", { trackId: previous.track, position: 0 });
-  if (trackChanged || queueChanged) await action("sync_queue", { queue: upcoming.map(toWire), queueTitle: "一起听" });
+  if (trackChanged && current && !await action("change_track", { trackId: current.id, trackInfo: toWire(current), queue: upcoming.map(toWire), queueTitle: "一起听" })) return;
+  if (trackChanged && !current && previous?.track && !await action("pause", { trackId: previous.track, position: 0 })) return;
+  if ((trackChanged || queueChanged) && !await action("sync_queue", { queue: upcoming.map(toWire), queueTitle: "一起听" })) return;
   if (current) {
     const changedState = !previous || snapshot.playing !== previous.playing;
     const expected = previous ? previous.position + (previous.playing ? (now - previous.at) / 1000 : 0) : 0;
     const jumped = !!previous && Math.abs(snapshot.position - expected) > 1.2;
     if (trackChanged || changedState || snapshot.playing && now - lastHeartbeat >= 5000) {
+      if (!await action(snapshot.playing ? "play" : "pause", { trackId: current.id, position: Math.round(snapshot.position * 1000) })) return;
       lastHeartbeat = now;
-      await action(snapshot.playing ? "play" : "pause", { trackId: current.id, position: Math.round(snapshot.position * 1000) });
-    } else if (jumped) await action("seek", { trackId: current.id, position: Math.round(snapshot.position * 1000) });
+    } else if (jumped && !await action("seek", { trackId: current.id, position: Math.round(snapshot.position * 1000) })) return;
   }
   if (!previous || snapshot.volume !== previous.volume) await action("set_volume", { volume: snapshot.volume });
 }

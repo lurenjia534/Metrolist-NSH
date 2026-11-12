@@ -55,6 +55,7 @@ test("web account page imports and verifies the owner's session then removes onl
   expect(saved.accounts[0].profile.name).toBe("Fixture A");
   expect(saved.accounts[0].credentials.visitorData).toBe("fixture-visitor");
   await app.press("label:退出此账号"); await app.press("label:退出并移除本机会话");
+  await app.waitUntil(() => !read(app, "account").signedIn);
   expect(read(app, "account").signedIn).toBe(false);
   expect(JSON.parse(app.storage()["metrolist.accounts"]).accounts).toHaveLength(0);
   expect(app.storage()["metrolist.library"]).toBe("local-library-fixture");

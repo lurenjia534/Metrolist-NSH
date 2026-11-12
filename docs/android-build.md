@@ -1,6 +1,6 @@
 # Android APK 构建与原生播放
 
-当前发行版本为 **0.5.1**。可升级发行使用 `python3 scripts/release.py android`，沿用 `app.miku.metrolist.preview` 和原 0.5 preview 签名；CI 配置与两个 APK 的发布方式见本文末尾“0.5.1 的可升级发行与 CI”。
+当前源码版本为 **0.7.0**。可升级发行使用 `python3 scripts/release.py android`，沿用 `app.miku.metrolist.preview` 和原 0.5 preview 签名。下面的播放链路与签名方式继承自 0.5.1；0.7 的 Spotify 工作区在 Android 上为明确标注的界面演示，详见 [0.7 发布说明](releases-0.7.0.md)。
 
 ## 0.5.1 的 Android 播放链路
 
@@ -39,7 +39,7 @@ Activity 销毁时只解除 View 连接，当前曲目继续由前台服务持�
 
 ## 构建
 
-需要 Python 3.11+、Node.js 24、Java 17 以上（带 `jdk.compiler` 模块）、curl，以及 NSH 0.4.0 nightly `c5214aa`。本轮实际使用 JDK 21。重建不需要 Gradle、Maven、Rust 或 Android NDK。
+需要 Python 3.11+、Java 17 以上（带 `jdk.compiler` 模块）、curl，以及 NSH 0.5.0 `f4d68f7`。既有 Android 构建使用 JDK 21。重建不需要 Gradle 或 Maven；NSH 自定义 Rust Host 的构建还需要 Rust 与 Android NDK。
 
 ```sh
 # 安装本项目匹配的 CLI 与 Android runtime
@@ -81,9 +81,9 @@ python scripts/build-android.py \
 
 也支持 `ANDROID_HOME` / `ANDROID_SDK_ROOT`、`JAVA_HOME`、`NSH_BIN` 和 `NSH_KEYSTORE_PASSWORD`。密码不输出到命令行。
 
-Linux 缺少 SDK 时，脚本从 Google 官方仓库获取 `build-tools;35.0.1` 与 `platforms;android-35`；macOS / Windows 可先用 Android SDK Manager 安装。NSH Java 源码与原生库都固定为 `c5214aa`。
+Linux 缺少 SDK 时，脚本从 Google 官方仓库获取 `build-tools;35.0.1` 与 `platforms;android-35`；macOS / Windows 可先用 Android SDK Manager 安装。NSH Java 源码与原生库都固定为 `f4d68f7`。
 
-Media3、OkHttp、Kotlin 和其依赖固定在 `android/media3-dependencies.json`，包含官方 Google Maven / Maven Central 地址和摘要。NSH CLI、Android/Web 组件与 Java 源码固定在 `scripts/nsh-toolchain.json`。发布构建读取这两份清单，不临时解析“最新版本”。安装器和 Android 构建优先使用本仓库的 `nsh-runtime-c5214aa` 固定工具链 Release；只有镜像资产返回 HTTP 404 时才从上游引导，随后仍校验固定摘要。`NSH_DOWNLOAD_BASE` 可指定其他版本镜像；不同版本的 Java 与 JNI 库不能混用。
+Media3、OkHttp、Kotlin 和其依赖固定在 `android/media3-dependencies.json`，包含官方 Google Maven / Maven Central 地址和摘要。NSH CLI、Android/Web 组件与 Java 源码固定在 `scripts/nsh-toolchain.json`。发布构建读取这两份清单，不临时解析“最新版本”。安装器和 Android 构建优先使用本仓库的 `nsh-runtime-f4d68f7` 固定工具链 Release；只有镜像资产返回 HTTP 404 时才从上游稳定版 `v0.5.0` 引导，随后仍校验固定摘要。`NSH_DOWNLOAD_BASE` 可指定同一固定版本的其他镜像；不同版本的 Java 与 JNI 库不能混用。
 
 ### 资源与字节码
 
@@ -135,7 +135,7 @@ Manifest 包含 Internet、网络 / Wi-Fi 状态、唤醒锁与媒体播放前�
 - [原版 Metrolist MusicService](https://github.com/MetrolistGroup/Metrolist/blob/e6fea3b36c68841bad21daa6252e1d69ecd3afbe/app/src/main/kotlin/com/metrolist/music/playback/MusicService.kt)
 - [Media3 自定义播放器与数据源](https://developer.android.com/media/media3/exoplayer/customization)
 - [Media3 DefaultLoadControl](https://developer.android.com/reference/androidx/media3/exoplayer/DefaultLoadControl.Builder)
-- [NSH Android host](https://github.com/longbridge/nsh/blob/c5214aa/crates/nsh-platform-android/java/com/longbridge/nsh/NshView.java)
+- [NSH Android host](https://github.com/longbridge/nsh/blob/f4d68f7f9f31eb7b3ecc8a4cbc31096d5c6238a1/crates/nsh-platform-android/java/com/longbridge/nsh/NshView.java)
 
 ## 0.5.1 的可升级发行与 CI
 

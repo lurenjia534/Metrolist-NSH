@@ -1,0 +1,48 @@
+{
+  "name": "Metrolist media tests",
+  "id": "app.miku.metrolist.media-tests",
+  "version": "0.7.0",
+  "theme": "../../theme.json",
+  "capabilities": {
+    "network": {
+      "hosts": [
+        "*"
+      ]
+    },
+    "webview": {
+      "hosts": [
+        "*"
+      ]
+    },
+    "host": [
+      "files.*",
+      "auth.*",
+      "app.*"
+    ],
+    "audio": true,
+    "process": {
+      "env": [
+        "SPOTISH_DEMO",
+        "SPOTISH_BENCH",
+        "METROLIST_SPOTIFY_VISUAL"
+      ]
+    },
+    "picker": true,
+    "clipboard": true,
+    "statusBar": true,
+    "openUrl": {
+      "schemes": [
+        "https",
+        "http"
+      ]
+    },
+    "fs": {
+      "read": [
+        "${pluginDir}/tests/local-media/media"
+      ],
+      "write": [
+        "${dataDir}"
+      ]
+    }
+  }
+}
