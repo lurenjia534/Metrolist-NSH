@@ -24,9 +24,11 @@ test("native Spotify home, collection and layered Now Playing render", async () 
   await app.waitFor("id:provider-youtube");
   await app.waitFor("Good evening, Ada");
   await app.wait(800);
+  console.log("native Spotify home window", JSON.stringify(app.window("main").state()));
   await app.screenshot(resolve(output, "spotify-home.png"));
 
   await app.press("role:button[Morning Static]");
+  console.log("native Spotify collection window", JSON.stringify(app.window("main").state()));
   await app.waitFor("Soft starts for slow mornings.");
   await app.press("role:button[Slow River, The Quiet Fields]");
   await app.waitFor("id:player >> role:button[Pause]");

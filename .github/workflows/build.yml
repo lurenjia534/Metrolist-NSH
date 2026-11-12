@@ -253,9 +253,11 @@ jobs:
         env:
           METROLIST_SPOTIFY_VISUAL: '1'
           GDK_BACKEND: x11
-          # Cover flips use 3D transforms, which Cairo replaces with error
-          # markers. Mesa software OpenGL preserves those transforms in CI.
-          GSK_RENDERER: gl
+          # Cover flips need GTK's 3D renderer. Select software Vulkan
+          # explicitly: GTK's automatic selection skips CPU Vulkan devices.
+          GSK_RENDERER: vulkan
+          GSK_DEBUG: renderer
+          GDK_DEBUG: vulkan,frames
           LIBGL_ALWAYS_SOFTWARE: '1'
         run: env -u WAYLAND_DISPLAY xvfb-run -a --server-args="-screen 0 1920x1200x24" dbus-run-session -- python scripts/run-nsh.py test --target linux tests/spotify-visual.test.tsx
       - name: Launch the desktop application
