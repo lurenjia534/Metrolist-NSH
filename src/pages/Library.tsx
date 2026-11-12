@@ -7,6 +7,7 @@ import * as cloud from "../cloudActions";
 import { CloudLibrary, CloudCollectionActions, CloudTrackControls } from "../components/CloudLibrary";
 import { isTrack, type Track, type PlaylistSort, type LibrarySort, type Collection } from "../model";
 import { Icon } from "../icons";
+import { CatalogShelf } from "../components/Discovery";
 import { TrackList, TrackRow, MusicCard, CollectionRow, PlaylistCard, PlaylistCover, ItemRail } from "../components/Music";
 import { Label, Tool, Pill, Chip, Field, SectionTitle, Empty, Press, CommandMenu, Art, palette as c, narrow, action, say, type CommandItem } from "../ui";
 const sortNames = { recent: "最近添加", title: "名称", artist: "歌手", playTime: "聆听时长", songCount: "歌曲数量" };
@@ -242,7 +243,7 @@ export function CollectionPage() {
     : s.collectionTracks());
   const shelves = computed(() => {
     const displayed = new Set(mainTracks().map(track => track.id));
-    return (details()?.sections || []).map(section => ({ ...section, items: section.items.filter(item => !isTrack(item) || !displayed.has(item.id)) })).filter(section => section.items.length > 0);
+    return (details()?.sections || []).map(section => ({ ...section, items: section.items.filter(item => !isTrack(item) || !displayed.has(item.id)) })).filter(section => section.items.length > 0 || section.moods?.length);
   });
   const share = () => action(async () => { await Clipboard.writeText(`https://music.youtube.com/browse/${item()!.browseId}`); say("链接已复制"); });
   return <View testID="page-collection" style={{ gap: 28 }}><If when={item()}>{collection => <>
@@ -255,6 +256,6 @@ export function CollectionPage() {
     <If when={s.collectionLoading()}><Label color={c().accent}>正在加载…</Label></If>
     <If when={mainTracks().length > 0}><View><If when={artist()}><SectionTitle title={primaryShelf()?.title || "热门歌曲"} /></If><If when={cloudEditing()} else={<TrackList tracks={mainTracks()} title={title()} />}><Each of={mainTracks()}>{(track, index) => <TrackRow track={track()} list={mainTracks()} index={index()} trailing={<CloudTrackControls item={currentCollection()} track={track()} index={index()} tracks={mainTracks()} />} />}</Each></If></View></If>
     <If when={details()?.continuation}><Pill label="加载更多歌曲" disabled={s.collectionLoading()} onPress={() => void s.loadMoreCollection()} /></If>
-    <Each of={shelves()}>{section => <If when={section().items.length > 0}><View><SectionTitle title={section().title} /><ItemRail items={section().items} all /></View></If>}</Each>
+    <Each of={shelves()}>{(section, index) => <CatalogShelf section={section()} testID={`collection-section-${index()}`} />}</Each>
   </>}</If></View>;
 }

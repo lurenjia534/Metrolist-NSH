@@ -16,6 +16,7 @@ for (const { width, platform } of [{ width: 340, platform: "android" }, { width:
   const app = await open("../App.tsx", { width, height: width === 340 ? 740 : 844, platform, network, storage: preferences, host: { handlers: {
     "app.start": null, "app.metadata": null, "app.playback": null,
     "app.audio.settings": null, "app.audio.snapshot": null, "app.audio.open": null, "app.audio.pause": null,
+    "auth.available": { available: true, method: "webview" },
   } } });
   await app.waitFor("id:page-home");
   expect(app.shows("id:mobile-tabs")).toBe(true);
@@ -44,6 +45,7 @@ for (const { width, platform } of [{ width: 340, platform: "android" }, { width:
   await app.press("id:close-player"); await app.waitFor("id:full-player", { state: "gone" });
   await app.press("id:header-settings"); await app.waitFor("id:page-settings");
   await app.press("id:theme-light");
+  await app.waitUntil(() => JSON.parse(app.storage()["metrolist.settings"]).theme === "light");
   expect(JSON.parse(app.storage()["metrolist.settings"]).theme).toBe("light");
   await app.press("id:nav-mobile-home"); await app.waitFor("id:page-home");
 });
@@ -103,14 +105,18 @@ test("desktop library creates a playlist and song menus add, sort and reorder it
   expect(app.shows("id:desktop-sidebar")).toBe(true);
   expect(app.shows("id:mobile-tabs")).toBe(false);
   await app.press("id:create-playlist"); await app.type("id:playlist-name", "Desktop list"); await app.press("id:save-playlist");
+  await app.waitFor("id:app-dialog", { state: "gone" }); await app.waitFor("id:page-playlist");
   await app.press("id:nav-search"); await app.type("id:search-input", "Test"); await app.submit("id:search-input");
   await app.waitFor("id:song-menu-ui-beta");
   for (const id of [beta.id, alpha.id]) {
     await app.press(`id:song-menu-${id}`); await app.press("加入歌单…");
     await app.waitFor("id:app-dialog >> label:Desktop list"); await app.press("id:app-dialog >> label:Desktop list");
+    await app.waitFor("id:app-dialog", { state: "gone" });
   }
-  expect(JSON.parse(app.storage()["metrolist.library"]).playlists[0].tracks.map((track: { id: string }) => track.id)).toEqual([beta.id, alpha.id]);
-  await app.press("id:nav-library"); await app.press("id:library-playlists");
+  const savedTracks = () => JSON.parse(app.storage()["metrolist.library"]).playlists[0].tracks.map((track: { id: string }) => track.id);
+  await app.waitUntil(() => savedTracks().join(",") === [beta.id, alpha.id].join(","));
+  expect(savedTracks()).toEqual([beta.id, alpha.id]);
+  await app.press("id:nav-library"); await app.waitFor("id:page-library"); await app.press("id:library-playlists");
   await app.press("id:page-library >> label:Desktop list"); await app.waitFor("id:page-playlist");
   await app.press("label:歌曲排序"); await app.press("歌曲名称");
   await app.waitUntil(() => app.texts().filter(text => text === alpha.title || text === beta.title)[0] === alpha.title);
@@ -119,9 +125,11 @@ test("desktop library creates a playlist and song menus add, sort and reorder it
   await app.press("label:歌单操作"); await app.press("调整歌曲顺序");
   await app.waitFor("id:track-ui-beta >> label:下移");
   await app.press("id:track-ui-beta >> label:下移");
-  expect(JSON.parse(app.storage()["metrolist.library"]).playlists[0].tracks.map((track: { id: string }) => track.id)).toEqual([alpha.id, beta.id]);
+  await app.waitUntil(() => savedTracks().join(",") === [alpha.id, beta.id].join(","));
+  expect(savedTracks()).toEqual([alpha.id, beta.id]);
   await app.press("id:track-ui-alpha >> label:从歌单移除");
-  expect(JSON.parse(app.storage()["metrolist.library"]).playlists[0].tracks.map((track: { id: string }) => track.id)).toEqual([beta.id]);
+  await app.waitUntil(() => savedTracks().join(",") === beta.id);
+  expect(savedTracks()).toEqual([beta.id]);
 });
 
 test("desktop settings, offline downloads, statistics and together screens expose usable controls", async () => {

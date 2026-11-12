@@ -5,10 +5,15 @@ test("fresh iOS starts directly and its download center does not require a music
     "metrolist.settings": JSON.stringify({ autoRadio: false }),
   }, network: {
     "POST https://music.youtube.com/youtubei/v1/browse?prettyPrint=false": { body: {
-      musicCarouselShelfRenderer: { title: { simpleText: "iOS 直连推荐" }, contents: [{ musicTwoRowItemRenderer: {
-        title: { simpleText: "Direct song" }, subtitle: { simpleText: "Fixture artist" },
-        navigationEndpoint: { watchEndpoint: { videoId: "ios-startup-song" } },
-      } }] },
+      contents: { singleColumnBrowseResultsRenderer: { tabs: [{ tabRenderer: { content: { sectionListRenderer: { contents: [
+        { musicCarouselShelfRenderer: {
+          header: { musicCarouselShelfBasicHeaderRenderer: { title: { simpleText: "iOS 直连推荐" } } },
+          contents: [{ musicTwoRowItemRenderer: {
+            title: { simpleText: "Direct song" }, subtitle: { simpleText: "Fixture artist" },
+            navigationEndpoint: { watchEndpoint: { videoId: "ios-startup-song" } },
+          } }],
+        } },
+      ] } } } }] } },
     } },
   } });
   await app.waitFor("id:song-menu-ios-startup-song");

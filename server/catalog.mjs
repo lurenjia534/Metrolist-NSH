@@ -139,6 +139,13 @@ export function artwork(root) {
   return image?.url?.replace(/=w\d+-h\d+/, '=w544-h544') || '';
 }
 
+function thumbnailAspectRatio(root, aspectRatio) {
+  if (aspectRatio === 'MUSIC_TWO_ROW_ITEM_THUMBNAIL_ASPECT_RATIO_RECTANGLE_16_9') return 16 / 9;
+  const thumbnails = find(root, 'thumbnails');
+  const image = thumbnails?.[thumbnails.length - 1];
+  return image?.width && image?.height ? image.width / image.height : undefined;
+}
+
 export function seconds(value) {
   const candidate = String(value || '').match(/(?:\d+:)?\d+:\d{2}/)?.[0];
   return candidate ? candidate.split(':').reduce((total, part) => total * 60 + Number(part), 0) : 0;
@@ -226,6 +233,7 @@ function responsiveItem(row) {
     artist: meta.artist || unlinkedArtist(subtitle),
     duration: seconds(fixed) || meta.duration,
     artwork: artwork(row.thumbnail) || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+    thumbnailAspectRatio: thumbnailAspectRatio(row.thumbnail),
     source: 'youtube', type: 'song',
     ...(setVideoId ? { setVideoId } : {}),
     ...libraryTokens(row),
@@ -236,6 +244,13 @@ function twoRowItem(row) {
   const title = text(row.title);
   const subtitle = text(row.subtitle);
   const endpoint = row.navigationEndpoint || row.title?.runs?.[0]?.navigationEndpoint;
+  if (pageType(endpoint) === 'MUSIC_PAGE_TYPE_NON_MUSIC_AUDIO_TRACK_PAGE') {
+    const id = row.thumbnailOverlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchEndpoint?.videoId;
+    return id ? { id, title, ...episodeMetadata(row.subtitle?.runs || []),
+      artwork: artwork(row.thumbnailRenderer), thumbnailAspectRatio: thumbnailAspectRatio(row.thumbnailRenderer, row.aspectRatio),
+      source: 'youtube', type: 'song', ...libraryTokens(row),
+    } : null;
+  }
   if (endpoint?.browseEndpoint || endpoint?.watchPlaylistEndpoint) {
     return collectionActions(collection(endpoint, title, subtitle, artwork(row.thumbnailRenderer)), row);
   }
@@ -244,7 +259,27 @@ function twoRowItem(row) {
   const meta = metadata(row.subtitle?.runs || []);
   return {
     id, title, ...meta, artist: meta.artist || unlinkedArtist(subtitle),
-    artwork: artwork(row.thumbnailRenderer), source: 'youtube', type: 'song', ...libraryTokens(row),
+    artwork: artwork(row.thumbnailRenderer), thumbnailAspectRatio: thumbnailAspectRatio(row.thumbnailRenderer, row.aspectRatio),
+    source: 'youtube', type: 'song', ...libraryTokens(row),
+  };
+}
+
+function episodeMetadata(runs) {
+  const meta = metadata(runs);
+  const podcast = runs.find(run => pageType(run.navigationEndpoint) === 'MUSIC_PAGE_TYPE_PODCAST_SHOW_DETAIL_PAGE');
+  return { ...meta, artist: meta.artist || podcast?.text || '', album: meta.album || podcast?.text || '',
+    albumId: meta.albumId || podcast?.navigationEndpoint.browseEndpoint.browseId,
+  };
+}
+
+function multiRowItem(row) {
+  const id = row.onTap?.watchEndpoint?.videoId;
+  if (!id) return null;
+  const meta = episodeMetadata([row.subtitle, row.secondSubtitle, row.secondarySubtitle].flatMap(value => value?.runs || []));
+  return {
+    id, title: text(row.title), ...meta,
+    artwork: artwork(row.thumbnail), thumbnailAspectRatio: thumbnailAspectRatio(row.thumbnail),
+    source: 'youtube', type: 'song', ...libraryTokens(row),
   };
 }
 
@@ -254,6 +289,7 @@ function panelItem(row) {
     id: row.videoId, title: text(row.title), ...meta,
     artist: meta.artist || text(row.shortBylineText),
     artwork: artwork(row.thumbnail), duration: seconds(text(row.lengthText)),
+    thumbnailAspectRatio: thumbnailAspectRatio(row.thumbnail),
     source: 'youtube', type: 'song',
     ...(row.playlistSetVideoId ? { setVideoId: row.playlistSetVideoId } : {}), ...libraryTokens(row),
   };
@@ -268,6 +304,7 @@ export function items(root) {
     let item;
     if (node.musicResponsiveListItemRenderer) item = responsiveItem(node.musicResponsiveListItemRenderer);
     else if (node.musicTwoRowItemRenderer) item = twoRowItem(node.musicTwoRowItemRenderer);
+    else if (node.musicMultiRowListItemRenderer) item = multiRowItem(node.musicMultiRowListItemRenderer);
     else if (node.playlistPanelVideoRenderer) item = panelItem(node.playlistPanelVideoRenderer);
     else if (node.musicCardShelfRenderer) {
       const card = node.musicCardShelfRenderer;
@@ -288,19 +325,55 @@ export function items(root) {
   return result;
 }
 
+function browseEndpoint(command) {
+  const endpoint = command?.browseEndpoint;
+  return endpoint ? { browseId: endpoint.browseId, ...(endpoint.params ? { params: endpoint.params } : {}) } : undefined;
+}
+
+function watchEndpoint(command) {
+  const endpoint = command?.watchEndpoint || command?.watchPlaylistEndpoint;
+  return endpoint ? {
+    ...(endpoint.videoId ? { videoId: endpoint.videoId } : {}),
+    ...(endpoint.playlistId ? { playlistId: endpoint.playlistId } : {}),
+    ...(endpoint.params ? { params: endpoint.params } : {}),
+    ...(endpoint.index !== undefined ? { index: endpoint.index } : {}),
+  } : undefined;
+}
+
 export function sections(root) {
   const result = [];
   const pageTitle = text(find(root, 'musicHeaderRenderer')?.title);
   function visit(node) {
     if (!node || typeof node !== 'object') return;
-    const shelf = node.musicCarouselShelfRenderer || node.musicShelfRenderer || node.musicPlaylistShelfRenderer || node.gridRenderer ||
-      node.musicShelfContinuation || node.musicPlaylistShelfContinuation || node.gridContinuation;
+    const carousel = node.musicCarouselShelfRenderer || node.musicImmersiveCarouselShelfRenderer;
+    const grid = node.gridRenderer || node.gridContinuation;
+    const shelf = carousel || node.musicShelfRenderer || node.musicPlaylistShelfRenderer || grid ||
+      node.musicShelfContinuation || node.musicPlaylistShelfContinuation;
     if (shelf) {
-      const content = items(shelf.contents || shelf.items);
-      if (content.length) result.push({
-        title: text(shelf.title) || text(shelf.header?.musicCarouselShelfBasicHeaderRenderer?.title) ||
-          text(shelf.header?.gridHeaderRenderer?.title) || pageTitle || '歌曲',
+      const contents = shelf.contents || shelf.items;
+      const content = items(contents);
+      const moods = moodCategories(contents);
+      const episodes = (contents || []).some(item => item.musicMultiRowListItemRenderer ||
+        pageType(item.musicTwoRowItemRenderer?.navigationEndpoint) === 'MUSIC_PAGE_TYPE_NON_MUSIC_AUDIO_TRACK_PAGE');
+      const header = shelf.header?.musicCarouselShelfBasicHeaderRenderer || shelf.header?.gridHeaderRenderer || shelf;
+      const moreButton = header.moreContentButton?.buttonRenderer;
+      const playButton = header.playButton?.buttonRenderer;
+      const moreCommand = moreButton?.navigationEndpoint || moreButton?.command;
+      const titleCommand = header.title?.runs?.find(run => run.navigationEndpoint)?.navigationEndpoint;
+      const endpoint = browseEndpoint(moreCommand) || browseEndpoint(titleCommand) || browseEndpoint(shelf.bottomEndpoint);
+      const play = watchEndpoint(playButton?.navigationEndpoint || playButton?.command) || watchEndpoint(moreCommand) || watchEndpoint(titleCommand);
+      const label = text(header.strapline);
+      const thumbnail = artwork(header.thumbnail);
+      if (content.length || moods.length) result.push({
+        title: text(shelf.title) || text(header.title) || pageTitle || '歌曲',
         items: content,
+        layout: grid ? 'grid' : carousel && (episodes || !content.length || !content.every(item => item.source === 'youtube')) ? 'cards' : 'list',
+        ...(label ? { label } : {}),
+        ...(thumbnail ? { thumbnail } : {}),
+        ...(endpoint ? { endpoint } : {}),
+        ...(play ? { playEndpoint: play } : {}),
+        ...(shelf.numItemsPerColumn ? { rows: shelf.numItemsPerColumn } : {}),
+        ...(moods.length ? { moods } : {}),
       });
       return;
     }
@@ -310,15 +383,25 @@ export function sections(root) {
   return result;
 }
 
-export function continuation(root) {
-  const token = find(root, 'nextContinuationData')?.continuation || find(root, 'continuationCommand')?.token;
-  return token ? 'nsh:' + btoa(JSON.stringify({ token, visitorData: root.responseContext?.visitorData })) : undefined;
+export function continuation(root, tokenRoot = root, previous) {
+  const token = find(tokenRoot, 'nextContinuationData')?.continuation || find(tokenRoot, 'nextRadioContinuationData')?.continuation ||
+    find(tokenRoot, 'continuationCommand')?.token;
+  const visitorData = root.responseContext?.visitorData ||
+    (previous?.startsWith('nsh:') ? JSON.parse(atob(previous.slice(4))).visitorData : undefined);
+  return token ? 'nsh:' + btoa(JSON.stringify({ token, visitorData })) : undefined;
 }
 
 export async function home(params = {}) {
   const data = await innertube('browse', params.continuation ?
-    { continuation: params.continuation } : { browseId: params.id || 'FEmusic_home' }, params);
-  return { sections: sections(data), continuation: continuation(data) };
+    { continuation: params.continuation } : { browseId: params.id || 'FEmusic_home', ...(params.params ? { params: params.params } : {}) }, params);
+  const page = data.continuationContents?.sectionListContinuation || find(data.contents, 'sectionListRenderer');
+  const chips = (page?.header?.chipCloudRenderer?.chips || []).flatMap(({ chipCloudChipRenderer: chip }) => {
+    const title = text(chip.text);
+    return title ? [{ title, selected: chip.isSelected === true,
+      endpoint: browseEndpoint(chip.navigationEndpoint), deselectEndpoint: browseEndpoint(chip.onDeselectedCommand),
+    }] : [];
+  });
+  return { chips, sections: sections(page), continuation: continuation(data, page?.continuations || [], params.continuation) };
 }
 
 export async function search(query, type = 'all', params = {}) {
@@ -415,14 +498,22 @@ export async function explore(params = {}) {
 
 export async function next(id, params = {}) {
   const data = await innertube('next', {
-    videoId: id, playlistId: params.playlistId || `RDAMVM${id}`,
+    ...(id ? { videoId: id } : {}),
+    playlistId: params.playlistId || `RDAMVM${id}`,
+    ...(params.params ? { params: params.params } : {}),
+    ...(params.index !== undefined ? { index: Number(params.index) } : {}),
     isAudioOnly: true, enablePersistentPlaylistPanel: true,
     ...(params.continuation ? { continuation: params.continuation } : {}),
   }, params);
   const tabs = find(data, 'watchNextTabbedResultsRenderer')?.tabs || [];
   const lyricsId = tabs.map(tab => tab.tabRenderer?.endpoint?.browseEndpoint?.browseId)
     .find(value => value?.startsWith('MPLY'));
-  return { tracks: items(data).filter(item => item.source === 'youtube'), lyricsId, continuation: continuation(data) };
+  const panel = data.continuationContents?.playlistPanelContinuation || find(data, 'playlistPanelRenderer');
+  const rows = (panel?.contents || []).flatMap(item => item.playlistPanelVideoRenderer ? [item.playlistPanelVideoRenderer] : []);
+  const currentIndex = rows.findIndex(row => row.selected);
+  return { tracks: rows.map(panelItem), lyricsId, continuation: continuation(data, panel?.continuations || [], params.continuation),
+    ...(currentIndex >= 0 ? { currentIndex } : {}),
+  };
 }
 
 export function parseLrc(value) {

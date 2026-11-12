@@ -30,7 +30,8 @@ const systemHeader = platform.os === "ios" || platform.os === "android";
 const primary = [{ page: "home", label: "首页", icon: "home" }, { page: "search", label: "搜索", icon: "search" }, { page: "library", label: "音乐库", icon: "library" }] as const;
 const pageTitles: Record<nav.Page, string> = { home: "首页", search: "搜索", library: "音乐库", liked: "喜欢的音乐", history: "最近播放", collection: "", playlist: "歌单", downloads: "下载", stats: "聆听统计", settings: "设置", browse: "探索", together: "一起听", account: "账号" };
 function NavItem(props: { page: nav.Page; label: string; icon: string; count?: number }) {
-  return <Press testID={`nav-${props.page}`} label={props.label} selected={nav.page() === props.page} onPress={() => nav.navigate(props.page, true)} style={{ minHeight: 48, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", gap: 14, borderRadius: 28 }}><Icon name={props.icon} size={22} color={nav.page() === props.page ? c().accent : c().sub} /><Label weight={nav.page() === props.page ? "600" : "400"} size={14} style={{ flex: 1 }}>{props.label}</Label><If when={props.count}><Label size={11} color={c().sub}>{props.count}</Label></If></Press>;
+  const selected = () => primary.some(item => item.page === props.page) ? nav.activeTab() === props.page : nav.page() === props.page;
+  return <Press testID={`nav-${props.page}`} label={props.label} selected={selected()} onPress={() => nav.navigate(props.page, true)} style={{ minHeight: 48, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", gap: 14, borderRadius: 28 }}><Icon name={props.icon} size={22} color={selected() ? c().accent : c().sub} /><Label weight={selected() ? "600" : "400"} size={14} style={{ flex: 1 }}>{props.label}</Label><If when={props.count}><Label size={11} color={c().sub}>{props.count}</Label></If></Press>;
 }
 function Sidebar() {
   return <View testID="desktop-sidebar" style={{ width: 216, backgroundColor: c().panel, paddingHorizontal: 16, paddingTop: 28, paddingBottom: 16, borderRightWidth: 1, borderColor: c().line, gap: 20 }}>
@@ -44,7 +45,7 @@ function Sidebar() {
   </View>;
 }
 function BottomNav() {
-  const selected = (page: nav.Page) => nav.stack.routes()[0].page === page;
+  const selected = (page: nav.Page) => nav.activeTab() === page;
   const horizontal = () => windowSize().height < 480;
   return <View testID="mobile-tabs" style={{ flexShrink: 0, backgroundColor: c().panel, borderTopWidth: 1, borderColor: c().line, paddingTop: horizontal() ? 2 : 8, paddingBottom: "calc(env(safe-area-inset-bottom) + 6px)", paddingLeft: "env(safe-area-inset-left)", paddingRight: "env(safe-area-inset-right)" }}>
     <Tabs style={{ flexDirection: "row", minHeight: horizontal() ? 48 : 60 }} indicatorStyle={{ top: horizontal() ? 4 : 0, height: horizontal() ? 40 : 32, marginHorizontal: 20, borderRadius: 24, backgroundColor: c().selected }}>
@@ -55,10 +56,11 @@ function BottomNav() {
   </View>;
 }
 function HeaderActions() {
-  return <View style={{ flexDirection: "row", flexShrink: 0, alignItems: "center", gap: 2 }}><If when={!narrow()}><Tool testID="header-together" icon="users" label="一起听" active={!!together.room()} onPress={() => nav.navigate("together")} /></If><If when={!narrow() && (nav.page() === "home" || nav.page() === "library")}><Tool testID="header-history" icon="clock" label="最近播放" onPress={() => nav.navigate("history")} /><Tool testID="header-stats" icon="stats" label="聆听统计" onPress={() => nav.navigate("stats")} /></If><Tool testID="header-settings" icon="settings" label="设置" onPress={() => nav.navigate("settings")} /><Press testID="header-account" label={account.currentAccount()?.name || "登录 YouTube Music"} onPress={() => nav.navigate("account")} style={{ width: 48, height: 48, flexShrink: 0, alignItems: "center", justifyContent: "center", borderRadius: 24 }}><Art src={account.currentAccount()?.avatar} size={32} radius={24} icon="artist" /></Press><If when={spacious() && p.currentTrack()}><Tool icon="queue" label={sidePlayer() ? "收起侧边播放器" : "展开侧边播放器"} active={sidePlayer()} onPress={() => sidePlayer.update(value => !value)} /></If></View>;
+  return <View style={{ flexDirection: "row", flexShrink: 0, alignItems: "center", gap: 2 }}><If when={nav.page() === "home" || nav.page() === "library"}><Tool testID="header-search" icon="search" label="搜索音乐" onPress={() => nav.navigate("search")} /></If><If when={!narrow()}><Tool testID="header-together" icon="users" label="一起听" active={!!together.room()} onPress={() => nav.navigate("together")} /></If><If when={!narrow() && (nav.page() === "home" || nav.page() === "library")}><Tool testID="header-history" icon="clock" label="最近播放" onPress={() => nav.navigate("history")} /><Tool testID="header-stats" icon="stats" label="聆听统计" onPress={() => nav.navigate("stats")} /></If><Tool testID="header-settings" icon="settings" label="设置" onPress={() => nav.navigate("settings")} /><Press testID="header-account" label={account.currentAccount()?.name || "登录 YouTube Music"} onPress={() => nav.navigate("account")} style={{ width: 48, height: 48, flexShrink: 0, alignItems: "center", justifyContent: "center", borderRadius: 24 }}><Art src={account.currentAccount()?.avatar} size={32} radius={24} icon="artist" /></Press><If when={spacious() && p.currentTrack()}><Tool icon="queue" label={sidePlayer() ? "收起侧边播放器" : "展开侧边播放器"} active={sidePlayer()} onPress={() => sidePlayer.update(value => !value)} /></If></View>;
 }
+const routeTitle = (route: nav.Route) => route.title || route.collection?.title || pageTitles[route.page];
 function Header(props: { route: nav.Route }) {
-  return <View style={{ flexDirection: "row", gap: 8, alignItems: "center", height: narrow() ? 76 : 88, flexShrink: 0, paddingHorizontal: narrow() ? 16 : 30 }}><If when={nav.stack.routes().length > 1}><Tool icon="left" label="返回" testID="navigate-back" onPress={nav.goBack} /></If><Label size={narrow() ? 28 : 30} weight="600" lines={1} style={{ flex: 1 }}>{props.route.page === "browse" ? nav.browseTitle() : pageTitles[props.route.page]}</Label><HeaderActions /></View>;
+  return <View testID="page-header" style={{ flexDirection: "row", gap: 8, alignItems: "center", height: narrow() ? 76 : 88, flexShrink: 0, paddingHorizontal: narrow() ? 16 : 30 }}><If when={nav.canGoBack()}><Tool icon="left" label="返回" testID="navigate-back" onPress={nav.goBack} /></If><Label testID="page-title" size={narrow() ? 28 : 30} weight="600" lines={1} style={{ flex: 1 }}>{routeTitle(props.route)}</Label><HeaderActions /></View>;
 }
 function Screen(props: { route: nav.Route }) {
   switch (props.route.page) {
@@ -82,7 +84,7 @@ function YouTubeWorkspace() {
   keymap.bind({ "space": () => { if (!p.remoteControlled()) void action(p.togglePlay); }, "mod+k": () => nav.navigate("search", true), "mod+right": () => { if (!p.remoteControlled()) void action(p.next); }, "mod+left": () => { if (!p.remoteControlled()) void action(p.previous); } });
   return <View testID="metrolist-app" style={{ flex: 1, minWidth: 0, minHeight: 0, backgroundColor: c().bg, paddingBottom: narrow() ? 0 : "env(safe-area-inset-bottom)" }}>
     <View style={{ flex: 1, minHeight: 0, flexDirection: "row" }}><If when={!narrow()}><Sidebar /></If><View style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
-      <NavStack state={nav.stack} testID="main-navigation" style={{ flex: 1, minWidth: 0, minHeight: 0 }} onChange={({ routes }) => nav.onRoutesChanged(routes)}>{route => <NavPage title={route.page === "browse" ? nav.browseTitle() : pageTitles[route.page]} animation={reduceMotion() ? "none" : primary.some(item => item.page === route.page) ? "fade" : "slide"} headerVisible={systemHeader} headerRight={systemHeader ? <HeaderActions /> : undefined} headerStyle={{ backgroundColor: c().bg, color: c().text, tintColor: c().accent }} statusBar={{ foreground: s.settings().theme === "light" || s.settings().theme === "system" && colorScheme() === "light" ? "dark" : "light" }} style={{ flex: 1, minWidth: 0, minHeight: 0, backgroundColor: c().bg }}>
+      <NavStack state={nav.stack} testID="main-navigation" style={{ flex: 1, minWidth: 0, minHeight: 0 }} onChange={({ routes }) => nav.onRoutesChanged(routes)}>{route => <NavPage title={routeTitle(route)} animation={reduceMotion() ? "none" : primary.some(item => item.page === route.page) ? "fade" : "slide"} popOnBack={!nav.handlesBack(route)} onBackPress={() => { if (nav.handlesBack(route)) nav.goBack(); }} headerVisible={systemHeader} headerLeft={systemHeader && nav.handlesBack(route) ? <Tool icon="left" label="返回" testID="navigate-back" onPress={nav.goBack} /> : undefined} headerRight={systemHeader ? <HeaderActions /> : undefined} headerStyle={{ backgroundColor: c().bg, color: c().text, tintColor: c().accent }} statusBar={{ foreground: s.settings().theme === "light" || s.settings().theme === "system" && colorScheme() === "light" ? "dark" : "light" }} style={{ flex: 1, minWidth: 0, minHeight: 0, backgroundColor: c().bg }}>
         <If when={!systemHeader}><Header route={route} /></If>
         <Scroll testID={`content-${route.page}`} style={{ flex: 1, minWidth: 0, minHeight: 0 }} contentStyle={{ paddingHorizontal: pageGutter(), paddingTop: 4, paddingBottom: 32 }} keyboardShouldPersistTaps="handled"><View style={{ width: "100%", minWidth: 0, maxWidth: 1440, alignSelf: "center", gap: 16 }}>
           <If when={s.error()}><View testID="app-error" style={{ flexDirection: "row", alignItems: "center", padding: 14, backgroundColor: c().selected, borderRadius: 16, gap: 12 }}><Label size={12} color={c().accent} style={{ flex: 1 }} lines={3}>{s.error()}</Label><Tool icon="close" label="关闭提示" onPress={s.clearError} /></View></If>
@@ -98,7 +100,7 @@ function YouTubeWorkspace() {
 
 function App() {
   if (platform.os === "web") void host.call("app.start").catch(s.showError);
-  account.setAccountHooks({ onChange: () => { p.invalidatePreparation(); void s.loadHome(); } });
+  account.setAccountHooks({ onChange: () => { p.invalidatePreparation(); void s.resetHome(); } });
   // Host subscriptions live with the application, so switching workspaces does
   // not detach Android playback events or progress from background downloads.
   void s.initialize().then(async () => {

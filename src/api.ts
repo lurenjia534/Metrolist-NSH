@@ -1,7 +1,7 @@
 import { host, platform } from "nsh";
 import { api as nativeGateway } from "../server/index.mjs";
 import { currentCredentials, useAccountForBrowse } from "./account";
-import type { AudioQuality, BrowseResponse, ExploreResponse, ExploreTab, HomeResponse, Lyrics, SearchResponse, SearchType, StreamInfo, Track } from "./model";
+import type { AudioQuality, BrowseEndpoint, BrowseResponse, ExploreResponse, ExploreTab, HomeResponse, Lyrics, PlayEndpoint, SearchResponse, SearchType, StreamInfo, Track } from "./model";
 
 let origin = "";
 export interface SessionCredentials { cookie: string; visitorData?: string; dataSyncId?: string; authUser?: string }
@@ -58,7 +58,10 @@ const get = <T>(path: string, params: Record<string, string | number> = {}) => r
 export const accountRequest = <T>(path: string, credentials?: SessionCredentials, options: RequestInit = {}) =>
   request<T>(apiUrl(path), options, credentials);
 
-export const fetchHome = () => get<HomeResponse>("home");
+export const fetchHome = (endpoint?: BrowseEndpoint, continuation?: string) => get<HomeResponse>("home", {
+  ...(endpoint ? { id: endpoint.browseId, ...(endpoint.params ? { params: endpoint.params } : {}) } : {}),
+  ...(continuation ? { continuation } : {}),
+});
 export const fetchExplore = (tab: ExploreTab = "all", continuation?: string) => get<ExploreResponse>("explore", { tab, ...(continuation ? { continuation } : {}) });
 export const fetchSuggestions = (query: string) => get<{ query: string; suggestions: string[] }>("suggestions", { q: query });
 export const fetchSearch = (query: string, type: SearchType = "all", continuation?: string) =>
@@ -66,6 +69,12 @@ export const fetchSearch = (query: string, type: SearchType = "all", continuatio
 export const fetchBrowse = (id: string, continuation?: string, params?: string) =>
   get<BrowseResponse>("browse", { id, ...(continuation ? { continuation } : {}), ...(params ? { params } : {}) });
 export const fetchNext = (id: string) => get<{ tracks: Track[]; lyricsId?: string }>("next", { id });
+export const fetchEndpointQueue = (endpoint: PlayEndpoint) => get<{ tracks: Track[]; currentIndex?: number }>("next", {
+  ...(endpoint.videoId ? { id: endpoint.videoId } : {}),
+  ...(endpoint.playlistId ? { playlistId: endpoint.playlistId } : {}),
+  ...(endpoint.params ? { params: endpoint.params } : {}),
+  ...(endpoint.index !== undefined ? { index: endpoint.index } : {}),
+});
 export const fetchLyrics = (track: Track) =>
   get<Lyrics>("lyrics", { title: track.title, artist: track.artist, duration: Math.round(track.duration) });
 export function fetchStream(id: string, quality: AudioQuality = "auto", options: ResolveOptions = {}): Promise<StreamInfo> {

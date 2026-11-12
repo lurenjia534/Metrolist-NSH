@@ -62,21 +62,26 @@ test("duplicate queue rows keep one current entry and clearing upcoming keeps th
   await app.host.send("audio.state", state);
   await app.press("id:queue-actions"); await app.press("id:queue-clear-upcoming");
   await app.waitFor("已移除当前之后的歌曲，保留当前歌曲");
+  await app.waitFor("id:queue-clear-upcoming", { state: "gone" });
   expect(savedPlayer(app).queue.map((track: { id: string }) => track.id)).toEqual([alpha.id, beta.id, alpha.id]);
   expect(savedPlayer(app)).toMatchObject({ index: 2, position: 43 });
   expect(calls(app, "app.audio.stop")).toHaveLength(0);
   await app.press("id:queue-song-menu-1"); await app.press("上移");
   await app.waitFor("id:queue-row-0 >> id:play-track-controls-beta");
+  await app.waitFor("从队列移除", { state: "gone" });
   expect(savedPlayer(app).queue.map((track: { id: string }) => track.id)).toEqual([beta.id, alpha.id, alpha.id]);
   await app.press("id:queue-song-menu-0"); await app.press("从队列移除");
   await app.waitFor("第 2 / 2 首 · 后续 0 首");
+  await app.waitFor("从队列移除", { state: "gone" });
   expect(savedPlayer(app)).toMatchObject({ index: 1, position: 43 });
   expect(calls(app, "app.audio.open")).toHaveLength(opened);
   expect(calls(app, "app.audio.stop")).toHaveLength(0);
   await app.press("id:queue-actions"); await app.press("清空队列");
   await app.waitFor("队列已清空");
+  await app.waitFor("清空队列", { state: "gone" });
   expect(calls(app, "app.audio.stop")).toHaveLength(1);
-  await app.press("label:搜索音乐"); await app.waitFor("id:search-input");
+  await app.press("id:full-player >> label:搜索音乐");
+  await app.waitFor("id:full-player", { state: "gone" }); await app.waitFor("id:search-input");
 });
 
 test("phone home shortcuts open likes, downloads, history and the listening room without an overflow menu", async () => {

@@ -5,6 +5,7 @@ export interface Track {
   artist: string;
   album: string;
   artwork: string;
+  thumbnailAspectRatio?: number;
   duration: number;
   source: "youtube" | "audio";
   url?: string;
@@ -35,8 +36,21 @@ export interface Collection {
 export interface SavedCollection extends Collection { savedAt: number }
 
 export type CatalogItem = Track | Collection;
-export interface CatalogSection { title: string; items: CatalogItem[] }
-export interface HomeResponse { sections: CatalogSection[]; continuation?: string }
+export interface BrowseEndpoint { browseId: string; params?: string }
+export interface PlayEndpoint { videoId?: string; playlistId?: string; params?: string; index?: number }
+export interface HomeChip { title: string; endpoint?: BrowseEndpoint; deselectEndpoint?: BrowseEndpoint; selected: boolean }
+export interface CatalogSection {
+  title: string;
+  items: CatalogItem[];
+  label?: string;
+  thumbnail?: string;
+  endpoint?: BrowseEndpoint;
+  playEndpoint?: PlayEndpoint;
+  layout?: "cards" | "list" | "grid";
+  rows?: number;
+  moods?: Mood[];
+}
+export interface HomeResponse { sections: CatalogSection[]; chips?: HomeChip[]; continuation?: string }
 export type ExploreTab = "all" | "new" | "charts" | "moods";
 export interface Mood { title: string; browseId: string; params?: string; color?: string }
 export interface ExploreResponse extends HomeResponse { moods: Mood[]; tab?: ExploreTab }

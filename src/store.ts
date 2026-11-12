@@ -8,7 +8,7 @@ import * as api from "./api";
 import * as account from "./account";
 import * as player from "./playback";
 import { isTrack } from "./model";
-import type { AudioQuality, BrowseResponse, CatalogItem, Collection, DownloadJob, ExploreResponse, ExploreTab, HomeResponse, LibrarySnapshot, LibrarySort, ListenEvent, ListeningStatistics, Lyrics, Playlist, PlaylistEntry, PlaylistSort, SavedCollection, SearchType, Settings, StatsPeriod, StreamInfo, Track } from "./model";
+import type { AudioQuality, BrowseEndpoint, BrowseResponse, CatalogItem, Collection, DownloadJob, ExploreResponse, ExploreTab, HomeChip, HomeResponse, LibrarySnapshot, LibrarySort, ListenEvent, ListeningStatistics, Lyrics, PlayEndpoint, Playlist, PlaylistEntry, PlaylistSort, SavedCollection, SearchType, Settings, StatsPeriod, StreamInfo, Track } from "./model";
 
 const seedCatalog = seed as { tracks: Track[]; collections?: Collection[]; sections?: HomeResponse["sections"] };
 
@@ -32,9 +32,11 @@ export const settings = signal<Settings>({
   lyricFontSize: "medium", lyricAlignment: "center", lyricsOffset: 0,
   volume: 0.7, rate: 1, shuffle: false, repeat: "off",
 });
-export const home = signal<HomeResponse>({ sections: seedCatalog.sections ?? [{ title: "编辑精选", items: seedCatalog.tracks }] });
+export const home = signal<HomeResponse>({ sections: [], chips: [] });
+export const selectedHomeChip = signal<HomeChip | null>(null);
 export const explore = signal<ExploreResponse>({ sections: [], moods: [] });
 export const exploreTab = signal<ExploreTab>("all");
+export const exploreEndpoint = signal<BrowseEndpoint | null>(null);
 export const exploreLoading = signal(false);
 export const query = signal("");
 export const searchType = signal<SearchType>("all");
@@ -70,6 +72,8 @@ let browseRequest = 0;
 let lyricRequest = 0;
 let suggestionRequest = 0;
 let exploreRequest = 0;
+let homeRequest = 0;
+let unfilteredHome: HomeResponse | null = null;
 const downloadRuns = new Map<string, AbortController>();
 const downloadTransfers = new Map<string, Promise<{ destination: string; url: string; bytes: number }>>();
 const downloadReplacements = new Map<string, { controller: AbortController; job: DownloadJob }>();
@@ -264,7 +268,7 @@ export function updateSettings(patch: Partial<Settings>) {
   if (patch.repeat !== undefined) player.repeat.set(patch.repeat);
   void saveSettings();
   if (patch.audioQuality !== undefined || patch.apiBase !== undefined) void player.reloadPlayback();
-  if (patch.apiBase !== undefined) void loadHome();
+  if (patch.apiBase !== undefined) void resetHome();
 }
 
 export function addTracks(items: Track[], persist = true) {
@@ -302,20 +306,66 @@ function register(items: CatalogItem[]) {
 }
 
 export async function loadHome() {
+  const request = ++homeRequest;
+  const endpoint = selectedHomeChip()?.endpoint;
   homeLoading.set(true);
   try {
-    const result = await api.fetchHome();
+    const result = await api.fetchHome(endpoint);
+    if (request !== homeRequest) return;
     batch(() => {
-      home.set(result);
+      home.set({ ...result, chips: selectedHomeChip() ? home().chips : result.chips });
+      if (!selectedHomeChip()) unfilteredHome = home();
       register(result.sections.flatMap((section) => section.items));
     });
-  } catch (reason) { showError(reason); }
-  finally { homeLoading.set(false); }
+  } catch (reason) { if (request === homeRequest) showError(reason); }
+  finally { if (request === homeRequest) homeLoading.set(false); }
+}
+
+export function clearHomeFilter() {
+  ++homeRequest;
+  batch(() => {
+    selectedHomeChip.set(null);
+    homeLoading.set(false);
+    if (unfilteredHome) home.set(unfilteredHome);
+  });
+}
+
+export async function selectHomeChip(chip: HomeChip) {
+  if (selectedHomeChip()?.title === chip.title || !chip.endpoint) { clearHomeFilter(); return; }
+  if (!selectedHomeChip()) unfilteredHome = home();
+  batch(() => {
+    selectedHomeChip.set(chip);
+    home.set({ sections: [], chips: home().chips });
+  });
+  await loadHome();
+}
+
+export async function resetHome() {
+  unfilteredHome = null;
+  batch(() => { selectedHomeChip.set(null); home.set({ sections: [], chips: [] }); });
+  await loadHome();
+}
+
+export async function loadMoreHome() {
+  const continuation = home().continuation;
+  if (!continuation || homeLoading()) return;
+  const request = homeRequest;
+  homeLoading.set(true);
+  try {
+    const result = await api.fetchHome(selectedHomeChip()?.endpoint, continuation);
+    if (request !== homeRequest) return;
+    batch(() => {
+      home.update(value => ({ ...value, sections: [...value.sections, ...result.sections], continuation: result.continuation }));
+      if (!selectedHomeChip()) unfilteredHome = home();
+      register(result.sections.flatMap(section => section.items));
+    });
+  } catch (reason) { if (request === homeRequest) showError(reason); }
+  finally { if (request === homeRequest) homeLoading.set(false); }
 }
 
 export async function loadExplore(tab: ExploreTab = exploreTab()) {
   const request = ++exploreRequest;
-  batch(() => { exploreTab.set(tab); exploreLoading.set(true); });
+  batch(() => { exploreEndpoint.set(null); exploreTab.set(tab); explore.set({ sections: [], moods: [] }); exploreLoading.set(true); });
   try {
     const result = await api.fetchExplore(tab);
     if (request !== exploreRequest) return;
@@ -323,13 +373,43 @@ export async function loadExplore(tab: ExploreTab = exploreTab()) {
   } catch (reason) { if (request === exploreRequest) showError(reason); }
   finally { if (request === exploreRequest) exploreLoading.set(false); }
 }
+
+function browseFeed(result: BrowseResponse): ExploreResponse {
+  return { sections: result.sections.length ? result.sections : result.tracks.length ? [{ title: result.title, items: result.tracks, layout: "list" }] : [], moods: [], continuation: result.continuation };
+}
+
+export async function loadExploreEndpoint(endpoint: BrowseEndpoint) {
+  const request = ++exploreRequest;
+  batch(() => { exploreEndpoint.set(endpoint); explore.set({ sections: [], moods: [] }); exploreLoading.set(true); });
+  try {
+    const result = browseFeed(await api.fetchBrowse(endpoint.browseId, undefined, endpoint.params));
+    if (request !== exploreRequest) return;
+    batch(() => { explore.set(result); register(result.sections.flatMap(section => section.items)); });
+  } catch (reason) { if (request === exploreRequest) showError(reason); }
+  finally { if (request === exploreRequest) exploreLoading.set(false); }
+}
+
+export function captureExploreState() {
+  return { endpoint: exploreEndpoint(), tab: exploreTab(), result: explore(), loading: exploreLoading() };
+}
+
+export function restoreExploreState(state: ReturnType<typeof captureExploreState>) {
+  ++exploreRequest;
+  batch(() => { exploreEndpoint.set(state.endpoint); exploreTab.set(state.tab); explore.set(state.result); exploreLoading.set(false); });
+  if (state.loading && !state.result.sections.length && !state.result.moods.length) {
+    if (state.endpoint) void loadExploreEndpoint(state.endpoint);
+    else void loadExplore(state.tab);
+  }
+}
+
 export async function loadMoreExplore() {
   const continuation = explore().continuation;
   if (!continuation || exploreLoading()) return;
   const request = exploreRequest;
   exploreLoading.set(true);
   try {
-    const result = await api.fetchExplore(exploreTab(), continuation);
+    const endpoint = exploreEndpoint();
+    const result = endpoint ? browseFeed(await api.fetchBrowse(endpoint.browseId, continuation, endpoint.params)) : await api.fetchExplore(exploreTab(), continuation);
     if (request !== exploreRequest) return;
     batch(() => {
       explore.update((value) => ({ ...result, sections: [...value.sections, ...result.sections], moods: [...value.moods, ...result.moods] }));
@@ -337,6 +417,12 @@ export async function loadMoreExplore() {
     });
   } catch (reason) { if (request === exploreRequest) showError(reason); }
   finally { if (request === exploreRequest) exploreLoading.set(false); }
+}
+
+export async function playEndpoint(endpoint: PlayEndpoint, title: string) {
+  const result = await api.fetchEndpointQueue(endpoint);
+  addTracks(result.tracks, false);
+  await player.playList(result.tracks, result.currentIndex ?? 0, title);
 }
 export function saveSearchHistory(text: string) {
   const value = text.trim();

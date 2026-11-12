@@ -5,19 +5,25 @@ import * as playback from "./playback";
 import { fetchStream } from "./api";
 import * as together from "./together";
 import { parseMusicLink, type MusicLink } from "./musicLinks";
-import type { Collection, Track, SearchType } from "./model";
+import type { BrowseEndpoint, Collection, ExploreTab, Track, SearchType } from "./model";
 
 export type Page = "home" | "search" | "library" | "liked" | "history" | "collection" | "playlist" | "downloads" | "stats" | "settings" | "browse" | "together" | "account";
-export interface Route { page: Page; key: number; collection?: Collection; playlistId?: string; query?: string; searchType?: SearchType }
+export interface Route {
+  page: Page; key: number; collection?: Collection; playlistId?: string; query?: string; searchType?: SearchType;
+  endpoint?: BrowseEndpoint; title?: string; exploreTab?: ExploreTab;
+}
 export type DialogKind = "create" | "rename" | "import" | "add-playlist" | "sleep" | "sort" | "song-info" | null;
 let nextKey = 1;
 export const stack = createNavStack<Route>([{ page: "home", key: 0 }]);
 const current = signal<Route>(stack.routes()[0]);
 type RouteSnapshot =
   | { page: "collection"; state: ReturnType<typeof store.captureCollectionState> }
-  | { page: "search"; state: ReturnType<typeof store.captureSearchState>; text: string; type: SearchType };
+  | { page: "search"; state: ReturnType<typeof store.captureSearchState>; text: string; type: SearchType }
+  | { page: "browse"; state: ReturnType<typeof store.captureExploreState> };
 const snapshots = new Map<number, RouteSnapshot>();
 export const page = computed(() => current().page);
+export const activeTab = computed(() => stack.routes().slice().reverse().find(route => route.page === "home" || route.page === "search" || route.page === "library")?.page);
+export const canGoBack = computed(() => stack.routes().length > 1 || page() !== "home" || !!store.selectedHomeChip());
 export const libraryTab = signal("all");
 export const searchText = signal("");
 export const searchType = signal<SearchType>("all");
@@ -28,7 +34,8 @@ export const draft = signal("");
 export const fullPlayer = signal(false);
 export const playerTab = signal<"cover" | "lyrics" | "queue">("cover");
 export const settingsSection = signal("appearance");
-export const browseTitle = signal("发现音乐");
+const exploreTitles: Record<ExploreTab, string> = { all: "探索", new: "新发行", charts: "排行榜", moods: "心情与流派" };
+export const browseTitle = computed(() => current().title || exploreTitles[current().exploreTab || "all"]);
 export const currentPlaylist = computed(() => store.playlists().find(item => item.id === selectedPlaylist()));
 
 function activate(route: Route, restore = false) {
@@ -36,6 +43,7 @@ function activate(route: Route, restore = false) {
   const leaving = current();
   if (leaving.page === "collection") snapshots.set(leaving.key, { page: "collection", state: store.captureCollectionState() });
   if (leaving.page === "search") snapshots.set(leaving.key, { page: "search", state: store.captureSearchState(), text: searchText(), type: searchType() });
+  if (leaving.page === "browse") snapshots.set(leaving.key, { page: "browse", state: store.captureExploreState() });
   const snapshot = snapshots.get(route.key);
   batch(() => {
     current.set(route);
@@ -51,12 +59,19 @@ function activate(route: Route, restore = false) {
       if (snapshot?.page === "search") store.restoreSearchState(snapshot.state);
       else if (route.query) void store.search(route.query, route.searchType);
     }
+    if (route.page === "browse") {
+      if (snapshot?.page === "browse") store.restoreExploreState(snapshot.state);
+      else if (route.endpoint) void store.loadExploreEndpoint(route.endpoint);
+      else void store.loadExplore(route.exploreTab || "all");
+    }
   });
 }
 function push(route: Omit<Route, "key">, root = false) {
   const next = { ...route, key: nextKey++ };
-  activate(next);
-  if (root) stack.setRoutes([next]); else stack.push(next);
+  batch(() => {
+    activate(next);
+    if (root) stack.setRoutes([next]); else stack.push(next);
+  });
 }
 export function onRoutesChanged(routes: readonly Route[]) {
   activate(routes[routes.length - 1], true);
@@ -64,9 +79,32 @@ export function onRoutesChanged(routes: readonly Route[]) {
   for (const key of snapshots.keys()) if (!keys.has(key)) snapshots.delete(key);
 }
 export function navigate(next: Page, root = false) {
-  if (page() !== next) push({ page: next }, root);
+  if (root) {
+    const existing = stack.routes().slice().reverse().find(route => route.page === next);
+    if (existing) batch(() => { activate(existing, true); stack.setRoutes([existing]); });
+    else push({ page: next }, true);
+  } else if (page() !== next) push({ page: next });
 }
-export function goBack() { if (stack.routes().length > 1) { stack.pop(); activate(stack.routes().at(-1)!, true); } else navigate("home", true); }
+export function handlesBack(route: Route) {
+  const routes = stack.routes();
+  return routes.at(-1)!.key === route.key && (route.page === "home" && !!store.selectedHomeChip() || routes.length === 1 && route.page !== "home");
+}
+export function goBack() {
+  if (page() === "home" && store.selectedHomeChip()) { store.clearHomeFilter(); return; }
+  if (stack.routes().length > 1) batch(() => { stack.pop(); activate(stack.routes().at(-1)!, true); });
+  else navigate("home", true);
+}
+export function openExplore(tab: ExploreTab = "all", title = exploreTitles[tab]) {
+  if (page() === "browse" && !current().endpoint) {
+    const route = { ...current(), exploreTab: tab, title };
+    batch(() => { current.set(route); stack.replace(route); });
+  } else push({ page: "browse", exploreTab: tab, title });
+  void store.loadExplore(tab);
+}
+export function openBrowse(endpoint: BrowseEndpoint, title: string) {
+  push({ page: "browse", endpoint, title });
+  void store.loadExploreEndpoint(endpoint);
+}
 export function browse(item: Collection) { push({ page: "collection", collection: item }); void store.openCollection(item); }
 export function openPlaylist(id: string) { selectedPlaylist.set(id); push({ page: "playlist", playlistId: id }); }
 async function openMusicLink(link: MusicLink) {
