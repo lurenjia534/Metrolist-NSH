@@ -1,60 +1,28 @@
-import { View, Scroll, computed, signal, cleanup, windowSize } from "nsh";
+import { View, Scroll, computed, cleanup } from "nsh";
 import * as s from "../store";
 import * as p from "../playback";
 import * as nav from "../navigation";
 import * as together from "../together";
 import { isTrack, type Collection, type SearchType, type ExploreTab } from "../model";
 import { parseMusicLink } from "../musicLinks";
+import { CatalogShelf, MoodGrid } from "../components/Discovery";
 import { Icon } from "../icons";
-import { TrackRow, TrackList, MusicCard, ItemRail, CollectionRow } from "../components/Music";
-import { Label, Tool, Pill, Chip, Field, SectionTitle, Empty, Press, palette as c, narrow, pageGutter, action } from "../ui";
+import { TrackList, MusicCard, CollectionRow } from "../components/Music";
+import { Label, Tool, Pill, Chip, Field, SectionTitle, Empty, Press, palette as c, narrow, action } from "../ui";
 
-function HomeShortcuts() {
-  return <View testID="home-shortcuts" style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-    <Each of={[
-      { page: "liked", label: "喜欢的音乐", icon: "heart", detail: "喜欢过的歌曲" },
-      { page: "downloads", label: "已下载", icon: "download", detail: `${s.downloads().length} 首离线音乐` },
-      { page: "history", label: "最近播放", icon: "clock", detail: `${s.history().length} 首听过的歌` },
-      { page: "together", label: "一起听", icon: "users", detail: together.room() ? `房间 ${together.room()!.roomCode}` : "与朋友同步聆听" },
-    ] as const}>{item => <Press testID={`home-${item().page}`} label={item().label} onPress={() => nav.navigate(item().page)} style={{ flexGrow: 1, flexBasis: "46%", minWidth: 0, minHeight: 68, paddingHorizontal: 12, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 16, backgroundColor: c().card }}>
-      <Icon name={item().icon} size={22} color={item().page === "liked" ? c().danger : c().accent} />
-      <View style={{ flex: 1, minWidth: 0, gap: 4 }}><Label size={13} weight="600" lines={1}>{item().label}</Label><Label size={10} color={c().sub} lines={1}>{item().detail}</Label></View>
-    </Press>}</Each>
-  </View>;
-}
-
-export function HomePage() {
-  const picks = computed(() => {
-    const online = s.home().sections.flatMap(section => section.items.filter(isTrack));
-    return [...new Map([...s.history().slice(0, 4), ...online, ...s.tracks()].map(track => [track.id, track])).values()].slice(0, 16);
-  });
-  const columns = computed(() => Array.from({ length: Math.ceil(picks().length / 4) }, (_, index) => picks().slice(index * 4, index * 4 + 4)));
-  const discover = (tab: ExploreTab, title: string) => { nav.browseTitle.set(title); nav.navigate("browse"); void s.loadExplore(tab); };
-  return <View testID="page-home" style={{ gap: 28 }}>
-    <Scroll horizontal scrollbar={false} style={{ height: 52, flexShrink: 0 }} contentStyle={{ flexDirection: "row", gap: 8, paddingVertical: 2 }}>
-      <Each of={[{ label: "放松", q: "relax chill music" }, { label: "通勤", q: "commute music" }, { label: "专注", q: "focus music" }, { label: "运动", q: "workout music" }, { label: "睡眠", q: "sleep music" }, { label: "心情不错", q: "feel good music" }]}>{item => <Chip label={item().label} selected={false} onPress={() => nav.performSearch(item().q)} />}</Each>
-    </Scroll>
-    <If when={narrow()}><HomeShortcuts /></If>
-    <View><SectionTitle title="快速选歌" disabled={p.remoteControlled()} action="播放全部" icon="play" onPress={() => action(() => p.playList(picks(), 0, "快速选歌"))} />
-      <Scroll horizontal scrollbar={false} style={{ height: 280 }} contentStyle={{ flexDirection: "row", gap: 16 }}><Each of={columns()}>{column => <View style={{ width: narrow() ? Math.min(350, windowSize().width - pageGutter() * 2) : 350, gap: 1 }}><Each of={column()}>{track => <TrackRow track={track()} list={picks()} compact />}</Each></View>}</Each></Scroll>
-    </View>
-    <If when={s.history().length > 0}><View><SectionTitle title="继续聆听" action="全部" onPress={() => nav.navigate("history")} /><ItemRail items={s.history().slice(0, 12)} /></View></If>
-    <View style={{ gap: 12 }}><SectionTitle title="探索" /><View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
-      <Each of={[{ tab: "new", title: "新歌与新专辑", icon: "spark" }, { tab: "charts", title: "排行榜", icon: "stats" }, { tab: "moods", title: "心情与流派", icon: "compass" }] as const}>{item => <Press label={item().title} testID={`discover-${item().tab}`} onPress={() => discover(item().tab, item().title)} style={{ flex: 1, minWidth: narrow() ? "100%" : 220, minHeight: 82, padding: 18, borderRadius: 20, backgroundColor: c().card, flexDirection: "row", gap: 16, alignItems: "center" }}><Icon name={item().icon} size={26} color={c().accent} /><Label size={14} weight="600" style={{ flex: 1 }}>{item().title}</Label><Icon name="right" size={18} color={c().sub} /></Press>}</Each>
-    </View></View>
-    <Each of={s.home().sections}>{section => <If when={section().items.length > 0}><View><SectionTitle title={section().title} /><ItemRail items={section().items} /></View></If>}</Each>
-    <View style={{ flexDirection: "row", justifyContent: "center" }}><Pill label={s.homeLoading() ? "正在刷新…" : "刷新推荐"} icon="refresh" disabled={s.homeLoading()} onPress={() => void s.loadHome()} /></View>
-  </View>;
-}
+export { HomePage } from "./Home";
 
 export function ExplorePage() {
+  const refresh = () => s.exploreEndpoint() ? s.loadExploreEndpoint(s.exploreEndpoint()!) : s.loadExplore();
+  const groupedMoods = () => s.explore().sections.some(section => section.moods?.length);
   return <View testID="page-browse" style={{ gap: 24 }}>
-    <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}><Each of={[{ tab: "all", label: "全部" }, { tab: "new", label: "新发行" }, { tab: "charts", label: "排行榜" }, { tab: "moods", label: "心情与流派" }] as const}>{item => <Chip label={item().label} selected={s.exploreTab() === item().tab} onPress={() => void s.loadExplore(item().tab)} />}</Each></View>
+    <If when={!s.exploreEndpoint()}><Scroll horizontal scrollbar={false} style={{ height: 52, flexShrink: 0 }} contentStyle={{ flexDirection: "row", gap: 8, paddingVertical: 2 }}><Each of={[{ tab: "all", label: "全部" }, { tab: "new", label: "新发行" }, { tab: "charts", label: "排行榜" }, { tab: "moods", label: "心情与流派" }] as const}>{item => <Chip label={item().label} selected={s.exploreTab() === item().tab} onPress={() => nav.openExplore(item().tab)} />}</Each></Scroll></If>
     <If when={s.exploreLoading()}><Label color={c().accent}>正在加载…</Label></If>
-    <If when={s.explore().moods.length > 0}><View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}><Each of={s.explore().moods}>{mood => <Press label={mood().title} onPress={() => nav.browse({ id: `${mood().browseId}:${mood().params || ""}`, browseId: mood().browseId, params: mood().params, title: mood().title, subtitle: "心情与流派", artwork: "", type: "playlist" })} style={{ width: narrow() ? "47%" : "30%", minHeight: 76, borderRadius: 16, backgroundColor: c().card, borderLeftWidth: 5, borderLeftColor: mood().color || c().accent, padding: 18, justifyContent: "center" }}><Label size={15} weight="600">{mood().title}</Label></Press>}</Each></View></If>
-    <Each of={s.explore().sections}>{section => <View><SectionTitle title={section().title} /><ItemRail items={section().items} all /></View>}</Each>
-    <If when={s.explore().continuation}><Pill label="加载更多" disabled={s.exploreLoading()} onPress={() => void s.loadMoreExplore()} /></If>
-    <If when={!s.exploreLoading() && !s.explore().sections.length && !s.explore().moods.length}><Empty icon="compass" title="还没有发现内容" description="刷新获取当前地区的音乐推荐。"><Pill label="刷新" onPress={() => void s.loadExplore()} /></Empty></If>
+    <If when={!groupedMoods() && s.explore().moods.length > 0}><MoodGrid testID="explore-moods" moods={s.explore().moods} /></If>
+    <Each of={s.explore().sections}>{(section, index) => <CatalogShelf section={section()} testID={`explore-section-${index()}`} />}</Each>
+    <If when={s.explore().continuation}><Pill testID="explore-more" label={s.exploreLoading() ? "正在加载…" : "加载更多"} disabled={s.exploreLoading()} onPress={() => void s.loadMoreExplore()} /></If>
+    <If when={!s.exploreLoading() && !s.explore().sections.length && !s.explore().moods.length}><Empty icon="compass" title="还没有发现内容" description="刷新获取当前地区的音乐推荐。" /></If>
+    <View style={{ alignItems: "center" }}><Pill testID="explore-refresh" label="刷新" icon="refresh" disabled={s.exploreLoading()} onPress={() => void refresh()} /></View>
   </View>;
 }
 
@@ -78,7 +46,7 @@ export function SearchPage() {
     { type: "playlist", searchType: "playlists", title: "歌单" },
   ] as const).map(group => ({ ...group, items: s.searchResults().filter(item => !isTrack(item) && item.type === group.type) as Collection[] })).filter(group => group.items.length));
   const run = (value = nav.searchText(), type = nav.searchType()) => { clearTimeout(timer); nav.performSearch(value, type); };
-  const discover = (tab: ExploreTab, title: string) => { nav.browseTitle.set(title); nav.navigate("browse"); void s.loadExplore(tab); };
+  const discover = (tab: ExploreTab, title: string) => nav.openExplore(tab, title);
   return <View testID="page-search" style={{ gap: 24 }}>
     <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}><Field testID="search-input" value={nav.searchText()} onChange={change} placeholder="搜索音乐或粘贴 YouTube Music 链接" onSubmit={() => run()} /><Tool icon="search" label="搜索" testID="search-submit" onPress={() => run()} /><If when={nav.searchText()}><Tool icon="close" label="清空输入" onPress={() => change("")} /></If></View>
     <Scroll horizontal scrollbar={false} style={{ height: 52, flexShrink: 0 }} contentStyle={{ flexDirection: "row", gap: 8, paddingVertical: 2 }}><Each of={[{ type: "all", label: "全部" }, { type: "songs", label: "歌曲" }, { type: "albums", label: "专辑" }, { type: "artists", label: "歌手" }, { type: "playlists", label: "歌单" }] as const}>{item => <Chip testID={`search-filter-${item().type}`} label={item().label} selected={nav.searchType() === item().type} onPress={() => { nav.searchType.set(item().type as SearchType); if (nav.searchText().trim() && !link()) run(); }} />}</Each></Scroll>

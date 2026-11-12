@@ -37,7 +37,7 @@ export async function api(request, env = {}) {
         return json(await browse(params.id, params));
       }
       case '/api/next': {
-        if (!params.id) throw new ApiError('A video id is required', 400);
+        if (!params.id && !params.playlistId) throw new ApiError('A video or playlist id is required', 400);
         return json(await next(params.id, params));
       }
       case '/api/lyrics': return json(await lyrics(params.title || '', params.artist || '', Number(params.duration || 0)));

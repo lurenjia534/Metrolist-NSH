@@ -2,7 +2,7 @@
 
 本文件是 NSH 移植的实现依据，不代表下列 Android 功能都已移植。原版源码基准是 `MetrolistGroup/Metrolist` 的 `e6fea3b36c68841bad21daa6252e1d69ecd3afbe`；对应 [GitHub 源码](https://github.com/MetrolistGroup/Metrolist/tree/e6fea3b36c68841bad21daa6252e1d69ecd3afbe)。本次阅读了原仓库 `AGENTS.md`，仅把原仓库作为参考，没有修改原版源码或版本。
 
-下文路径除另有说明，都相对于原仓库的 `app/src/main/kotlin/com/metrolist/music/`。行号以该提交为准。NSH 的 `0.2.0` 是本移植项目版本。
+下文路径除另有说明，都相对于原仓库的 `app/src/main/kotlin/com/metrolist/music/`。行号以该提交为准。下文标注 `0.2` 的优先级是早期规划记录；当前版本实现和验证见各版发布说明。
 
 ## 可直接核对的原版截图
 
@@ -126,3 +126,12 @@ v0.1 的简化曲库与收藏/浏览记录混用不覆盖上述交互。0.2 的�
 登录采用原版会话认证，Android 读取完整 CookieManager 会话与网页上下文，资料验证后建立账号；云端修改使用原版 endpoint/action，歌单条目采用 setVideoId。新增 `android/MetrolistHost.java` 与 `MetrolistMediaService.java`，提供登录、文件、MediaSession 与媒体前台服务；这部分是显式实现的原生层，不是通用 UI 自动获得的功能。
 
 账号 fixture、NSH 原生共享网关、手机/桌面云端交互的结果见 [账号说明](ACCOUNT.md) 和 [验证记录](VERIFICATION.md)，Android 实际构建及设备验证边界见 [构建说明](android-build.md)。
+
+
+## 0.10 首页与发现链路修复
+
+重新逐项核对 `HomeScreen.kt`、`HomeViewModel.kt`、`BrowseScreen.kt` 和 InnerTube 的 HomePage、renderer、YouTube.home/next。修复此前实际未贯通的首页 chip 参数、分类保留/清除、页面级分页、分区更多与播放、分组心情目录、播客单集识别和主导航选中状态。原版 HomePageSection 的“更多”进入通用 browse 路由，卡片本身进入对应专辑、艺人或歌单；NSH 现区分这两条路径。
+
+纯歌曲分区按原版使用四行列表；播客单集与混合项目使用卡片；目录 grid 保持可纵向浏览。服务端缩略图的实际比例用于宽幅卡片，不声称与该 Kotlin 提交的所有图片比例完全一致。首页初始不再用内置目录替代在线推荐，分类结果也不混入本地历史。
+
+完整修复范围、真实接口记录与回归状态见 [0.10 发布说明](releases-0.10.0.md)。
