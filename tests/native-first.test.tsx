@@ -1,5 +1,6 @@
 import { expect, open, test } from "nsh/test";
 import type { App } from "nsh/test";
+import { mediaFile } from "./local-media/files";
 
 const directNetwork = {
   "POST https://music.youtube.com/youtubei/v1/browse?prettyPrint=false": { body: {} },
@@ -21,8 +22,8 @@ test("desktop migration replaces the old bundled gateway and copies completed do
   const legacy = { id: "video", track: song, quality: "auto", status: "completed", progress: 1, bytes: 9437307,
     destination: "/legacy/Music/Metrolist/video.m4a", url: "http://127.0.0.1:8787/api/offline?id=video",
     name: "Video song.m4a", createdAt: 1, updatedAt: 2 };
-  const saved = { name: legacy.name, destination: "/device/downloads/video.m4a", url: "file:///device/downloads/video.m4a", bytes: legacy.bytes };
-  const app = await open("./runtime-fixture.tsx", { platform: "linux", width: 1440, height: 940, network: directNetwork, storage: {
+  const saved = { name: legacy.name, ...mediaFile("video.wav"), bytes: legacy.bytes };
+  const app = await open("../.nsh/local-media/runtime.tsx", { platform: "linux", width: 1440, height: 940, network: directNetwork, storage: {
     "metrolist.settings": JSON.stringify({ apiBase: "http://127.0.0.1:8787/", autoRadio: false }),
     "metrolist.downloads": JSON.stringify([legacy]),
   }, host: { handlers: { "app.test.files.copyInto": saved } } });

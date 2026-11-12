@@ -1,4 +1,5 @@
 import { expect, open, test } from "nsh/test";
+import { mediaFile } from "./local-media/files";
 
 const alpha = { id: "ui-alpha", title: "Alpha song", artist: "Test artist", album: "Test album", artwork: "", duration: 180, source: "youtube" };
 const beta = { ...alpha, id: "ui-beta", title: "Beta song" };
@@ -124,8 +125,8 @@ test("desktop library creates a playlist and song menus add, sort and reorder it
 });
 
 test("desktop settings, offline downloads, statistics and together screens expose usable controls", async () => {
-  const completed = { id: alpha.id, track: alpha, quality: "auto", status: "completed", bytes: 123456, totalBytes: 123456, progress: 1, destination: "/music/alpha.m4a", url: "file:///music/alpha.m4a", name: "Alpha.m4a", createdAt: 1, updatedAt: 2 };
-  const app = await open("../App.tsx", { width: 1440, height: 940, platform: "linux", network, storage: {
+  const completed = { id: alpha.id, track: alpha, quality: "auto", status: "completed", bytes: 123456, totalBytes: 123456, progress: 1, ...mediaFile("alpha.wav"), name: "Alpha.m4a", createdAt: 1, updatedAt: 2 };
+  const app = await open("../.nsh/local-media/app.tsx", { width: 1440, height: 940, platform: "linux", network, storage: {
     ...preferences,
     "metrolist.downloads": JSON.stringify([completed]),
     "metrolist.library": JSON.stringify({ version: 2, exportedAt: "", tracks: [alpha], likedIds: [], history: [alpha], playlists: [], libraryIds: [alpha.id], savedCollections: [], searchHistory: [], listenEvents: [{ id: "ui-event", trackId: alpha.id, startedAt: Date.now(), seconds: 120 }] }),

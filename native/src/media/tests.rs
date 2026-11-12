@@ -85,10 +85,12 @@ async fn server() -> (String, tokio::task::JoinHandle<()>) {
 async fn relay_preserves_source_headers_range_head_and_status() {
     let (origin, server) = server().await;
     let relay = Relay::start().await.unwrap();
-    let registered = relay.insert(
-        format!("{origin}/audio"),
-        [("User-Agent".into(), "metrolist-native-fixture".into())].into(),
-    );
+    let registered = relay
+        .insert(
+            format!("{origin}/audio"),
+            [("User-Agent".into(), "metrolist-native-fixture".into())].into(),
+        )
+        .unwrap();
     let client = reqwest::Client::new();
     let response = client
         .get(&registered.url)
@@ -111,7 +113,9 @@ async fn relay_preserves_source_headers_range_head_and_status() {
     assert_eq!(head.status(), StatusCode::OK);
     assert_eq!(head.headers()[header::CONTENT_LENGTH], LENGTH.to_string());
     assert!(head.bytes().await.unwrap().is_empty());
-    let forbidden = relay.insert(format!("{origin}/audio"), BTreeMap::new());
+    let forbidden = relay
+        .insert(format!("{origin}/audio"), BTreeMap::new())
+        .unwrap();
     assert_eq!(
         client.get(&forbidden.url).send().await.unwrap().status(),
         StatusCode::FORBIDDEN
@@ -128,7 +132,9 @@ async fn relay_preserves_source_headers_range_head_and_status() {
 async fn relay_delivers_first_bytes_before_the_upstream_finishes() {
     let (origin, server) = server().await;
     let relay = Relay::start().await.unwrap();
-    let registered = relay.insert(format!("{origin}/streaming"), BTreeMap::new());
+    let registered = relay
+        .insert(format!("{origin}/streaming"), BTreeMap::new())
+        .unwrap();
     let mut response = reqwest::get(registered.url).await.unwrap();
     let first = tokio::time::timeout(Duration::from_secs(2), response.chunk())
         .await
@@ -138,4 +144,87 @@ async fn relay_delivers_first_bytes_before_the_upstream_finishes() {
     assert_eq!(&first[..], b"first");
     drop(response);
     server.abort();
+}
+
+#[tokio::test]
+async fn local_audio_streams_get_head_ranges_and_releases_without_removing_the_file() {
+    let directory = std::env::temp_dir().join(format!(
+        "metrolist-local-media-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+    ));
+    tokio::fs::create_dir_all(&directory).await.unwrap();
+    let path = directory.join("原音频 100%20 完成.wav");
+    let pcm = payload(0, 128 * 1024);
+    // A real PCM WAVE file, including a non-ASCII, percent-encoded filename.
+    let audio = [
+        b"RIFF".as_slice(),
+        &(36 + pcm.len() as u32).to_le_bytes(),
+        b"WAVEfmt ",
+        &16u32.to_le_bytes(),
+        &1u16.to_le_bytes(),
+        &1u16.to_le_bytes(),
+        &44100u32.to_le_bytes(),
+        &88200u32.to_le_bytes(),
+        &2u16.to_le_bytes(),
+        &16u16.to_le_bytes(),
+        b"data",
+        &(pcm.len() as u32).to_le_bytes(),
+        &pcm,
+    ]
+    .concat();
+    tokio::fs::write(&path, &audio).await.unwrap();
+    let file_url = url::Url::from_file_path(&path).unwrap();
+    let relay = Relay::start().await.unwrap();
+    let registered = relay.insert(file_url.into(), BTreeMap::new()).unwrap();
+    let client = reqwest::Client::new();
+
+    let head = client.head(&registered.url).send().await.unwrap();
+    assert_eq!(head.status(), StatusCode::OK);
+    assert_eq!(
+        head.headers()[header::CONTENT_LENGTH],
+        audio.len().to_string()
+    );
+    assert_eq!(head.headers()[header::ACCEPT_RANGES], "bytes");
+    assert!(
+        head.headers()[header::CONTENT_TYPE]
+            .to_str()
+            .unwrap()
+            .starts_with("audio/")
+    );
+    assert!(head.bytes().await.unwrap().is_empty());
+
+    // AVPlayer probes the first bytes, then requests later ranges when seeking.
+    for (start, end) in [(0, 1), (1029, 9231)] {
+        let response = client
+            .get(&registered.url)
+            .header(header::RANGE, format!("bytes={start}-{end}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(
+            response.headers()[header::CONTENT_RANGE],
+            format!("bytes {start}-{end}/{}", audio.len())
+        );
+        assert_eq!(
+            response.headers()[header::CONTENT_LENGTH],
+            (end - start + 1).to_string()
+        );
+        assert_eq!(response.bytes().await.unwrap().as_ref(), &audio[start..=end]);
+    }
+    let response = client.get(&registered.url).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.bytes().await.unwrap().as_ref(), audio.as_slice());
+
+    relay.release(&registered.id);
+    assert_eq!(
+        client.get(&registered.url).send().await.unwrap().status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(tokio::fs::read(&path).await.unwrap(), audio);
+    tokio::fs::remove_dir_all(directory).await.unwrap();
 }

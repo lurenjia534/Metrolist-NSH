@@ -2,6 +2,7 @@
 use std::{
     collections::{BTreeMap, HashMap},
     net::SocketAddr,
+    path::PathBuf,
     sync::{
         Arc, RwLock,
         atomic::{AtomicU64, Ordering},
@@ -12,18 +13,22 @@ use axum::{
     Router,
     body::Body,
     extract::{Path, State},
-    http::{HeaderMap, Method, StatusCode, header},
+    http::{HeaderMap, Method, Request, StatusCode, header},
     response::{IntoResponse, Response},
     routing::get,
 };
 use tokio::sync::OnceCell;
+use tower_http::services::ServeFile;
 
 use crate::MediaSource;
 
 #[derive(Clone)]
-struct Source {
-    url: String,
-    headers: BTreeMap<String, String>,
+enum Source {
+    Remote {
+        url: String,
+        headers: BTreeMap<String, String>,
+    },
+    File(PathBuf),
 }
 
 struct Sources {
@@ -59,7 +64,17 @@ impl Relay {
         Ok(Self { address, sources })
     }
 
-    fn insert(&self, url: String, headers: BTreeMap<String, String>) -> MediaSource {
+    fn insert(&self, url: String, headers: BTreeMap<String, String>) -> Result<MediaSource, String> {
+        let source = if url.starts_with("file:") {
+            Source::File(
+                url::Url::parse(&url)
+                    .map_err(|e| e.to_string())?
+                    .to_file_path()
+                    .map_err(|_| "The file URL must reference a local path".to_string())?,
+            )
+        } else {
+            Source::Remote { url, headers }
+        };
         let id = self
             .sources
             .next
@@ -69,11 +84,11 @@ impl Relay {
             .entries
             .write()
             .unwrap()
-            .insert(id.clone(), Source { url, headers });
-        MediaSource {
+            .insert(id.clone(), source);
+        Ok(MediaSource {
             url: format!("http://{}/media/{id}", self.address),
             id,
-        }
+        })
     }
 
     fn release(&self, id: &str) {
@@ -85,10 +100,10 @@ pub(super) async fn prepare(
     url: String,
     headers: BTreeMap<String, String>,
 ) -> Result<MediaSource, String> {
-    Ok(RELAY
+    RELAY
         .get_or_try_init(Relay::start)
         .await?
-        .insert(url, headers))
+        .insert(url, headers)
 }
 
 pub(super) fn release(id: &str) {
@@ -107,8 +122,20 @@ async fn relay(
     let Some(source) = source else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    let mut request = state.client.request(method.clone(), source.url);
-    for (name, value) in source.headers {
+    let (url, source_headers) = match source {
+        Source::Remote { url, headers } => (url, headers),
+        Source::File(path) => {
+            let mut request = Request::new(Body::empty());
+            *request.method_mut() = method;
+            *request.headers_mut() = headers;
+            return match ServeFile::new(path).try_call(request).await {
+                Ok(response) => response.map(Body::new),
+                Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
+            };
+        }
+    };
+    let mut request = state.client.request(method.clone(), url);
+    for (name, value) in source_headers {
         request = request.header(name, value);
     }
     for name in [header::RANGE, header::IF_RANGE] {

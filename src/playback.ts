@@ -23,6 +23,8 @@ export const radioLoading = signal(false);
 export const radioError = signal("");
 export const syncingRemote = signal(false);
 export const remoteControlled = signal(false);
+/** Only the visible music workspace receives transport commands from the host. */
+export const workspaceActive = signal(true);
 export const playbackPhase = signal<"idle" | "resolving" | "buffering" | "playing" | "paused" | "error">("idle");
 export const playbackTiming = signal<{ resolveMs: number; readyMs: number; totalMs: number; prepared: boolean } | null>(null);
 export const upNext = signal<Track | undefined>();
@@ -176,12 +178,12 @@ export function initPlayback(configuration: PlaybackOptions) {
       nextPreparation.set({ trackId: prepared.track.id, title: prepared.track.title, state: event.cached ? "cached" : "ready" });
     });
     effect(() => {
-      const controlled = remoteControlled();
+      const controlled = remoteControlled() || !workspaceActive();
       void nativeCommand("settings", { remoteControlled: controlled }).catch(surfaceError);
     });
   }
   if (platform.os === "web" || platform.os === "android") host.on("media.command", (payload: unknown) => {
-    if (remoteControlled()) return;
+    if (!workspaceActive() || remoteControlled()) return;
     const event = payload as { action: "play" | "pause" | "previous" | "next" | "seek"; value?: number };
     switch (event.action) {
       case "play": if (!playRequested) void resumePlayback(); break;
@@ -194,7 +196,7 @@ export function initPlayback(configuration: PlaybackOptions) {
 }
 
 function updateMediaSession() {
-  if (platform.os === "web") void host.call("app.playback", {
+  if (workspaceActive() && platform.os === "web") void host.call("app.playback", {
     playing: playing(), buffering: buffering(), position: position(), duration: duration(), rate: rate(),
   }).catch(surfaceError);
 }
@@ -349,13 +351,15 @@ async function loadCurrent(startAt = 0, continueSession = false, refresh = false
         mimeType: source.mimeType, formatId: source.formatId, expiresAt: source.expiresAt,
         cacheKey: sourceCacheKey(track, source),
         position: startAt, volume: volume(), rate: rate(), playWhenReady: playRequested,
-        remoteControlled: remoteControlled(),
+        remoteControlled: remoteControlled() || !workspaceActive(),
       });
       return;
     }
     let playbackUrl = source.url;
-    if (platform.os !== "web" && source.headers && Object.keys(source.headers).length && /^https?:/.test(source.url)) {
-      const media = await NativeMedia.prepare(source.url, source.headers);
+    const localIOS = platform.os === "ios" && source.url.startsWith("file:");
+    const signedHTTP = source.headers && Object.keys(source.headers).length && /^https?:/.test(source.url);
+    if (platform.os !== "web" && (localIOS || signedHTTP)) {
+      const media = await NativeMedia.prepare(source.url, source.headers || {});
       if (request !== loadId) { NativeMedia.release(media.id); return; }
       nativeMediaId = media.id;
       playbackUrl = media.url;
@@ -489,7 +493,7 @@ export function extendRadio(): Promise<Track[]> {
 }
 
 async function advance(ended: boolean) {
-  if (!queue().length) return;
+  if (!workspaceActive() || !queue().length) return;
   if (ended && remoteControlled()) { pause(); return; }
   if (ended && repeat() === "one") {
     startListening(currentTrack()!);
@@ -502,7 +506,7 @@ async function advance(ended: boolean) {
   const request = loadId;
   if (repeat() === "off" && options.autoRadio?.() && (shuffle() ? !shuffleBag.length : currentIndex() + 1 >= queue().length)) {
     await extendRadio();
-    if (generation !== queueGeneration || request !== loadId || !playRequested) return;
+    if (!workspaceActive() || generation !== queueGeneration || request !== loadId || !playRequested) return;
   }
   let index: number;
   if (shuffle()) {

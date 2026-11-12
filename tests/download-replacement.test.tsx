@@ -1,5 +1,6 @@
 import { expect, open, test } from "nsh/test";
 import type { App } from "nsh/test";
+import { mediaFile } from "./local-media/files";
 
 const remote = { id: "remote", title: "Remote song", artist: "Fixture", album: "", artwork: "", duration: 60, source: "audio", url: "https://audio.test/remote.mp3" };
 const local = { ...remote, id: "local", title: "Local song", url: "file:///external/%E5%90%8D%20Song.mp3" };
@@ -13,8 +14,8 @@ const calls = (app: App, name: string) => app.host.calls().filter(call => call.n
 
 test("cancelling a pending native replacement keeps the completed file playable and persisted", async () => {
   const previous = { id: remote.id, track: remote, quality: "high", status: "completed", progress: 1, bytes: 100, totalBytes: 100,
-    destination: "/device/original.mp3", url: "file:///device/original.mp3", name: "Fixture - Remote song.mp3", createdAt: 1, updatedAt: 2 };
-  const app = await open("./download-replacement-fixture.tsx", { platform: "linux", network, storage: {
+    ...mediaFile("original.wav"), name: "Fixture - Remote song.mp3", createdAt: 1, updatedAt: 2 };
+  const app = await open("../.nsh/local-media/download-replacement.tsx", { platform: "linux", network, storage: {
     "metrolist.settings": JSON.stringify(settings),
     "metrolist.downloads": JSON.stringify([previous]),
   }, host: { handlers: {
@@ -40,10 +41,10 @@ test("cancelling a pending native replacement keeps the completed file playable 
 
 test("restored local audio uses the current saved file despite a different quality preference and copies file URLs natively", async () => {
   const current = { id: local.id, track: local, quality: "low", status: "completed", progress: 1, bytes: 100,
-    destination: "/device/current.mp3", url: "file:///device/current.mp3", name: "Fixture - Local song.mp3", createdAt: 1, updatedAt: 2 };
-  const staleTrack = { ...local, url: "file:///device/deleted-before-replacement.mp3" };
-  const copied = { name: current.name, destination: "/device/copied.mp3", url: "file:///device/copied.mp3", bytes: 9437307 };
-  const app = await open("./download-replacement-fixture.tsx", { platform: "linux", network, storage: {
+    ...mediaFile("current.wav"), name: "Fixture - Local song.mp3", createdAt: 1, updatedAt: 2 };
+  const staleTrack = { ...local, url: mediaFile("deleted-before-replacement.wav").url };
+  const copied = { name: current.name, ...mediaFile("copied.wav"), bytes: 9437307 };
+  const app = await open("../.nsh/local-media/download-replacement.tsx", { platform: "linux", network, storage: {
     "metrolist.settings": JSON.stringify(settings),
     "metrolist.downloads": JSON.stringify([current]),
     "metrolist.player": JSON.stringify({ queue: [staleTrack], index: 0, position: 17 }),

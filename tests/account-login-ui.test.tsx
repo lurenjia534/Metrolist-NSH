@@ -19,6 +19,7 @@ const network = {
 };
 test("Android 340 login shows progress and connects only after automatic verification", async () => {
   const app = await open("./account-native-ui-fixture.tsx", { width: 340, height: 640, platform: "android", clock: {}, storage: storage(), network });
+  await app.waitFor("id:header-account");
   await app.press("id:header-account"); await app.waitFor("id:account-native-login");
   await app.waitUntil(() => app.enabled("id:account-native-login"));
   expect(app.shows("id:account-import")).toBe(false);

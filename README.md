@@ -1,6 +1,8 @@
-# Metrolist NSH · 0.6.0
+# Metrolist NSH · 0.7.0
 
 使用 [Native Shell（nsh）](https://github.com/longbridge/nsh) 编写的 Metrolist 移植版。共享 TSX 界面、个人曲库、播放队列和纯音频播放器，面向现代浏览器、桌面系统与具备相应运行时的手机平台。
+
+0.7 增加可切换的 **Spotify 独立工作区**，移植 [Spotish](https://github.com/huacnlee/spotish) 的 NSH 原生界面、Rust / CDP 播放引擎与完整音乐灯光动画。YouTube Music 和 Spotify 各自保留页面、账号、音乐库、播放器状态与外观，通过顶部切换器进入。[Spotify 使用与实现](docs/spotify.md) · [0.7 发布说明](docs/releases-0.7.0.md)。
 
 **网页版：[打开 Metrolist NSH](https://metrolist-nsh-miku.lurenjia534.chatgpt.site)**。当前站点公开访问。托管版本的音乐服务运行在 Worker 上，访问者无需在自己的电脑启动 Node、安装 Python 或配置 yt-dlp。
 
@@ -8,13 +10,23 @@
 
 **下载与发布：[GitHub Releases](https://github.com/lurenjia534/Metrolist-NSH/releases)**。发布流水线生成 Android、Linux、Windows、macOS、iOS 与 Web 工件，并提供版本、来源提交、构建信息和 SHA-256。平台包的具体名称与签名状态以该版本发布页为准。
 
-**Android 0.6 沿用 0.5 的 `app.miku.metrolist.preview` 和同一签名，应用名为 `Metrolist NSH Preview`。** 可覆盖升级 0.5 并保留账号、曲库与下载；最低 Android 8 / API 26。0.4 使用的 `app.miku.metrolist.next` 与它是不同应用，可从旧版导出曲库再导入。正式 Android 发布使用持久签名；构建检查产生的测试签名文件不作为正式升级包。
+**Android 0.7 沿用 0.5 / 0.6 的 `app.miku.metrolist.preview` 和同一签名，应用名为 `Metrolist NSH Preview`。** 可覆盖升级并保留账号、曲库与下载；最低 Android 8 / API 26。0.4 使用的 `app.miku.metrolist.next` 与它是不同应用，可从旧版导出曲库再导入。正式 Android 发布使用持久签名；构建检查产生的测试签名文件不作为正式升级包。
+
+### 0.7：独立 Spotify 工作区
+
+从顶部选择 **Spotify** 即可进入独立界面：侧栏音乐库、首页推荐、搜索、专辑 / 艺人 / 歌单、曲目排序、悬浮播放器、全屏 Now Playing 和同步歌词均沿用 Spotish 的实现。播放器和全屏页共有 14 种音乐灯光效果，并支持每曲随机；按压层、图标变形、列表波浪入场、封面翻转、导航和歌词动画由 NSH 绘制。
+
+桌面 Spotify 播放由 Rust 启动本机已有的 Chrome、Chromium、Edge 或 Brave，在后台加载 Spotify Web Player 并通过 CDP 控制。首次使用在 Spotify 工作区点 **Log in**，在打开的浏览器窗口完成登录。需要浏览器具备 Widevine 和可用 Spotify 账号；Free / Premium 行为与广告由 Spotify 原播放器提供。桌面应用继续无需 Node 运行时。
+
+切换服务会暂停离开的播放器，返回时保留其队列和页面，由用户继续播放。YouTube 的一起听会在切换到 Spotify 时断开，避免远端房间随后启动另一套播放器。Spotify 的会话、缓存、灯光偏好和浏览器配置目录独立保存。
+
+**Web、Android、iOS 的 Spotify 工作区是明确标注的界面演示，使用虚构目录和模拟播放进度，不播放真实 Spotify 音乐。** 这些平台的 YouTube Music 功能仍按其原有链路运行。演示不是 Spotify 远程控制；桌面遥控尚未实现。
 
 ### 0.6：Native First
 
 桌面程序直接进入 NSH 原生 Host：TSX / QuickJS 负责界面、账号、曲库与音源解析，NSH 原生网络负责请求，Rust 扩展负责流式下载、本机文件和携带请求头的音频转发。Linux、Windows 与 macOS 发行包去除 Node 运行时和独立 gateway 启动器，音乐服务地址默认留空即可直连。
 
-桌面与 iOS 下载写入本机应用数据目录，完成后直接播放本机文件。需要携带上游请求头的在线音频由同一进程内的 Rust 媒体转发处理，不再启动额外的 Node 服务。Android 继续使用原生 Media3 与 Java 文件 Host；Web 继续使用浏览器 Host 和 Worker API。
+桌面与 iOS 下载写入本机应用数据目录。桌面直接播放本机文件；iOS 通过同一进程内的 Rust 媒体通道流式播放这些文件，并支持拖动进度。需要携带上游请求头的在线音频也由该 Rust 通道处理。Android 继续使用原生 Media3 与 Java 文件 Host；Web 继续使用浏览器 Host 和 Worker API。
 
 原生运行与打包可直接使用 NSH CLI 或 Python 辅助命令。Node 保留为可选的 Web 开发、构建和业务测试工具。架构、迁移与复现见 [Native First](docs/native-first.md)。
 
@@ -48,6 +60,7 @@ Android 音频改为服务持有的 Media3 1.10.1 / ExoPlayer，使用 OkHttp、
 
 | 范围 | 已实现的业务路径 |
 | --- | --- |
+| Spotify 独立工作区 | 桌面 Rust / CDP 浏览器播放、账号登录、首页、音乐库、搜索、专辑 / 艺人 / 歌单、收藏、同步歌词、原生播放器与 14 种音乐灯光；Web / Android / iOS 为明确标注的界面演示 |
 | Google / YouTube Music 账号 | Android 自动完成登录与 CookieManager；Web / 桌面高级会话导入；真实资料验证、头像、多账号、品牌频道切换、退出 |
 | 云端音乐库 | 喜欢、歌曲、专辑、订阅、歌单的完整分页同步；新建歌单/简介/可见性、重命名/删除、添加/精确移除/移动条目；按账号保存缓存 |
 | 首页与发现 | YouTube Music 在线首页、快速选歌、继续聆听、新发行、排行榜、心情与流派；冷启动使用 12 首真实目录记录构成的编辑精选 |
@@ -62,7 +75,7 @@ Android 音频改为服务持有的 Media3 1.10.1 / ExoPlayer，使用 OkHttp、
 | 本地数据 | 音频文件、音频 URL、YouTube 曲目/歌单链接导入；曲库与歌单 JSON 导入导出；设备持久化 |
 | 外观与浏览器能力 | 深色、纯黑、浅色及跟随系统；响应式布局；Android MediaSession / 媒体通知 / 前台服务、浏览器 MediaSession 与应用资源缓存 |
 
-曲库和收听数据保存在当前设备。登录后在线歌曲的喜欢与云端操作使用当前 YouTube Music 账号。私人音频上传、完整播客业务、识曲、均衡器、交叉淡化和无缝播放尚未实现；部分账号音源若需要 signatureCipher / PoToken 会报告当前能力。Android 已增加媒体通知、锁屏控制与 mediaPlayback 前台服务，尚未用真机验证后台生命周期；iOS 原生后台服务尚未实现。
+表中除 Spotify 专项外的音乐功能属于 YouTube Music 工作区。曲库和收听数据保存在当前设备。登录后在线歌曲的喜欢与云端操作使用当前 YouTube Music 账号。私人音频上传、完整播客业务、识曲、均衡器、交叉淡化和无缝播放尚未实现；部分账号音源若需要 signatureCipher / PoToken 会报告当前能力。Android 已增加媒体通知、锁屏控制与 mediaPlayback 前台服务，尚未用真机验证后台生命周期；iOS 原生后台服务尚未实现。
 
 ## 选择运行方式
 
@@ -151,7 +164,7 @@ Windows 可在 PowerShell 中设置 `$env:STREAM_RESOLVER = 'yt-dlp'` 与 `$env:
 
 浏览器下载把真实音频写入当前站点的 IndexedDB；再次播放从本地 Blob 读取，也可以导出音频文件。应用资源由 service worker 缓存。文件仅在当前浏览器/站点中保存，清除站点数据会移除这些文件。
 
-桌面与 iOS 原生下载由 Rust Host 流式写入 NSH 应用数据目录，下载任务状态保存在应用 Storage 中。离线音频使用本机文件地址，不经 Node、HTTP 文件服务器或 JS 全量文件缓冲。下载页面可查看任务、重试和删除；音乐库导出仍是 JSON 数据备份。
+桌面与 iOS 原生下载由 Rust Host 流式写入 NSH 应用数据目录，下载任务状态保存在应用 Storage 中。离线记录保存本机文件地址；桌面直接读取，iOS 由应用内的 Rust loopback 媒体通道提供 GET、HEAD 和 Range 分段读取，无需 Node 或外部服务，也无需 JS 载入整个文件。下载页面可查看任务、重试和删除；音乐库导出仍是 JSON 数据备份。
 
 Android 下载和音频导入由 Java 流式写入应用私有目录，导入与另存使用系统文件选择器。浏览器文件保存在当前站点的 IndexedDB。JSON 备份包含曲库、收藏、歌单、搜索历史和收听记录，不包含音频文件本身。
 
@@ -167,7 +180,7 @@ Android 下载和音频导入由 Java 流式写入应用私有目录，导入与
 
 ## 从源码开发
 
-原生开发需要匹配的 **NSH 0.4.0 nightly `c5214aa`**、**Rust 1.99.1** 和对应系统编译依赖。工具链安装和辅助命令使用 **Python 3.11+** 与 curl。**Node.js 24** 仅用于可选 Web 构建、Node 业务测试与本地网站服务。Linux 构建库清单见 [Native First](docs/native-first.md)。
+原生开发需要匹配的 **NSH 0.5.0 `f4d68f7`**、**Rust 1.99.1** 和对应系统编译依赖。工具链安装和辅助命令使用 **Python 3.11+** 与 curl。**Node.js 24** 仅用于可选 Web 构建、Node 业务测试与本地网站服务。Linux 构建库清单见 [Native First](docs/native-first.md)。
 
 在源码目录安装固定版本的 CLI（Linux / macOS / Windows）；需要构建网页时增加 `--component web`：
 
@@ -176,7 +189,7 @@ python3 scripts/install-nsh.py
 python3 scripts/run-nsh.py --version
 ```
 
-Windows 将 `python3` 换成 `python`。工具链默认放在源码相邻的 `toolchain/`，项目脚本会自动使用它。安装器按 `scripts/nsh-toolchain.json` 检查固定摘要；上游 nightly 更新后，应恢复这份版本的归档或通过 `NSH_DOWNLOAD_BASE` 指向保留该版本的镜像。Android 构建另加 `--component android`。已有 CLI 可通过 `NSH_BIN` 指定；缓存目录可通过 `NSH_CACHE` 指定。
+Windows 将 `python3` 换成 `python`。工具链默认放在源码相邻的 `toolchain/`，项目脚本会自动使用它。安装器按 `scripts/nsh-toolchain.json` 检查固定摘要，优先使用 `nsh-runtime-f4d68f7` 工具链镜像；镜像尚无资产时从上游 `v0.5.0` 稳定发布获取同一归档。`NSH_DOWNLOAD_BASE` 可指定保留该版本的镜像。Android 构建另加 `--component android`。已有 CLI 可通过 `NSH_BIN` 指定；缓存目录可通过 `NSH_CACHE` 指定。
 
 原生开发脚本直接打开当前系统的 NSH 窗口，原生模块由 NSH 编译并链接：
 
@@ -204,9 +217,14 @@ npm run dev
 python3 scripts/run-nsh.py check
 python3 scripts/run-nsh.py build
 python3 scripts/run-nsh.py test --web-host tests/native-login/host.js
+SPOTISH_DEMO=1 python3 scripts/run-nsh.py test tests/spotify-native.test.tsx
 cargo test --manifest-path native/Cargo.toml
 # 可选 Node 测试还验证共享业务与 Web 服务
 node --test server/*.test.mjs
+# Spotify 浏览器桥的独立测试与生成源一致性
+node --check src/spotish/bridge/bridge.js
+node --test src/spotish/bridge/tests/*.test.mjs
+node src/spotish/bridge/gen-source.mjs --check
 ```
 
 NSH 无界面检查验证共享状态与交互；服务端测试验证目录解析、分页、歌词、音频格式选择、Range/HEAD/CORS、真实磁盘下载/取消/持久化。构建、协议测试、浏览器视觉检查和设备出声属于不同验证项。
@@ -234,7 +252,7 @@ python3 scripts/run-native.py android
 | 平台 | 最低要求/运行条件 | 当前设备验证 |
 | --- | --- | --- |
 | Web | 支持 WebAssembly、现代音频 API 与所选音频格式的浏览器 | Web 构建与发布后检查分别执行；具体部署版本以线上关于页和发布记录为准 |
-| Linux x86_64 | glibc 2.39、GTK 4.14+、WebKitGTK 6.0、GStreamer | 提供便携打包；构建容器缺 GTK/WebKitGTK，未启动原生窗口或验证出声 |
+| Linux x86_64 | glibc 2.39、GTK 4.14+、WebKitGTK 6.0、GStreamer | 本地已备齐 GTK / WebKitGTK 依赖；执行环境的显示与本地套接字限制使原生窗口截图和出声尚未验证，Linux CI 另执行启动与截图 |
 | Windows x86_64 | Windows 10 1809+ | 提供跨平台生成的便携包；未在 Windows 设备启动或验证出声 |
 | macOS | macOS 14+ | Apple Silicon / Intel 原生构建与便携打包；构建通过不等于已完成用户设备的播放验收 |
 | Android | Android 8 / API 26+；构建需 Android SDK、JDK 和 runtime | 0.5 使用真实 Java 编译、资源链接、DEX、Manifest、签名与 ZIP/ELF 16 KiB 对齐检查；没有真机登录/出声验证 |
@@ -244,7 +262,7 @@ python3 scripts/run-native.py android
 
 当前 runtime 的 Linux 倍速固定为 1×。Android 已接入原生后台媒体服务、MediaSession、锁屏和通知控制，实际设备后台持续运行仍待验证；iOS 需要对应平台专项实现。浏览器 MediaSession 已接入，但实际可用的系统控件取决于浏览器与操作系统。
 
-本次使用 `nsh 0.4.0 (c5214aa nightly)`。GitHub Actions 工作流覆盖 Android、Linux、Windows、macOS、iOS 和 Web；所有组件使用固定版本与下载摘要。`main` 的发行流程收集各平台工件并发布 GitHub Release；Android 与 Apple 的持久签名通过仓库 Secrets 配置。Site 的源码与发布使用其独立发布通道，详见发布说明。
+0.7 使用 `nsh 0.5.0 (f4d68f7)`；完整源码 revision 为 `f4d68f7f9f31eb7b3ecc8a4cbc31096d5c6238a1`。这一版本修复了多层弹出菜单在卸载时读取已释放响应式状态的问题。GitHub Actions 工作流覆盖 Android、Linux、Windows、macOS、iOS 和 Web；所有组件使用固定版本与下载摘要。`main` 的发行流程收集各平台工件并发布 GitHub Release；Android 与 Apple 的持久签名通过仓库 Secrets 配置。Site 的源码与发布使用其独立发布通道，详见发布说明。
 
 ## 打包与复现
 

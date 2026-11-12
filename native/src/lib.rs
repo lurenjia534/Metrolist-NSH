@@ -10,10 +10,13 @@ mod files;
 #[cfg(not(target_arch = "wasm32"))]
 mod media;
 
+pub mod spotish;
+
 /// The native services imported by the application's TSX.
 #[native_module("metrolist/native")]
 fn native(registry: &mut Registry) {
     registry.module::<NativeFiles>().module::<NativeMedia>();
+    spotish::register(registry);
 }
 
 /// A media transfer from an already resolved URL to the app's music directory.

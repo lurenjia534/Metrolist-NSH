@@ -34,7 +34,7 @@ def main() -> None:
     install(f"{system}-{arch}", toolchain)
     for component in dict.fromkeys(args.component):
         if component == "ios" and (system, arch) != ("macos", "arm64"):
-            raise RuntimeError("NSH c5214aa's iOS component requires an Apple Silicon Mac.")
+            raise RuntimeError(f"NSH {LOCK['version']}'s iOS component requires an Apple Silicon Mac.")
         install(component, toolchain)
     cli = toolchain / "nsh" / "bin" / ("nsh.exe" if system == "windows" else "nsh")
     version = subprocess.check_output([str(cli), "--version"], text=True).strip()

@@ -48,6 +48,7 @@ def copy_notices(destination):
     shutil.copytree(ROOT / 'docs', destination / 'docs', dirs_exist_ok=True)
     (destination / 'licenses').mkdir(exist_ok=True)
     shutil.copy2(TEMPLATES / 'NSH-LICENSE-APACHE.txt', destination / 'licenses/NSH-APACHE-2.0.txt')
+    shutil.copytree(ROOT / 'third-party', destination / 'licenses/third-party', dirs_exist_ok=True)
 
 
 def verify_native_package(app, target):
@@ -131,7 +132,7 @@ def package(target, output, arch):
         bundle = app / (APP['name'] + '.app')
         shutil.move(str(native_out / bundle.name), bundle)
     else:
-        # c5214aa omits window settings from its Linux and Windows app.json.
+        # Keep the portable package's window settings identical to the manifest.
         metadata = app / 'nsh/app.json'
         info = json.loads(metadata.read_text(encoding='utf-8'))
         info['window'] = APP['window']

@@ -42,7 +42,7 @@ def fetch_archive(target, toolchain):
         if result.returncode:
             raise RuntimeError(f'NSH archive download failed for {filename}: {result.stderr.strip()}')
         if digest(temporary) != item['sha256']:
-            raise RuntimeError(f'{filename} does not match NSH {LOCK["commit"]}; the fixed archive must be restored, not replaced with a newer nightly.')
+            raise RuntimeError(f'{filename} does not match NSH {LOCK["commit"]}; the fixed archive must be restored, not replaced with a different runtime.')
         temporary.replace(archive)
     if digest(archive) != item['sha256']:
         raise RuntimeError(f'Cached {archive.name} does not match NSH {LOCK["commit"]}.')

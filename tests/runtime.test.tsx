@@ -1,5 +1,6 @@
 import { expect, open, test } from "nsh/test";
 import type { App } from "nsh/test";
+import { mediaFile } from "./local-media/files";
 
 const online = { id: "video", title: "Video song", artist: "Online artist", album: "Album", artwork: "", duration: 60, source: "youtube" };
 const catalog = { ...online, id: "catalog", title: "Catalog song" };
@@ -132,8 +133,8 @@ test("automatic radio appends distinct recommendations and guests wait for the r
 
 test("native download failure retries into device-owned offline audio independently of the catalog service", async () => {
   let attempts = 0;
-  const saved = { name: "Video song.m4a", destination: "/music/video.m4a", url: "file:///music/video.m4a", bytes: 9437307 };
-  const app = await open("./runtime-fixture.tsx", { width: 1440, height: 940, platform: "linux", storage, network, host: { handlers: {
+  const saved = { name: "Video song.m4a", ...mediaFile("video.wav"), bytes: 9437307 };
+  const app = await open("../.nsh/local-media/runtime.tsx", { width: 1440, height: 940, platform: "linux", storage, network, host: { handlers: {
     "app.test.files.download": () => {
       if (++attempts === 1) throw new Error("Fixture stream failure");
       return saved;
@@ -198,9 +199,9 @@ test("blocked autoplay resumes the retained AudioPlayer and initializes lyrics a
 test("a failed native replacement preserves the previous offline file until a successful replacement is saved", async () => {
   let attempts = 0;
   const old = { id: "video", track: online, quality: "auto", status: "completed", progress: 1, bytes: 100,
-    destination: "/music/original.m4a", url: "file:///music/original.m4a", name: "Video song.m4a", createdAt: 1, updatedAt: 2 };
-  const saved = { name: "Video song.m4a", destination: "/music/replacement.m4a", url: "file:///music/replacement.m4a", bytes: 9437307 };
-  const app = await open("./runtime-fixture.tsx", { width: 1440, height: 940, platform: "linux", network, storage: {
+    ...mediaFile("original.wav"), name: "Video song.m4a", createdAt: 1, updatedAt: 2 };
+  const saved = { name: "Video song.m4a", ...mediaFile("copied.wav"), bytes: 9437307 };
+  const app = await open("../.nsh/local-media/runtime.tsx", { width: 1440, height: 940, platform: "linux", network, storage: {
     ...storage, "metrolist.downloads": JSON.stringify([old]),
   }, host: { handlers: {
     "app.test.files.download": () => {
