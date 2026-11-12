@@ -1,13 +1,14 @@
 import { batch, computed, host, openUrl, Picker, platform, setColorScheme, signal, Storage } from "nsh";
 import { mkdir, writeFile } from "fs/promises";
 import process from "process";
-import { pathToFileURL } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
+import { NativeFiles } from "metrolist/native";
 import seed from "../assets/catalog-seed.json";
 import * as api from "./api";
 import * as account from "./account";
 import * as player from "./playback";
 import { isTrack } from "./model";
-import type { AudioQuality, BrowseResponse, CatalogItem, Collection, DownloadJob, ExploreResponse, ExploreTab, HomeResponse, LibrarySnapshot, LibrarySort, ListenEvent, ListeningStatistics, Lyrics, Playlist, PlaylistEntry, PlaylistSort, SavedCollection, SearchType, Settings, StatsPeriod, Track } from "./model";
+import type { AudioQuality, BrowseResponse, CatalogItem, Collection, DownloadJob, ExploreResponse, ExploreTab, HomeResponse, LibrarySnapshot, LibrarySort, ListenEvent, ListeningStatistics, Lyrics, Playlist, PlaylistEntry, PlaylistSort, SavedCollection, SearchType, Settings, StatsPeriod, StreamInfo, Track } from "./model";
 
 const seedCatalog = seed as { tracks: Track[]; collections?: Collection[]; sections?: HomeResponse["sections"] };
 
@@ -26,7 +27,7 @@ export const librarySort = signal<LibrarySort>("recent");
 export const libraryDescending = signal(true);
 export const statsPeriod = signal<StatsPeriod>("month");
 export const settings = signal<Settings>({
-  theme: "dark", apiBase: platform.os === "web" || platform.os === "android" || platform.os === "ios" ? "" : "http://127.0.0.1:8787",
+  theme: "dark", apiBase: "", nativeFirst: true,
   audioQuality: "auto", autoRadio: true, pauseHistory: false, libraryView: "grid",
   lyricFontSize: "medium", lyricAlignment: "center", lyricsOffset: 0,
   volume: 0.7, rate: 1, shuffle: false, repeat: "off",
@@ -51,8 +52,6 @@ export const lyrics = signal<Lyrics | null>(null);
 export const lyricsLoading = signal(false);
 export const lyricsError = signal("");
 export const downloadJobs = signal<DownloadJob[]>([]);
-export const downloadAvailable = computed(() => platform.os === "web" || platform.os === "android" || !!settings().apiBase.trim());
-export const downloadSetupMessage = "当前直连模式可在线播放。下载前，请在“设置 → 连接 → 音乐服务”填写支持下载的服务地址。";
 export const downloading = computed(() => downloadJobs().filter((job) => ["queued", "resolving", "downloading"].includes(job.status)).map((job) => job.id));
 export const downloads = computed(() => downloadJobs().filter((job) => job.status === "completed").map((job): Track => ({ ...job.track, source: "audio", url: job.url })));
 export const likedTracks = computed(() => likedIds().map((id) => tracks().find((track) => track.id === id)).filter((track): track is Track => !!track));
@@ -72,6 +71,11 @@ let lyricRequest = 0;
 let suggestionRequest = 0;
 let exploreRequest = 0;
 const downloadRuns = new Map<string, AbortController>();
+const downloadTransfers = new Map<string, Promise<{ destination: string; url: string; bytes: number }>>();
+const downloadReplacements = new Map<string, { controller: AbortController; job: DownloadJob }>();
+const hostFiles = platform.os === "web" || platform.os === "android";
+const nativeDesktop = platform.os !== "web" && platform.desktop;
+const nativeDownloadsDirectory = `${process.dataDir}/downloads`;
 
 export function showError(reason: unknown) {
   error.set(reason instanceof Error ? reason.message : String(reason));
@@ -177,7 +181,7 @@ export async function initialize() {
   player.initPlayback({
     resolveStream: async (track, request) => {
       const downloaded = downloadJobs().find((job) => job.id === track.id && job.status === "completed"
-        && (settings().audioQuality === "auto" || job.quality === settings().audioQuality));
+        && (track.source === "audio" || settings().audioQuality === "auto" || job.quality === settings().audioQuality));
       if (downloaded?.url) return { ...await api.resolvePlayback({ ...track, source: "audio", url: downloaded.url }), quality: downloaded.quality };
       return api.resolvePlayback(track, settings().audioQuality, request);
     },
@@ -212,11 +216,27 @@ export async function initialize() {
     }
     if (savedSettings) {
       const restored = JSON.parse(savedSettings) as Record<string, unknown>;
+      // 0.5 desktop packages supplied this address themselves. 0.6 runs in-process.
+      if (nativeDesktop && !restored.nativeFirst && String(restored.apiBase).replace(/\/+$/, "") === "http://127.0.0.1:8787") restored.apiBase = "";
+      restored.nativeFirst = true;
       for (const key of Object.keys(restored)) if (!(key in settings())) delete restored[key];
       settings.update((value) => ({ ...value, ...restored }));
+      await saveSettings();
     }
     if (savedDownloads) downloadJobs.set((JSON.parse(savedDownloads) as DownloadJob[]).map((job) =>
-      (platform.os === "web" || platform.os === "android") && ["queued", "resolving", "downloading"].includes(job.status) ? { ...job, status: "cancelled" } : job));
+      ["queued", "resolving", "downloading"].includes(job.status) ? { ...job, status: "cancelled" } : job));
+    if (nativeDesktop) {
+      for (const job of downloadJobs()) {
+        if (job.status !== "completed" || !job.destination || !job.url?.startsWith("http://127.0.0.1:8787/api/offline")) continue;
+        try {
+          const saved = await NativeFiles.copyInto(job.destination, nativeDownloadsDirectory, job.name);
+          updateDownload(job.id, { ...saved, totalBytes: saved.bytes });
+        } catch (reason) {
+          updateDownload(job.id, { status: "failed", error: `旧版下载迁移失败：${reason instanceof Error ? reason.message : String(reason)}` });
+        }
+      }
+    }
+    if (savedDownloads) await saveDownloads();
     const preferences = settings();
     api.setApiOrigin(preferences.apiBase);
     setColorScheme(preferences.theme === "black" ? "dark" : preferences.theme);
@@ -231,7 +251,6 @@ export async function initialize() {
     await player.reconnectNativePlayback();
   } catch (reason) { showError(reason); }
   void loadHome();
-  if (platform.os !== "web" && platform.os !== "android") void refreshDownloads();
 }
 
 export function updateSettings(patch: Partial<Settings>) {
@@ -245,7 +264,7 @@ export function updateSettings(patch: Partial<Settings>) {
   if (patch.repeat !== undefined) player.repeat.set(patch.repeat);
   void saveSettings();
   if (patch.audioQuality !== undefined || patch.apiBase !== undefined) void player.reloadPlayback();
-  if (patch.apiBase !== undefined) { void loadHome(); void refreshDownloads(); }
+  if (patch.apiBase !== undefined) void loadHome();
 }
 
 export function addTracks(items: Track[], persist = true) {
@@ -579,7 +598,10 @@ export async function importFiles(): Promise<Track[]> {
   try {
     let imported: Track[];
     if ((platform.os === "web" || platform.os === "android")) imported = await host.call<Track[]>("files.import", { kind: "audio" }, { timeout: 0 });
-    else {
+    else if (nativeDesktop) {
+      const files = await NativeFiles.importAudio(`${process.dataDir}/music`);
+      imported = files.map((file, index) => ({ id: `local-${Date.now().toString(36)}-${index}`, title: file.name.replace(/\.[^.]+$/, ""), artist: "本地音乐", album: "", artwork: "", duration: 0, source: "audio", url: file.url }));
+    } else {
       const files = await Picker.pickFiles({ multiple: true, filters: [{ name: "音乐", extensions: ["mp3", "m4a", "aac", "wav", "ogg", "flac", "opus"] }] });
       const directory = `${process.dataDir}/music`;
       await mkdir(directory, { recursive: true });
@@ -658,101 +680,106 @@ function audioFilename(track: Track, mimeType = "") {
     : track.url?.match(/\.([a-z0-9]{2,4})(?:[?#]|$)/i)?.[1] || "mp3";
   return `${track.artist} - ${track.title}`.replace(/[\/\\:*?"<>|]/g, "_") + `.${extension}`;
 }
-async function waitForNativeDownload(id: string, controller: AbortController): Promise<DownloadJob | undefined> {
-  while (!controller.signal.aborted) {
-    const task = await api.fetchDownload(id);
-    if (controller.signal.aborted) return;
-    updateDownload(id, task);
-    if (task.status === "completed") return task;
-    if (task.status === "failed") throw new Error(task.error || "下载失败");
-    if (task.status === "cancelled") return;
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+async function nativeDownload(id: string, source: StreamInfo, name: string, controller: AbortController) {
+  const transfer = source.url.startsWith("file:")
+    ? NativeFiles.copyInto(fileURLToPath(source.url), nativeDownloadsDirectory, name)
+    : NativeFiles.download({ id, url: source.url, name, directory: nativeDownloadsDirectory, headers: source.headers || {} });
+  downloadTransfers.set(id, transfer);
+  const polling = setInterval(() => {
+    void Promise.resolve(NativeFiles.progress(id)).then(progress => {
+      if (progress && downloadRuns.get(id) === controller && !controller.signal.aborted
+          && downloadJobs().find(job => job.id === id)?.status === "downloading") updateDownload(id, progress);
+    });
+  }, 250);
+  try { return await transfer; }
+  finally {
+    clearInterval(polling);
+    if (downloadTransfers.get(id) === transfer) downloadTransfers.delete(id);
   }
 }
+
 export async function downloadTrack(track: Track, quality: AudioQuality = settings().audioQuality): Promise<string | undefined> {
-  if (!downloadAvailable()) throw new Error(downloadSetupMessage);
+  if (downloadRuns.has(track.id)) return;
+  const previous = downloadJobs().find(job => job.id === track.id && job.status === "completed");
   const controller = new AbortController();
   downloadRuns.set(track.id, controller);
+  if (previous) downloadReplacements.set(track.id, { controller, job: previous });
   const now = Date.now();
   const job: DownloadJob = { id: track.id, track, quality, status: "resolving", progress: 0, bytes: 0, name: audioFilename(track), createdAt: now, updatedAt: now };
   downloadJobs.update((items) => [job, ...items.filter((item) => item.id !== track.id)]);
   void saveDownloads();
   try {
-    let destination: string | undefined;
-    if ((platform.os === "web" || platform.os === "android")) {
-      const source = await api.resolvePlayback(track, quality);
-      if (controller.signal.aborted) return;
-      const name = audioFilename(track, source.mimeType);
-      updateDownload(track.id, { status: "downloading", name, totalBytes: source.contentLength });
-      const saved = await host.call<{ destination: string; url: string; bytes: number }>("files.download", { id: track.id, url: source.url, name, track }, { timeout: 0 });
-      if (controller.signal.aborted) return;
-      destination = saved.destination;
-      updateDownload(track.id, { status: "completed", progress: 1, bytes: saved.bytes, totalBytes: saved.bytes, destination, url: saved.url, error: undefined });
-    } else {
-      const started = await api.beginDownload(track, quality, job.name);
-      if (controller.signal.aborted) { await api.deleteDownload(track.id); return; }
-      updateDownload(track.id, started);
-      const saved = started.status === "completed" ? started : await waitForNativeDownload(track.id, controller);
-      if (!saved) return;
-      destination = saved.destination;
-    }
+    const source = await api.resolvePlayback(track, quality);
+    if (controller.signal.aborted) return;
+    const name = audioFilename(track, source.mimeType);
+    updateDownload(track.id, { status: "downloading", name, totalBytes: source.contentLength });
+    const saved = hostFiles
+      ? await host.call<{ destination: string; url: string; bytes: number }>("files.download", {
+        id: track.id, url: source.url, headers: source.headers || {}, name, track,
+      }, { timeout: 0 })
+      : await nativeDownload(track.id, source, name, controller);
+    if (controller.signal.aborted) return;
+    updateDownload(track.id, { status: "completed", progress: 1, bytes: saved.bytes, totalBytes: saved.bytes,
+      destination: saved.destination, url: saved.url, error: undefined });
     addLibraryTracks([track], false);
     await Promise.all([saveDownloads(), saveLibrary()]);
-    return destination;
+    if (!hostFiles && previous?.url?.startsWith("file:") && previous.destination !== saved.destination) await NativeFiles.remove(previous.destination!).catch(showError);
+    return saved.destination;
   } catch (reason) {
     if (controller.signal.aborted) return;
-    updateDownload(track.id, { status: "failed", error: reason instanceof Error ? reason.message : String(reason) });
+    const message = reason instanceof Error ? reason.message : String(reason);
+    updateDownload(track.id, previous ? { ...previous, error: `更新下载失败，已保留原音频：${message}` } : { status: "failed", error: message });
     await saveDownloads();
     showError(reason);
     throw reason;
-  } finally { if (downloadRuns.get(track.id) === controller) downloadRuns.delete(track.id); }
+  } finally {
+    if (downloadRuns.get(track.id) === controller) downloadRuns.delete(track.id);
+    if (downloadReplacements.get(track.id)?.controller === controller) downloadReplacements.delete(track.id);
+  }
 }
 export function retryDownload(id: string) {
   const job = downloadJobs().find((item) => item.id === id)!;
   return downloadTrack(job.track, job.quality);
 }
+async function stopDownload(id: string) {
+  const controller = downloadRuns.get(id);
+  controller?.abort();
+  if (hostFiles) await host.call("files.cancelDownload", { id });
+  else {
+    NativeFiles.cancel(id);
+    const transfer = downloadTransfers.get(id);
+    if (transfer) {
+      // Wait for the writer to close before retrying or removing the same track.
+      const saved = await transfer.catch(() => undefined);
+      if (saved) await NativeFiles.remove(saved.destination);
+    }
+  }
+  if (downloadRuns.get(id) === controller) downloadRuns.delete(id);
+}
 export async function cancelDownload(id: string) {
-  downloadRuns.get(id)?.abort();
-  if ((platform.os === "web" || platform.os === "android")) await host.call("files.cancelDownload", { id });
-  else await api.deleteDownload(id);
-  updateDownload(id, { status: "cancelled", error: undefined });
+  const previous = downloadReplacements.get(id)?.job;
+  await stopDownload(id);
+  updateDownload(id, previous ? { ...previous, error: undefined } : { status: "cancelled", error: undefined });
   await saveDownloads();
 }
 export async function removeDownload(id: string) {
   const job = downloadJobs().find((item) => item.id === id)!;
-  downloadRuns.get(id)?.abort();
-  if ((platform.os === "web" || platform.os === "android")) await host.call("files.removeDownload", { id, destination: job.destination });
-  else await api.deleteDownload(id);
+  const previous = downloadReplacements.get(id)?.job;
+  if (downloadRuns.has(id)) await stopDownload(id);
+  if (hostFiles) await host.call("files.removeDownload", { id, destination: job.destination });
+  else if (job.destination && job.url?.startsWith("file:")) await NativeFiles.remove(job.destination);
+  else if (previous?.destination && previous.url?.startsWith("file:")) await NativeFiles.remove(previous.destination);
   downloadJobs.update((items) => items.filter((item) => item.id !== id));
   await saveDownloads();
 }
 export async function exportDownloaded(id: string) {
   const job = downloadJobs().find((item) => item.id === id)!;
-  if ((platform.os === "web" || platform.os === "android")) await host.call("files.exportAudio", { id, name: job.name }, { timeout: 0 });
-  else {
-    const url = new URL(job.url!);
-    url.searchParams.set("attachment", "1");
-    await openUrl(url.href);
-  }
+  if (hostFiles) await host.call("files.exportAudio", { id, name: job.name }, { timeout: 0 });
+  else if (job.url?.startsWith("file:")) await NativeFiles.exportAudio(job.destination!, job.name);
+  else if (job.url) await openUrl(job.url);
 }
-export async function refreshDownloads() {
-  if (platform.os === "web" || platform.os === "android" || !downloadAvailable()) return;
-  try {
-    const result = await api.fetchDownloads();
-    downloadJobs.set(result.downloads);
-    addTracks(result.downloads.map((job) => job.track), false);
-    addLibraryTracks(result.downloads.filter((job) => job.status === "completed").map((job) => job.track), false);
-    for (const job of result.downloads) {
-      if (!["queued", "resolving", "downloading"].includes(job.status) || downloadRuns.has(job.id)) continue;
-      const controller = new AbortController();
-      downloadRuns.set(job.id, controller);
-      void waitForNativeDownload(job.id, controller).then(async (saved) => {
-        if (saved) { addLibraryTracks([saved.track], false); await Promise.all([saveDownloads(), saveLibrary()]); }
-      }).catch((reason) => {
-        updateDownload(job.id, { status: "failed", error: reason instanceof Error ? reason.message : String(reason) });
-        void saveDownloads(); showError(reason);
-      }).finally(() => { if (downloadRuns.get(job.id) === controller) downloadRuns.delete(job.id); });
-    }
-    await Promise.all([saveDownloads(), saveLibrary()]);
-  } catch (reason) { showError(reason); }
+
+export async function revealDownload(id: string) {
+  const job = downloadJobs().find(item => item.id === id)!;
+  await NativeFiles.reveal(job.destination!);
 }

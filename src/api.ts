@@ -1,7 +1,7 @@
 import { host, platform } from "nsh";
 import { api as nativeGateway } from "../server/index.mjs";
 import { currentCredentials, useAccountForBrowse } from "./account";
-import type { AudioQuality, BrowseResponse, DownloadJob, ExploreResponse, ExploreTab, HomeResponse, Lyrics, SearchResponse, SearchType, StreamInfo, Track } from "./model";
+import type { AudioQuality, BrowseResponse, ExploreResponse, ExploreTab, HomeResponse, Lyrics, SearchResponse, SearchType, StreamInfo, Track } from "./model";
 
 let origin = "";
 export interface SessionCredentials { cookie: string; visitorData?: string; dataSyncId?: string; authUser?: string }
@@ -104,11 +104,3 @@ export async function resolvePlayback(track: Track, quality: AudioQuality = "aut
 export async function resolveStream(track: Track, quality: AudioQuality = "auto", options: ResolveOptions = {}): Promise<string> {
   return (await resolvePlayback(track, quality, options)).url;
 }
-
-export const fetchDownloads = () => get<{ downloads: DownloadJob[] }>("download");
-export const fetchDownload = (id: string) => get<DownloadJob>("download", { id });
-export const beginDownload = (track: Track, quality: AudioQuality, name: string) => request<DownloadJob>(apiUrl("download"), {
-  method: "POST", headers: { "content-type": "application/json" },
-  body: JSON.stringify({ id: track.id, track, quality, container: "mp4", name, ...(track.source === "audio" ? { url: track.url } : {}) }),
-});
-export const deleteDownload = (id: string) => request<{ id: string; status: "cancelled" }>(apiUrl("download", { id }), { method: "DELETE" });

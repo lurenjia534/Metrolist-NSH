@@ -1,8 +1,9 @@
 {
   "name": "Metrolist",
   "id": "app.miku.metrolist",
-  "version": "0.5.1",
-  "build": 6,
+  "version": "0.6.0",
+  "build": 7,
+  "rust": "native",
   "appearance": "dark",
   "icon": "assets/icon.png",
   "theme": "theme.json",
@@ -58,6 +59,22 @@
   },
   "statusBar": {
     "foreground": "light"
+  },
+  "ios": {
+    "infoPlist": {
+      "NSAppTransportSecurity": {
+        "NSAllowsLocalNetworking": true,
+        "NSExceptionDomains": { "127.0.0.1": { "NSExceptionAllowsInsecureHTTPLoads": true } }
+      }
+    }
+  },
+  "macos": {
+    "infoPlist": {
+      "NSAppTransportSecurity": {
+        "NSAllowsLocalNetworking": true,
+        "NSExceptionDomains": { "127.0.0.1": { "NSExceptionAllowsInsecureHTTPLoads": true } }
+      }
+    }
   },
   "web": {
     "host": "web/host.js",

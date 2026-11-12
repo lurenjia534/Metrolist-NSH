@@ -1,4 +1,5 @@
 import { AudioPlayer, batch, computed, effect, host, platform, signal } from "nsh";
+import { NativeMedia } from "metrolist/native";
 import type { ListenEvent, RemotePlaybackState, RepeatMode, StreamInfo, Track } from "./model";
 
 export const queue = signal<Track[]>([]);
@@ -41,6 +42,7 @@ interface PlaybackOptions {
 let options: PlaybackOptions;
 type SourceControl = Pick<AudioPlayer, "play" | "pause" | "seek" | "dispose" | "volume" | "rate">;
 let player: SourceControl | undefined;
+let nativeMediaId: string | undefined;
 let loadId = 0;
 let playRequested = false;
 let sourceStarted = false;
@@ -226,6 +228,8 @@ function releaseSource(stopNative = false) {
     else player.pause();
   }
   player?.dispose();
+  if (nativeMediaId) NativeMedia.release(nativeMediaId);
+  nativeMediaId = undefined;
   player = undefined;
   sourceStarted = false;
   nativeState = "idle";
@@ -349,7 +353,14 @@ async function loadCurrent(startAt = 0, continueSession = false, refresh = false
       });
       return;
     }
-    const audio = new AudioPlayer(source.url, { volume: volume(), rate: rate() });
+    let playbackUrl = source.url;
+    if (platform.os !== "web" && source.headers && Object.keys(source.headers).length && /^https?:/.test(source.url)) {
+      const media = await NativeMedia.prepare(source.url, source.headers);
+      if (request !== loadId) { NativeMedia.release(media.id); return; }
+      nativeMediaId = media.id;
+      playbackUrl = media.url;
+    }
+    const audio = new AudioPlayer(playbackUrl, { volume: volume(), rate: rate() });
     player = audio;
     audio.on("load", (event) => {
       if (request === loadId && Number.isFinite(event.duration)) duration.set(event.duration);

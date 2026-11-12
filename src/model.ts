@@ -145,6 +145,7 @@ export interface RemotePlaybackState {
 export interface Settings {
   theme: "dark" | "light" | "black" | "system";
   apiBase: string;
+  nativeFirst: boolean;
   audioQuality: AudioQuality;
   autoRadio: boolean;
   pauseHistory: boolean;

@@ -1,14 +1,13 @@
 import { expect, open, test } from "nsh/test";
 
 const track = { id: "motion-track", title: "A long song title that must leave the playback controls reachable", artist: "An artist with a long display name", album: "Motion album", artwork: "", duration: 180, source: "youtube" };
-const storage = { "metrolist.settings": JSON.stringify({ autoRadio: false, apiBase: "http://127.0.0.1:8787" }) };
+const storage = { "metrolist.settings": JSON.stringify({ autoRadio: false, apiBase: "https://gateway.test" }) };
 const network = {
-  "GET http://127.0.0.1:8787/api/home": { body: { sections: [] } },
-  "GET http://127.0.0.1:8787/api/download": { body: { downloads: [] } },
-  "GET http://127.0.0.1:8787/api/suggestions?q=*": { body: { query: "Motion", suggestions: [] } },
-  "GET http://127.0.0.1:8787/api/search?q=Motion&type=all": { body: { query: "Motion", type: "all", items: [track] } },
-  "GET http://127.0.0.1:8787/api/stream?id=*": { body: { url: "https://audio.test/motion.m4a", mimeType: "audio/mp4", bitrate: 128000 } },
-  "GET http://127.0.0.1:8787/api/lyrics?*": { body: { plainLyrics: "A lyric line", syncedLyrics: "[00:00.00]A lyric line", lines: [{ time: 0, text: "A lyric line" }, { time: 30, text: "Another lyric line" }], instrumental: false } },
+  "GET https://gateway.test/api/home": { body: { sections: [] } },
+  "GET https://gateway.test/api/suggestions?q=*": { body: { query: "Motion", suggestions: [] } },
+  "GET https://gateway.test/api/search?q=Motion&type=all": { body: { query: "Motion", type: "all", items: [track] } },
+  "GET https://gateway.test/api/stream?id=*": { body: { url: "https://audio.test/motion.m4a", mimeType: "audio/mp4", bitrate: 128000 } },
+  "GET https://gateway.test/api/lyrics?*": { body: { plainLyrics: "A lyric line", syncedLyrics: "[00:00.00]A lyric line", lines: [{ time: 0, text: "A lyric line" }, { time: 30, text: "Another lyric line" }], instrumental: false } },
 };
 
 for (const reducedMotion of [false, true]) test(`360-point player commits one seek when the finger lifts, reduced motion ${reducedMotion}`, async () => {

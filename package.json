@@ -1,6 +1,6 @@
 {
   "name": "metrolist-nsh",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "license": "GPL-3.0-only",
@@ -11,6 +11,7 @@
     "check": "node scripts/run-nsh.mjs check",
     "test": "node scripts/run-nsh.mjs test --web-host tests/native-login/host.js",
     "web": "node scripts/run-nsh.mjs run --target web",
-    "linux": "node scripts/run-nsh.mjs run --target linux"
+    "native": "node scripts/run-native.mjs",
+    "linux": "node scripts/run-native.mjs linux"
   }
 }

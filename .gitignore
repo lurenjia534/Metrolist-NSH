@@ -1,6 +1,7 @@
 .nsh/
 dist/
 node_modules/
+target/
 *.log
 .env
 .env.*

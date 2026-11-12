@@ -15,6 +15,11 @@ on:
 permissions:
   contents: read
 
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  RUSTUP_TOOLCHAIN: "1.99.1"
+
 concurrency:
   group: metrolist-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -53,11 +58,16 @@ jobs:
           PY
 
   verify:
-    name: Shared application and gateway tests
+    name: Native application, Rust host and shared API tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.99.1"
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y clang llvm libclang-dev pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -65,16 +75,19 @@ jobs:
         with:
           python-version: '3.12'
       - name: Resolve the absolute toolchain cache path
-        run: python -c "import os; from pathlib import Path; Path(os.environ['GITHUB_ENV']).open('a').write('METROLIST_TOOLCHAIN=' + (Path.cwd().parent / 'toolchain').resolve().as_posix() + '\n')"
+        run: python -c "import os; from pathlib import Path; root = (Path.cwd().parent / 'toolchain').resolve(); Path(os.environ['GITHUB_ENV']).open('a').write('METROLIST_TOOLCHAIN=' + root.as_posix() + '\nCARGO_TARGET_DIR=' + (root / 'cargo-target').as_posix() + '\n')"
       - uses: actions/cache@v4
         with:
           path: |
             ${{ env.METROLIST_TOOLCHAIN }}/downloads
             ${{ env.METROLIST_TOOLCHAIN }}/nsh-cache
-          key: nsh-verify-${{ runner.os }}-${{ hashFiles('scripts/nsh-toolchain.json') }}
+            ${{ env.METROLIST_TOOLCHAIN }}/cargo-target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: nsh-verify-${{ runner.os }}-${{ hashFiles('scripts/nsh-toolchain.json', 'native/Cargo.toml', 'native/Cargo.lock') }}
       - run: python scripts/install-nsh.py
-      - run: npm run check
-      - run: npm test
+      - run: python scripts/run-nsh.py check
+      - run: python scripts/run-nsh.py test --web-host tests/native-login/host.js
       - run: node --test server/*.test.mjs
 
   toolchain:
@@ -90,7 +103,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Resolve the absolute toolchain cache path
-        run: python -c "import os; from pathlib import Path; Path(os.environ['GITHUB_ENV']).open('a').write('METROLIST_TOOLCHAIN=' + (Path.cwd().parent / 'toolchain').resolve().as_posix() + '\n')"
+        run: python -c "import os; from pathlib import Path; root = (Path.cwd().parent / 'toolchain').resolve(); Path(os.environ['GITHUB_ENV']).open('a').write('METROLIST_TOOLCHAIN=' + root.as_posix() + '\nCARGO_TARGET_DIR=' + (root / 'cargo-target').as_posix() + '\n')"
       - uses: actions/cache@v4
         with:
           path: ${{ env.METROLIST_TOOLCHAIN }}/downloads
@@ -120,17 +133,29 @@ jobs:
     needs: [config, verify, toolchain]
     if: needs.config.outputs.android_signing == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          node-version: '24'
+          toolchain: "1.99.1"
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y clang llvm libclang-dev pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+      - name: Select the installed Android NDK
+        run: |
+          python - <<'PYTHON'
+          import os
+          from pathlib import Path
+          versions = sorted((Path(os.environ["ANDROID_HOME"]) / "ndk").iterdir(), key=lambda p: tuple(map(int, p.name.split("."))))
+          with Path(os.environ["GITHUB_ENV"]).open("a") as out:
+              out.write("ANDROID_NDK_HOME=" + str(versions[-1]) + "\n")
+          PYTHON
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Resolve the absolute toolchain cache path
-        run: python -c "import os; from pathlib import Path; Path(os.environ['GITHUB_ENV']).open('a').write('METROLIST_TOOLCHAIN=' + (Path.cwd().parent / 'toolchain').resolve().as_posix() + '\n')"
+        run: python -c "import os; from pathlib import Path; root = (Path.cwd().parent / 'toolchain').resolve(); Path(os.environ['GITHUB_ENV']).open('a').write('METROLIST_TOOLCHAIN=' + root.as_posix() + '\nCARGO_TARGET_DIR=' + (root / 'cargo-target').as_posix() + '\n')"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -139,10 +164,13 @@ jobs:
         with:
           path: |
             ${{ env.METROLIST_TOOLCHAIN }}/downloads
+            ${{ env.METROLIST_TOOLCHAIN }}/cargo-target
+            ~/.cargo/registry
+            ~/.cargo/git
             ${{ env.METROLIST_TOOLCHAIN }}/android-sdk
             ${{ env.METROLIST_TOOLCHAIN }}/media3
             ${{ env.METROLIST_TOOLCHAIN }}/nsh-android-source
-          key: android-${{ runner.os }}-${{ hashFiles('scripts/nsh-toolchain.json', 'android/media3-dependencies.json', 'scripts/build-android.py') }}
+          key: android-${{ runner.os }}-${{ hashFiles('scripts/nsh-toolchain.json', 'android/media3-dependencies.json', 'scripts/build-android.py', 'native/Cargo.toml', 'native/Cargo.lock') }}
       - run: python scripts/install-nsh.py --component android
       - name: Build and verify both APKs with the existing preview identity
         env:
@@ -176,26 +204,44 @@ jobs:
             target: macos
             arch: x64
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          node-version: '24'
+          toolchain: "1.99.1"
+      - name: Install native Linux libraries and display
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang llvm libclang-dev pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-good gstreamer1.0-libav xvfb xauth x11-utils
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Resolve the absolute toolchain cache path
-        run: python -c "import os; from pathlib import Path; Path(os.environ['GITHUB_ENV']).open('a').write('METROLIST_TOOLCHAIN=' + (Path.cwd().parent / 'toolchain').resolve().as_posix() + '\n')"
+        run: python -c "import os; from pathlib import Path; root = (Path.cwd().parent / 'toolchain').resolve(); Path(os.environ['GITHUB_ENV']).open('a').write('METROLIST_TOOLCHAIN=' + root.as_posix() + '\nCARGO_TARGET_DIR=' + (root / 'cargo-target').as_posix() + '\n')"
       - uses: actions/cache@v4
         with:
           path: |
             ${{ env.METROLIST_TOOLCHAIN }}/downloads
-            ${{ env.METROLIST_TOOLCHAIN }}/node-downloads
-          key: desktop-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('scripts/nsh-toolchain.json', 'scripts/node-toolchain.json') }}
+            ${{ env.METROLIST_TOOLCHAIN }}/cargo-target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: desktop-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('scripts/nsh-toolchain.json', 'native/Cargo.toml', 'native/Cargo.lock') }}
       - run: python scripts/install-nsh.py
-      - name: Build app, bundled Node and gateway; smoke-test the packaged gateway
+      - name: Build the native app and verify its executable and package contents
         run: python scripts/package-portable.py ${{ matrix.target }} --arch ${{ matrix.arch }} --out dist/release
+      - name: Launch the Linux application under Xvfb
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python scripts/smoke-desktop.py linux --arch ${{ matrix.arch }}
+      - name: Launch the desktop application
+        if: runner.os != 'Linux'
+        run: python scripts/smoke-desktop.py ${{ matrix.target }} --arch ${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-smoke-${{ matrix.target }}-${{ matrix.arch }}
+          path: dist/smoke/
+          if-no-files-found: warn
+          overwrite: true
       - uses: actions/upload-artifact@v4
         with:
           name: dist-${{ matrix.target }}-${{ matrix.arch }}
@@ -207,21 +253,26 @@ jobs:
     name: iOS ARM64 simulator and device
     needs: [config, verify, toolchain]
     runs-on: macos-15
-    timeout-minutes: 35
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          node-version: '24'
+          toolchain: "1.99.1"
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Resolve the absolute toolchain cache path
-        run: python -c "import os; from pathlib import Path; Path(os.environ['GITHUB_ENV']).open('a').write('METROLIST_TOOLCHAIN=' + (Path.cwd().parent / 'toolchain').resolve().as_posix() + '\n')"
+        run: python -c "import os; from pathlib import Path; root = (Path.cwd().parent / 'toolchain').resolve(); Path(os.environ['GITHUB_ENV']).open('a').write('METROLIST_TOOLCHAIN=' + root.as_posix() + '\nCARGO_TARGET_DIR=' + (root / 'cargo-target').as_posix() + '\n')"
       - uses: actions/cache@v4
         with:
-          path: ${{ env.METROLIST_TOOLCHAIN }}/downloads
-          key: ios-arm64-${{ hashFiles('scripts/nsh-toolchain.json') }}
+          path: |
+            ${{ env.METROLIST_TOOLCHAIN }}/downloads
+            ${{ env.METROLIST_TOOLCHAIN }}/cargo-target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ios-arm64-${{ hashFiles('scripts/nsh-toolchain.json', 'native/Cargo.toml', 'native/Cargo.lock') }}
       - run: python scripts/install-nsh.py --component ios
       - name: Build simulator and explicitly unsigned device archives
         run: python scripts/build-ios.py
@@ -262,9 +313,15 @@ jobs:
     name: Web site distribution
     needs: [verify, toolchain]
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.99.1"
+          targets: wasm32-unknown-unknown
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y clang llvm libclang-dev pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -272,12 +329,28 @@ jobs:
         with:
           python-version: '3.12'
       - name: Resolve the absolute toolchain cache path
-        run: python -c "import os; from pathlib import Path; Path(os.environ['GITHUB_ENV']).open('a').write('METROLIST_TOOLCHAIN=' + (Path.cwd().parent / 'toolchain').resolve().as_posix() + '\n')"
+        run: python -c "import os; from pathlib import Path; root = (Path.cwd().parent / 'toolchain').resolve(); Path(os.environ['GITHUB_ENV']).open('a').write('METROLIST_TOOLCHAIN=' + root.as_posix() + '\nCARGO_TARGET_DIR=' + (root / 'cargo-target').as_posix() + '\n')"
       - uses: actions/cache@v4
         with:
-          path: ${{ env.METROLIST_TOOLCHAIN }}/downloads
-          key: nsh-web-${{ runner.os }}-${{ hashFiles('scripts/nsh-toolchain.json') }}
+          path: |
+            ${{ env.METROLIST_TOOLCHAIN }}/downloads
+            ${{ env.METROLIST_TOOLCHAIN }}/cargo-target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: nsh-web-${{ runner.os }}-${{ hashFiles('scripts/nsh-toolchain.json', 'native/Cargo.toml', 'native/Cargo.lock') }}
       - run: python scripts/install-nsh.py --component web
+      - name: Generate the application Rust workspace and dependency lock
+        run: python scripts/run-nsh.py build
+      - name: Install the wasm-bindgen CLI matching the application runtime
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+          import tomllib
+          lock = tomllib.loads(Path('.nsh/rust/Cargo.lock').read_text())
+          version = next(package['version'] for package in lock['package'] if package['name'] == 'wasm-bindgen')
+          subprocess.run(['cargo', 'install', 'wasm-bindgen-cli', '--version', version, '--locked'], check=True)
+          PY
       - run: npm run build
       - run: python scripts/package-portable.py web --out dist/release
       - uses: actions/upload-artifact@v4
