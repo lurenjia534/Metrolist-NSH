@@ -123,7 +123,7 @@ export function PlayerBar() {
 export function MiniPlayer() {
   return (
     <If when={hasTrack()}>
-      <View class="mx-2 mb-2 h-14 flex-row items-center gap-3 rounded-(--radius-card) border border-border bg-secondary px-2">
+      <View testID="mini-player" class="mx-2 mb-2 h-14 flex-row items-center gap-3 rounded-(--radius-card) border border-border bg-secondary px-2">
         <Button
           accessibilityLabel={`Open Now Playing: ${player().title}`}
           onPress={() => setNowPlayingOpen(true)}
@@ -135,7 +135,7 @@ export function MiniPlayer() {
             <Text class="line-clamp-1 text-xs text-muted-foreground">{player().ad ? "Advertisement" : player().artist}</Text>
           </View>
         </Button>
-        <PlayButton playing={player().playing} size={36} disabled={!ready()} onPress={toggle} />
+        <PlayButton playing={player().playing} size={44} disabled={!ready()} onPress={toggle} />
       </View>
     </If>
   );

@@ -36,6 +36,7 @@ test("340px native desktop keeps search, next and the light menu independently c
   await app.waitFor(`id:player >> text:${tracks[1].name}`);
   expect(app.shows("role:menuitemradio[Random]")).toBe(false);
   await app.press("id:player >> role:button[Light: Dots]");
+  await app.waitFor("role:menuitemradio[Random]");
   await app.press("role:menuitemradio[Random]");
   await app.waitFor(`id:player >> text:${tracks[1].name}`);
   expect(app.storage()["spotify:visual:effect"]).toBe("random");
@@ -51,6 +52,7 @@ test("340px native desktop retains login and navigation when its sidebar is fold
   await app.waitFor("id:page-home >> role:toolbar[Header] >> role:button[Log in]");
   await app.press("role:button[Collapse sidebar]");
   await app.press("role:button[Search]");
+  await app.waitFor("label:Search Spotify");
   await app.type("label:Search Spotify", "Kites");
   await app.waitFor("role:button[Kites, The Quiet Fields]");
   await app.press("id:page-search >> role:toolbar[Header] >> role:button[Log in]");

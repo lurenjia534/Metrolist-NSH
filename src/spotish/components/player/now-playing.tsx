@@ -1,3 +1,4 @@
+// Adapted for Metrolist NSH; see third-party/spotish/README.md.
 // Now Playing: the cover large, what plays and the full transport, in a
 // full-screen sheet over the app (Escape, back and the down chevron close it).
 // With the lyrics on, they take the cover's place (narrow) or the room
@@ -97,7 +98,7 @@ function NowPlayingContent() {
   );
 
   return (
-    <View class="flex-1 bg-sidebar pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+    <View testID="now-playing-content" class="flex-1 bg-sidebar pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
       {/* The music's light rises from the bottom of the page. */}
       <MusicLight effect={lightEffect()} colors={colors()} playing={player().playing} reach={windowSize().height * 0.45} />
       {/* The top row starts under the window controls (the band the
