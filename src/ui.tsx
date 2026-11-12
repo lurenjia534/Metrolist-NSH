@@ -34,10 +34,10 @@ export function Label(props: { children?: JSX.Element; size?: number; color?: st
   return <Text testID={props.testID} style={{ minWidth: 0, numberOfLines: props.lines, color: props.color || palette().text, fontSize: props.size || (narrow() ? 16 : 14), fontWeight: (props.weight || "400") as any, ...props.style }}>{props.children}</Text>;
 }
 export function Press(props: { children?: JSX.Element; label?: string; onPress: () => void; style?: ViewStyle; selected?: boolean; disabled?: boolean; testID?: string; onLongPress?: () => void }) {
-  return <Button testID={props.testID} accessibilityLabel={props.label} onPress={props.onPress} disabled={props.disabled}
+  return <View testID={props.testID} role="button" accessibilityLabel={props.label} accessibilityState={{ selected: !!props.selected, disabled: !!props.disabled }} onPress={props.onPress} onLongPress={props.onLongPress} disabled={props.disabled}
     style={{ minWidth: 0, borderRadius: 12, backgroundColor: props.selected ? palette().selected : "transparent", ...props.style }}
     hoverStyle={{ backgroundColor: props.selected ? palette().selected : palette().hover }} activeStyle={{ opacity: 0.7 }} disabledStyle={{ opacity: 0.4 }}
-    class="transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-primary motion-reduce:transition-none">{props.children}</Button>;
+    class="transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-primary motion-reduce:transition-none">{props.children}</View>;
 }
 export function Tool(props: { icon: string; label: string; onPress: () => void; active?: boolean; size?: number; large?: boolean; testID?: string; disabled?: boolean }) {
   return <Button testID={props.testID} accessibilityLabel={props.label} tooltip={narrow() ? undefined : props.label} onPress={props.onPress} disabled={props.disabled}

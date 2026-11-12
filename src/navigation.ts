@@ -1,6 +1,10 @@
 import { batch, computed, signal } from "nsh";
 import { createNavStack } from "nsh/base";
 import * as store from "./store";
+import * as playback from "./playback";
+import { fetchStream } from "./api";
+import * as together from "./together";
+import { parseMusicLink, type MusicLink } from "./musicLinks";
 import type { Collection, Track, SearchType } from "./model";
 
 export type Page = "home" | "search" | "library" | "liked" | "history" | "collection" | "playlist" | "downloads" | "stats" | "settings" | "browse" | "together" | "account";
@@ -65,9 +69,41 @@ export function navigate(next: Page, root = false) {
 export function goBack() { if (stack.routes().length > 1) { stack.pop(); activate(stack.routes().at(-1)!, true); } else navigate("home", true); }
 export function browse(item: Collection) { push({ page: "collection", collection: item }); void store.openCollection(item); }
 export function openPlaylist(id: string) { selectedPlaylist.set(id); push({ page: "playlist", playlistId: id }); }
+async function openMusicLink(link: MusicLink) {
+  if (link.type === "song") {
+    const known = store.tracks().find(item => item.id === link.id);
+    let track: Track = known || {
+      id: link.id, title: "YouTube Music", artist: "歌曲链接", album: "",
+      artwork: `https://i.ytimg.com/vi/${link.id}/hqdefault.jpg`, duration: 0, source: "youtube" as const,
+    };
+    if (together.isGuest()) {
+      if (!known) {
+        const metadata = await fetchStream(link.id, store.settings().audioQuality);
+        track = { ...track, title: metadata.title || track.title, artist: metadata.artist || track.artist,
+          artwork: metadata.artwork || track.artwork, duration: metadata.duration || track.duration };
+      }
+      await together.suggestTrack(track);
+    }
+    else {
+      await playback.playTrack(track);
+      if (link.startAt && playback.currentTrack()?.id === link.id) playback.seek(link.startAt);
+    }
+  } else {
+    const saved = store.savedCollections().find(item => item.browseId === link.browseId);
+    browse(saved || { id: link.id, browseId: link.browseId, type: link.type,
+      title: { album: "专辑", artist: "歌手", playlist: "歌单" }[link.type], subtitle: "YouTube Music", artwork: "" });
+  }
+}
 export function performSearch(value = searchText(), type = searchType()) {
-  if (!value.trim()) return;
+  value = value.trim();
+  if (!value) return;
   searchText.set(value); searchType.set(type);
+  const link = parseMusicLink(value);
+  if (link) {
+    store.saveSearchHistory(value);
+    void openMusicLink(link).catch(store.showError);
+    return;
+  }
   if (page() !== "search") push({ page: "search", query: value, searchType: type });
   else { const route = { ...current(), query: value, searchType: type }; current.set(route); stack.replace(route); }
   void store.search(value, type);

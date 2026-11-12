@@ -1,4 +1,4 @@
-import { View, Scroll, List, signal, computed, effect, createAnimatedValue, createMotion, windowSize, reduceMotion, colorScheme, type ListRef, type JSX } from "nsh";
+import { View, Scroll, List, Clipboard, signal, computed, effect, createAnimatedValue, createMotion, windowSize, reduceMotion, colorScheme, type ListRef, type JSX } from "nsh";
 import { Button, Dialog, Tab, Tabs } from "nsh/base";
 import * as s from "../store";
 import * as p from "../playback";
@@ -6,6 +6,7 @@ import * as nav from "../navigation";
 import * as together from "../together";
 import { Icon } from "../icons";
 import { SongMenu, TrackRow, shareTrack, songCommands } from "./Music";
+import { SleepTimerButton } from "./SleepTimer";
 import { Label, Tool, Pill, Art, Rail, Press, CommandMenu, Empty, palette as c, narrow, touch, action, say, time } from "../ui";
 import { motion, motionDuration, transition } from "../motion";
 import type { Track } from "../model";
@@ -119,6 +120,8 @@ function PlayButton(props: { small?: boolean }) {
 export function LyricsView() {
   const ref = signal<ListRef | undefined>();
   const follow = signal(true);
+  effect(() => { p.currentTrack()?.id; follow.set(true); });
+  const text = () => s.lyrics()?.plainLyrics || s.lyrics()?.lines.map(line => line.text).join("\n") || "";
   const offset = () => s.settings().lyricsOffset / 1000;
   const active = computed(() => {
     const lines = s.lyrics()?.lines || [];
@@ -129,6 +132,18 @@ export function LyricsView() {
   effect(() => { const index = active(); if (follow() && index >= 0) ref()?.scrollToIndex({ index, viewPosition: 0.4, animated: !reduceMotion() }); });
   const size = () => s.settings().lyricFontSize === "small" ? 23 : s.settings().lyricFontSize === "large" ? 36 : 29;
   return <View testID="lyrics-panel" style={{ flex: 1, gap: 8, minWidth: 0, minHeight: 0 }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, minWidth: 0, flexShrink: 0 }}>
+      <View style={{ flex: 1, minWidth: 0, gap: 4 }}><Label size={shortLandscape() ? 20 : 24} weight="600">歌词</Label><If when={!shortLandscape() && text()}><Label size={12} color={c().sub}>{s.lyrics()?.lines.length ? "逐行同步 · 点按歌词跳转" : "文本歌词"}</Label></If></View>
+      <CommandMenu testID="lyrics-options" label="歌词设置" icon="settings" items={[
+        { testID: "lyrics-copy", label: "复制歌词", icon: "share", disabled: !text(), run: () => void action(() => Clipboard.writeText(text()), "歌词已复制") },
+        ...([{ value: "small", label: "小号字" }, { value: "medium", label: "标准字号" }, { value: "large", label: "大号字" }] as const).map((item, index) => ({ testID: `lyrics-size-${item.value}`, label: item.label, active: s.settings().lyricFontSize === item.value, separator: index === 0, run: () => s.updateSettings({ lyricFontSize: item.value }) })),
+        { label: "居中对齐", active: s.settings().lyricAlignment === "center", separator: true, run: () => s.updateSettings({ lyricAlignment: "center" }) },
+        { label: "左侧对齐", active: s.settings().lyricAlignment === "left", run: () => s.updateSettings({ lyricAlignment: "left" }) },
+        { testID: "lyrics-reset-offset", label: "重置歌词偏移", icon: "refresh", disabled: s.settings().lyricsOffset === 0, separator: true, run: () => s.updateSettings({ lyricsOffset: 0 }) },
+        { label: "重新获取歌词", icon: "refresh", disabled: s.lyricsLoading(), run: () => void s.loadLyrics(p.currentTrack()!) },
+        { label: "睡眠定时器", icon: "moon", active: p.sleepActive(), separator: true, run: () => nav.dialog.set("sleep") },
+      ]} />
+    </View>
     <If when={s.lyricsLoading()}><Scroll style={{ flex: 1, minHeight: 0 }}><Empty icon="lyrics" title="正在获取歌词" description={p.currentTrack()?.title || ""} /></Scroll></If>
     <If when={s.lyricsError()}><Scroll style={{ flex: 1, minHeight: 0 }}><Empty icon="lyrics" title="歌词暂时无法加载" description={s.lyricsError()}><Pill label="重试" icon="refresh" onPress={() => p.currentTrack() && void s.loadLyrics(p.currentTrack()!)} /></Empty></Scroll></If>
     <If when={s.lyrics()?.lines.length} else={
@@ -145,11 +160,11 @@ export function LyricsView() {
       </List>
       <If when={!follow()}><View style={{ flexDirection: "row", justifyContent: "center", flexShrink: 0 }}><Pill label="回到当前歌词" icon="lyrics" onPress={() => follow.set(true)} /></View></If>
     </If>
-    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, flexShrink: 0 }}>
+    <If when={s.lyrics()?.lines.length}><View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, flexShrink: 0 }}>
       <Tool icon="left" label="歌词提前 100 毫秒" onPress={() => s.updateSettings({ lyricsOffset: s.settings().lyricsOffset - 100 })} />
       <Label size={11} color={c().faint}>{s.settings().lyricsOffset === 0 ? "歌词偏移" : `${s.settings().lyricsOffset} ms`}</Label>
       <Tool icon="right" label="歌词延后 100 毫秒" onPress={() => s.updateSettings({ lyricsOffset: s.settings().lyricsOffset + 100 })} />
-    </View>
+    </View></If>
   </View>;
 }
 
@@ -169,6 +184,7 @@ export function QueueView() {
         { label: "保存为歌单", icon: "plus", run: () => nav.addToPlaylist(p.queue()) },
         { label: "下载队列", icon: "download", run: () => { for (const track of p.queue()) void s.downloadTrack(track).catch(s.showError); say("已加入下载"); } },
         { label: "播放设置", icon: "settings", run: () => { nav.fullPlayer.set(false); nav.settingsSection.set("player"); nav.navigate("settings"); } },
+        { testID: "queue-sleep", label: "睡眠定时器", icon: "moon", active: p.sleepActive(), run: () => nav.dialog.set("sleep") },
         { testID: "queue-clear-upcoming", label: p.shuffle() ? "移除当前之后的歌曲" : "清空待播", icon: "queue", disabled: p.remoteControlled() || !upcoming().length, separator: true, run: () => { p.clearUpcoming(); say("已移除当前之后的歌曲，保留当前歌曲"); } },
         { label: "清空队列", icon: "trash", danger: true, disabled: p.remoteControlled(), run: p.clearQueue },
       ]} />
@@ -179,6 +195,7 @@ export function QueueView() {
         <If when={!p.shuffle() && index() === p.currentIndex() + 1}><Label color={c().faint} size={11} style={{ marginTop: 12, marginBottom: 5 }}>{nextLabel()}</Label></If>
         <TrackRow compact menu={false} active={index() === p.currentIndex()} track={track()} playLabel={`${index() === p.currentIndex() && (p.playing() || waitingToPlay()) ? "暂停" : "播放"} ${track().title}`} onPlay={() => { if (!p.remoteControlled()) void action(() => index() === p.currentIndex() ? p.togglePlay() : p.playAt(index())); }} trailing={
               <CommandMenu testID={`queue-song-menu-${index()}`} label={editing() ? "调整这首歌" : `队列操作 ${track().title}`} icon={editing() ? "sort" : "more"} items={[
+                { testID: `queue-next-${index()}`, label: "移到下一首", icon: "next", disabled: p.remoteControlled() || index() === p.currentIndex(), run: () => { p.moveQueueNext(index()); say("已移到下一首"); } },
                 { label: "上移", icon: "up", disabled: p.remoteControlled() || index() === 0, run: () => p.moveQueue(index(), index() - 1) },
                 { label: "下移", icon: "down", disabled: p.remoteControlled() || index() === p.queue().length - 1, run: () => p.moveQueue(index(), index() + 1) },
                 { label: "从队列移除", icon: "close", disabled: p.remoteControlled(), run: () => p.removeFromQueue(index()) },
@@ -220,7 +237,7 @@ function Transport(props: { onHeight: (height: number) => void }) {
     </View>
     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", minWidth: 0 }}>
       <Tool icon="shuffle" label="随机播放" active={p.shuffle()} disabled={p.remoteControlled()} onPress={p.toggleShuffle} />
-      <Tool icon="clock" label="睡眠定时器" active={!!p.sleepUntil()} onPress={() => nav.dialog.set("sleep")} />
+      <SleepTimerButton />
       <Tool icon={p.repeat() === "one" ? "repeatOne" : "repeat"} label={p.repeat() === "off" ? "开启列表循环" : p.repeat() === "all" ? "开启单曲循环" : "关闭循环"} active={p.repeat() !== "off"} disabled={p.remoteControlled()} onPress={p.cycleRepeat} />
     </View>
     <If when={p.remoteControlled()}><Label color={c().accent} size={12} style={{ textAlign: "center" }}>由主持人控制 · {together.room()?.roomCode}</Label></If>
