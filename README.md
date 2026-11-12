@@ -1,4 +1,4 @@
-# Metrolist NSH · 0.8.0
+# Metrolist NSH · 0.9.0
 
 使用 [Native Shell（nsh）](https://github.com/longbridge/nsh) 编写的 Metrolist 移植版。共享 TSX 界面、个人曲库、播放队列和纯音频播放器，面向现代浏览器、桌面系统与具备相应运行时的手机平台。
 
@@ -11,6 +11,14 @@
 **下载与发布：[GitHub Releases](https://github.com/lurenjia534/Metrolist-NSH/releases)**。发布流水线生成 Android、Linux、Windows、macOS、iOS 与 Web 工件，并提供版本、来源提交、构建信息和 SHA-256。平台包的具体名称与签名状态以该版本发布页为准。
 
 **Android 0.7 沿用 0.5 / 0.6 的 `app.miku.metrolist.preview` 和同一签名，应用名为 `Metrolist NSH Preview`。** 可覆盖升级并保留账号、曲库与下载；最低 Android 8 / API 26。0.4 使用的 `app.miku.metrolist.next` 与它是不同应用，可从旧版导出曲库再导入。正式 Android 发布使用持久签名；构建检查产生的测试签名文件不作为正式升级包。
+
+### 0.9：批量曲库操作、链接搜索与播放器细节
+
+音乐库、喜欢、历史与本机歌单加入长按多选、连续区间选择，以及批量播放、下一首、队列、收藏、下载与移除。选择在筛选和排序后继续保留；歌单里的重复歌曲按每次出现的位置独立处理。集合页增加排序方向、查询结果数量和清除筛选。
+
+搜索框可以直接播放 YouTube / YouTube Music 歌曲链接，读取分享起播时间，或打开专辑、歌手和歌单详情。历史与建议的箭头可单独填入搜索词；结果按类型分组，并可继续查看某一类型。空搜索页连接新发行、排行榜和心情与流派。
+
+播放器增加睡眠倒计时和“播完这首停止”，队列可把已有歌曲移到下一首；批量下一首操作在随机播放中也保持所选顺序。歌词页直接提供复制、字号、对齐、偏移重置与刷新，切歌后恢复自动跟随。本轮版本为 **0.9.0 / build 11**，实现对照与本轮检查状态见 [0.9 发布说明](docs/releases-0.9.0.md)。
 
 ### 0.8：Spotify 真实 Web 与手机播放器
 
@@ -66,13 +74,13 @@ Android 音频改为服务持有的 Media3 1.10.1 / ExoPlayer，使用 OkHttp、
 | Google / YouTube Music 账号 | Android 自动完成登录与 CookieManager；Web / 桌面高级会话导入；真实资料验证、头像、多账号、品牌频道切换、退出 |
 | 云端音乐库 | 喜欢、歌曲、专辑、订阅、歌单的完整分页同步；新建歌单/简介/可见性、重命名/删除、添加/精确移除/移动条目；按账号保存缓存 |
 | 首页与发现 | YouTube Music 在线首页、快速选歌、继续聆听、新发行、排行榜、心情与流派；冷启动使用 12 首真实目录记录构成的编辑精选 |
-| 搜索与详情 | 在线建议、设备搜索历史、全部/歌曲/专辑/艺人/歌单分类、分页、专辑/艺人/歌单详情、真实 browse endpoint |
-| 个人曲库 | 明确加入的歌曲、喜欢、收藏专辑、收藏艺人、个人歌单；查询、排序、列表/网格；在线浏览缓存与个人收藏分别保存 |
-| 歌单 | 创建、重命名、删除、导入、导出、添加/移除/移动曲目；重复歌曲按条目位置处理 |
-| 播放 | Android 使用服务持有的 Media3 / ExoPlayer，其他平台使用 NSH AudioPlayer；播放/暂停、上/下一首、进度、音量、倍速、随机、单曲/列表循环、睡眠计时、音质选择、歌曲电台与自动续播 |
-| 队列与歌词 | 添加到末尾、下一首播放、移动/删除/清空、恢复队列；LRCLIB 普通与同步歌词、点击跳转、字号/对齐/时间偏移设置 |
+| 搜索与详情 | 在线建议与独立填入、筛选搜索历史、YouTube 链接直接播放/详情、歌曲/歌手/专辑/歌单分组与筛选、分页、真实 browse endpoint |
+| 个人曲库 | 明确加入的歌曲、喜欢、收藏专辑、收藏艺人、个人歌单；查询、排序、列表/网格、长按多选/区间选择、批量播放/队列/收藏/下载/移除；在线浏览缓存与个人收藏分别保存 |
+| 歌单 | 创建、重命名、删除、导入、导出、添加/移除/移动曲目、批量操作、排序方向与查询；重复歌曲按条目位置选择、播放和移除 |
+| 播放 | Android 使用服务持有的 Media3 / ExoPlayer，其他平台使用 NSH AudioPlayer；播放/暂停、上/下一首、进度、音量、倍速、随机、单曲/列表循环、睡眠倒计时/播完当前歌曲停止、音质选择、歌曲电台与自动续播 |
+| 队列与歌词 | 批量追加/下一首播放、移到下一首、移动/删除/清空、恢复队列；LRCLIB 普通与同步歌词、点击跳转、复制、字号/对齐/时间偏移与切歌跟随 |
 | 下载与离线 | 真实任务状态、字节进度、取消、重试、删除、导出和已下载音频播放；桌面 / iOS Rust 流式下载、Android Java 流式下载与浏览器存储分别实现 |
-| 历史与统计 | 最近播放、真实收听事件与时长、7日/30日/365日/全部区间、歌曲/艺人排行、每日统计；可暂停记录及清除 |
+| 历史与统计 | 最近播放、选择移除历史、真实收听事件与时长、7日/30日/365日/全部区间、歌曲/艺人排行、每日统计；可暂停记录及清除 |
 | 一起听 | 原版 Metroserver 协议、创建/加入/审批、成员状态、主持人移交、点歌审批、播放与待播队列同步、自定义服务地址 |
 | 本地数据 | 音频文件、音频 URL、YouTube 曲目/歌单链接导入；曲库与歌单 JSON 导入导出；设备持久化 |
 | 外观与浏览器能力 | 深色、纯黑、浅色及跟随系统；响应式布局；Android MediaSession / 媒体通知 / 前台服务、浏览器 MediaSession 与应用资源缓存 |
@@ -311,11 +319,11 @@ Android 默认生成本地调试签名 APK。iOS 未指定签名时得到未签�
 
 | 路径 | 职责 |
 | --- | --- |
-| App.tsx、src/ui.tsx、src/navigation.ts | 响应式界面、共享控件、页面导航 |
+| App.tsx、src/ui.tsx、src/navigation.ts、src/musicLinks.ts | 响应式界面、共享控件、页面导航与音乐链接识别 |
 | src/store.ts、src/model.ts | 曲库、收藏、歌单、查询、下载状态、统计与持久化 |
 | src/playback.ts | Android 原生音频桥 / 其他平台 AudioPlayer、队列、播放事件、随机/循环、电台、睡眠、远端同步入口 |
 | android/MetrolistAudio.java、android/MetrolistMediaService.java | Android ExoPlayer、OkHttp、SimpleCache、媒体服务、系统控制与状态重接 |
-| src/motion.ts、src/components/Player.tsx、src/components/Toasts.tsx | NSH 原生过渡、拖动预览、歌词跟随、播放器与提示生命周期 |
+| src/motion.ts、src/components/Player.tsx、src/components/SleepTimer.tsx、src/components/Toasts.tsx | NSH 原生过渡、拖动预览、歌词跟随、睡眠计时、播放器与提示生命周期 |
 | src/together.ts | Metroserver Protobuf、房间、成员、审批、时钟与播放同步 |
 | src/api.ts | QuickJS 内直接调用共享音乐 API，以及可选的远程服务地址 |
 | native/ | NSH Rust 模块：流式下载、文件与同进程音频转发 |

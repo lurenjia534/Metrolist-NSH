@@ -85,6 +85,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
           key: nsh-verify-${{ runner.os }}-${{ hashFiles('scripts/nsh-toolchain.json', 'native/Cargo.toml', 'native/Cargo.lock') }}
+          restore-keys: nsh-verify-${{ runner.os }}-
       - run: python scripts/install-nsh.py
       - name: Verify the Spotify browser bridge and generated bundle source
         run: |
@@ -186,6 +187,7 @@ jobs:
             ${{ env.METROLIST_TOOLCHAIN }}/media3
             ${{ env.METROLIST_TOOLCHAIN }}/nsh-android-source
           key: android-${{ runner.os }}-${{ hashFiles('scripts/nsh-toolchain.json', 'android/media3-dependencies.json', 'scripts/build-android.py', 'native/Cargo.toml', 'native/Cargo.lock') }}
+          restore-keys: android-${{ runner.os }}-
       - run: python scripts/install-nsh.py --component android
       - name: Build and verify both APKs with the existing preview identity
         env:
@@ -241,6 +243,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
           key: desktop-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('scripts/nsh-toolchain.json', 'native/Cargo.toml', 'native/Cargo.lock') }}
+          restore-keys: desktop-${{ runner.os }}-${{ matrix.arch }}-
       - run: python scripts/install-nsh.py
       - name: Build the native app and verify its executable and package contents
         run: python scripts/package-portable.py ${{ matrix.target }} --arch ${{ matrix.arch }} --out dist/release
@@ -306,6 +309,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
           key: ios-arm64-${{ hashFiles('scripts/nsh-toolchain.json', 'native/Cargo.toml', 'native/Cargo.lock') }}
+          restore-keys: ios-arm64-
       - run: python scripts/install-nsh.py --component ios
       - name: Build simulator and explicitly unsigned device archives
         run: python scripts/build-ios.py
@@ -371,6 +375,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
           key: nsh-web-${{ runner.os }}-${{ hashFiles('scripts/nsh-toolchain.json', 'native/Cargo.toml', 'native/Cargo.lock') }}
+          restore-keys: nsh-web-${{ runner.os }}-
       - run: python scripts/install-nsh.py --component web
       - name: Generate the application Rust workspace and dependency lock
         run: python scripts/run-nsh.py build

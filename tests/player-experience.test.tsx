@@ -61,13 +61,16 @@ test("desktop lyrics settings change rendered font size and persist alignment, r
   await app.press("id:open-player"); await app.press("id:player-tab-lyrics");
   await app.waitFor("text:Second experience lyric");
   await app.press("id:lyrics-options"); await app.press("id:lyrics-size-large");
+  await app.waitUntil(() => settings(app).lyricFontSize === "large");
   expect(settings(app).lyricFontSize).toBe("large");
   expect(app.spanStyle("text:Second experience lyric")).toMatchObject({ fontSize: 36 });
   await app.press("id:lyrics-options"); await app.press("左侧对齐");
+  await app.waitUntil(() => settings(app).lyricAlignment === "left");
   expect(settings(app).lyricAlignment).toBe("left");
   await app.press("id:lyrics-options");
   expect(app.enabled("id:lyrics-reset-offset")).toBe(true);
   await app.press("id:lyrics-reset-offset");
+  await app.waitUntil(() => settings(app).lyricsOffset === 0);
   expect(settings(app).lyricsOffset).toBe(0);
   await app.press("id:lyrics-options"); await app.press("id:lyrics-copy");
   await app.waitUntil(() => app.clipboard() === lyrics.plainLyrics);

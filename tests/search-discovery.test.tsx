@@ -10,7 +10,6 @@ const storage = { "metrolist.settings": JSON.stringify({ apiBase: "https://gatew
 const network = {
   "GET https://gateway.test/api/home": { body: { sections: [] } },
   "GET https://gateway.test/api/lyrics?*": { body: { plainLyrics: "", syncedLyrics: "", lines: [], instrumental: true } },
-  "GET https://gateway.test/api/suggestions?q=*": { body: { suggestions: [] } },
   [`GET https://gateway.test/api/stream?id=${videoId}*`]: { body: { url: "https://audio.test/linked.m4a", title: song.title, artist: song.artist, duration: song.duration } },
 };
 
@@ -37,13 +36,21 @@ test("music links identify the actual playback or browse endpoint and preserve a
 });
 
 test("pasting a song link plays the real source and timestamp without searching or importing it", async () => {
-  const app = await open("../App.tsx", { width: 1440, height: 940, platform: "linux", storage, network });
-  await app.press("id:nav-search");
+  const app = await open("../App.tsx", { width: 340, height: 820, platform: "android", storage, network, host: { handlers: {
+    "app.audio.settings": null, "app.audio.snapshot": null, "app.audio.open": null, "app.audio.seek": null,
+    "auth.available": { available: true, method: "webview" },
+  } } });
+  await app.press("id:nav-mobile-search");
   const url = `https://youtu.be/${videoId}?t=1m2s`;
   await app.type("id:search-input", url); await app.waitFor("id:search-open-link");
   await app.press("id:search-open-link"); await app.waitFor("id:mini-player");
-  await app.waitUntil(() => app.audio().some(call => call.command === "seek" && call.position === 62));
-  expect(app.audio().filter(call => call.command === "open").map(call => call.src)).toEqual(["https://audio.test/linked.m4a"]);
+  await app.waitUntil(() => app.host.calls().some(call => call.name === "app.audio.seek" && (call.data as { position: number }).position === 62));
+  const opened = app.host.calls().filter(call => call.name === "app.audio.open");
+  expect(opened).toHaveLength(1);
+  expect(opened[0].data).toMatchObject({ url: "https://audio.test/linked.m4a", track: { id: videoId, title: song.title, artist: song.artist, duration: 180 } });
+  const requestId = (opened[0].data as { requestId: number }).requestId;
+  await app.host.send("audio.state", { requestId, state: "playing", playing: true, playWhenReady: true, buffering: false, position: 62, duration: 180, bufferedPosition: 100 });
+  expect(JSON.parse(app.storage()["metrolist.player"]).position).toBe(62);
   expect(app.requests().some(request => request.url.includes("/api/search") || request.url.includes("/api/suggestions"))).toBe(false);
   expect(JSON.parse(app.storage()["metrolist.library"]).libraryIds).toEqual([]);
   expect(JSON.parse(app.storage()["metrolist.library"]).searchHistory[0]).toBe(url);
@@ -80,6 +87,7 @@ test("history and suggestion fill actions edit the query, then grouped results d
   } });
   await app.press("id:nav-search"); await app.type("id:search-input", "Miku");
   await app.clock!.fastForward(200); await app.waitFor("id:search-suggestion-fill-0");
+  expect(app.requests().some(request => request.url === "https://gateway.test/api/suggestions?q=Miku")).toBe(true);
   expect(app.shows("id:search-history >> label:Other")).toBe(false);
   expect(app.count("label:填入搜索词 Miku live")).toBe(1);
   await app.press("id:search-history-fill-0");

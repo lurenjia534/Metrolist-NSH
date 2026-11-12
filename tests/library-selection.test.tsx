@@ -35,13 +35,14 @@ async function openPlaylist() {
 test("playlist selection survives filtering and sorting and removes only selected duplicate occurrences", async () => {
   const app = await openPlaylist();
   await app.press("id:collection-select");
-  await app.press("id:collection-row-2 >> label:选择 Alpha song");
+  await app.press("id:collection-row-2 >> id:play-track-selection-alpha");
   await app.type("id:song-collection-filter", "Beta");
   expect(app.texts()).toContain("4 首歌曲 · 12 分钟");
   expect(app.texts()).toContain("3 分钟 · 筛选外 1 首");
   await app.press("id:selection-all");
   await app.press("id:collection-clear-filter");
   await app.press("id:collection-sort"); await app.press("歌曲名称");
+  await app.waitFor("text:歌曲名称 ↑");
   expect(app.texts()).toContain("已选择 2 首");
   await app.press("id:selection-actions"); await app.press("id:selection-remove");
   await app.waitUntil(() => playlistIds(app).length === 2);
@@ -54,6 +55,7 @@ test("playlist selection survives filtering and sorting and removes only selecte
 test("batch play-next and add-to-playlist preserve displayed order and repeated songs", async () => {
   const app = await openPlaylist();
   await app.press("id:collection-sort"); await app.press("歌曲名称");
+  await app.waitFor("text:歌曲名称 ↑");
   await app.press("id:collection-select"); await app.press("id:selection-all");
   await app.press("id:selection-next");
   expect(queue(app).queue.map((track: { id: string }) => track.id)).toEqual([gamma.id, alpha.id, alpha.id, beta.id, gamma.id]);
@@ -63,8 +65,10 @@ test("batch play-next and add-to-playlist preserve displayed order and repeated 
   await app.press("id:app-dialog >> label:Saved selection");
   expect(playlistIds(app, target.id)).toEqual([alpha.id, alpha.id, beta.id, gamma.id]);
   await app.press("id:selection-actions"); await app.press("id:selection-clear");
+  await app.waitFor("text:已选择 0 首");
   expect(app.enabled("id:selection-next")).toBe(false);
   await app.press("id:selection-done");
+  await app.waitFor("id:song-selection", { state: "gone" });
   expect(app.shows("id:song-selection")).toBe(false);
 });
 
