@@ -28,6 +28,7 @@ import {
   volumeLevel,
 } from "../../state/player";
 import { ready } from "../../state/session";
+import { canSetVolume } from "../../state/engine";
 import { Digits } from "../ui/digits";
 import { BarSlider, Cover, focusRing, IconButton, PlayButton, terminal, TextLink } from "../ui/controls";
 import type { IconName } from "../ui/icons";
@@ -130,6 +131,7 @@ export function VolumeControl(props: { class?: string; collapsible?: boolean; qu
   const dragging = signal(false);
   const open = () => !props.collapsible || hovering() || dragging();
   return (
+    <If when={canSetVolume()} else={<Text class="text-xs text-muted-foreground">使用设备音量</Text>}>
     <View
       class={`group flex-row items-center ${props.class ?? ""}`}
       onMouseEnter={() => hovering.set(true)}
@@ -171,6 +173,7 @@ export function VolumeControl(props: { class?: string; collapsible?: boolean; qu
         </View>
       </If>
     </View>
+    </If>
   );
 }
 

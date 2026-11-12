@@ -4,7 +4,7 @@
 import { type Accessor, resource, type Resource } from "nsh";
 import { type CachedQuery, cachedQuery } from "./cache";
 import { type Collection, type Home, kindOf, type Library, type Lyrics, type Me } from "../backend/types";
-import { backend } from "../state/engine";
+import { backend, connectedBackend } from "../state/engine";
 import { cacheAccount, dataEpoch } from "../state/session";
 
 function scoped(key: () => string | null) {
@@ -18,7 +18,7 @@ function scoped(key: () => string | null) {
 
 /** The home page. */
 export function homeQuery(): CachedQuery<Home> {
-  return cachedQuery(scoped(() => "home"), () => backend.home());
+  return cachedQuery(scoped(() => connectedBackend && backend.signedIn() !== true ? null : "home"), () => backend.home());
 }
 
 /** A playlist, album, artist or Liked Songs by URI. */

@@ -9,6 +9,7 @@ import { CollectionPage } from "../pages/collection";
 import { HomePage } from "../pages/home";
 import { SearchPage } from "../pages/search";
 import { health, retry } from "../state/session";
+import { connectedBackend } from "../state/engine";
 
 function page(route: Route) {
   switch (route.name) {
@@ -36,7 +37,7 @@ export function MainStack(props: { class?: string }) {
   return (
     <View class={`min-h-0 flex-1 ${props.class ?? ""}`}>
       <If
-        when={health().status !== "failed"}
+        when={connectedBackend !== null || health().status !== "failed"}
         else={<ErrorState message="Spotify isn't available" detail={unavailableDetail()} onRetry={retry} />}
       >
         <NavStack state={nav} class="flex-1" testID="main">

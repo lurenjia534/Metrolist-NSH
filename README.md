@@ -1,4 +1,4 @@
-# Metrolist NSH · 0.7.1
+# Metrolist NSH · 0.8.0
 
 使用 [Native Shell（nsh）](https://github.com/longbridge/nsh) 编写的 Metrolist 移植版。共享 TSX 界面、个人曲库、播放队列和纯音频播放器，面向现代浏览器、桌面系统与具备相应运行时的手机平台。
 
@@ -12,9 +12,9 @@
 
 **Android 0.7 沿用 0.5 / 0.6 的 `app.miku.metrolist.preview` 和同一签名，应用名为 `Metrolist NSH Preview`。** 可覆盖升级并保留账号、曲库与下载；最低 Android 8 / API 26。0.4 使用的 `app.miku.metrolist.next` 与它是不同应用，可从旧版导出曲库再导入。正式 Android 发布使用持久签名；构建检查产生的测试签名文件不作为正式升级包。
 
-### 0.7：独立 Spotify 工作区
+### 0.8：Spotify 真实 Web 与手机播放器
 
-0.7.1 改善手机触摸操作：卡片播放按钮在手机布局中直接显示，迷你播放器播放键使用至少 44px 的触摸区域。此修复不会让演示后端获得真实 Spotify 音频；平台现状和后续接入要求见 [0.7.1 发布说明](docs/releases-0.7.1.md)。
+0.8 将 Web、Android、iOS 的默认演示后端替换为真实 Spotify 接入。Web 使用 Web Playback SDK 在当前浏览器出声；Android / iOS 使用官方 App Remote 控制本机 Spotify 应用。登录通过 OAuth PKCE，曲库和搜索使用真实 Web API。首次配置应用 Client ID 和回调地址，随后登录自己的 Spotify 账号。[0.8 发布说明](docs/releases-0.8.0.md)。
 
 从顶部选择 **Spotify** 即可进入独立界面：侧栏音乐库、首页推荐、搜索、专辑 / 艺人 / 歌单、曲目排序、悬浮播放器、全屏 Now Playing 和同步歌词均沿用 Spotish 的实现。播放器和全屏页共有 14 种音乐灯光效果，并支持每曲随机；按压层、图标变形、列表波浪入场、封面翻转、导航和歌词动画由 NSH 绘制。
 
@@ -22,7 +22,7 @@
 
 切换服务会暂停离开的播放器，返回时保留其队列和页面，由用户继续播放。YouTube 的一起听会在切换到 Spotify 时断开，避免远端房间随后启动另一套播放器。Spotify 的会话、缓存、灯光偏好和浏览器配置目录独立保存。
 
-**Web、Android、iOS 的 Spotify 工作区是明确标注的界面演示，使用虚构目录和模拟播放进度，不播放真实 Spotify 音乐。** 这些平台的 YouTube Music 功能仍按其原有链路运行。演示不是 Spotify 远程控制；桌面遥控尚未实现。
+**Web、Android、iOS 正常启动均使用真实播放器后端。** 未配置或未登录时显示连接页面，不加载虚构目录。Web 播放需要 Spotify Premium；原生手机需要安装 Spotify，并在 Spotify Developer Dashboard 登记应用标识、回调及 Android 签名。演示后端仅保留给显式选择的测试与动画压力场景。平台接入步骤与实际验收记录见 [Spotify 说明](docs/spotify.md)。
 
 ### 0.6：Native First
 
@@ -62,7 +62,7 @@ Android 音频改为服务持有的 Media3 1.10.1 / ExoPlayer，使用 OkHttp、
 
 | 范围 | 已实现的业务路径 |
 | --- | --- |
-| Spotify 独立工作区 | 桌面 Rust / CDP 浏览器播放、账号登录、首页、音乐库、搜索、专辑 / 艺人 / 歌单、收藏、同步歌词、原生播放器与 14 种音乐灯光；Web / Android / iOS 为明确标注的界面演示 |
+| Spotify 独立工作区 | 桌面 Rust / CDP 浏览器播放、账号登录、首页、音乐库、搜索、专辑 / 艺人 / 歌单、收藏、同步歌词、原生播放器与 14 种音乐灯光；Web Playback SDK、Android / iOS App Remote 真实后端与 OAuth PKCE |
 | Google / YouTube Music 账号 | Android 自动完成登录与 CookieManager；Web / 桌面高级会话导入；真实资料验证、头像、多账号、品牌频道切换、退出 |
 | 云端音乐库 | 喜欢、歌曲、专辑、订阅、歌单的完整分页同步；新建歌单/简介/可见性、重命名/删除、添加/精确移除/移动条目；按账号保存缓存 |
 | 首页与发现 | YouTube Music 在线首页、快速选歌、继续聆听、新发行、排行榜、心情与流派；冷启动使用 12 首真实目录记录构成的编辑精选 |
@@ -219,7 +219,7 @@ npm run dev
 python3 scripts/run-nsh.py check
 python3 scripts/run-nsh.py build
 python3 scripts/run-nsh.py test --web-host tests/native-login/host.js
-SPOTISH_DEMO=1 python3 scripts/run-nsh.py test tests/spotify-native.test.tsx
+SPOTISH_DEMO=1 python3 scripts/run-nsh.py test tests/spotify-native.test.tsx --web-host tests/native-login/host.js
 cargo test --manifest-path native/Cargo.toml
 # 可选 Node 测试还验证共享业务与 Web 服务
 node --test server/*.test.mjs

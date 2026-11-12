@@ -1,5 +1,6 @@
 // Runs the real Rust Spotify/watch/Callback path on recorded data, without
-// Chromium or a Spotify account: SPOTISH_DEMO=1 nsh test tests/spotify-native.test.tsx
+// Chromium or a Spotify account:
+// SPOTISH_DEMO=1 python3 scripts/run-nsh.py test tests/spotify-native.test.tsx --web-host tests/native-login/host.js
 import process from "process";
 import { expect, open, test as plainTest } from "nsh/test";
 

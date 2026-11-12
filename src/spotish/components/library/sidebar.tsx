@@ -11,7 +11,8 @@ import { currentRoute, type Route, switchTo } from "../../nav";
 import { NSH_URL, openExternal, openPremium, REPO_URL, SPONSOR_URL, SPOTIFY_URL } from "../../state/links";
 import { setAboutOpen, setDrawerOpen } from "../../state/overlays";
 import { isCurrentContext, isPlayingContext, player } from "../../state/player";
-import { signedIn, signIn, signOut } from "../../state/session";
+import { openConnection, signedIn, signIn, signOut } from "../../state/session";
+import { connectedBackend } from "../../state/engine";
 import { ActionButton, Cover, focusRing, Hint, IconButton, keyRing, LAYER, menuItem, popupSurface, Pressable, terminal } from "../ui/controls";
 import { createListGroup, createListKeys, KEYS_VIEWABILITY, type ListGroup, type ListKeys } from "../ui/list-keys";
 import { ErrorState, LibrarySkeleton, Reveal } from "../ui/feedback";
@@ -359,7 +360,7 @@ function MenuEntries(props: { name: string; image: string }) {
           <Cover src={props.image} size={32} round fallback="user" />
           <View class="min-w-0 flex-1">
             <Text class="line-clamp-1 text-sm font-semibold text-popover-foreground">{props.name}</Text>
-            <Text class="text-xs text-muted-foreground">{premium() ? "Spotify Premium" : "Spotify Free"}</Text>
+            <Text class="text-xs text-muted-foreground">{premium() ? "Spotify Premium" : player().premium === false ? "Spotify Free" : "Spotify"}</Text>
           </View>
           {/* Log out belongs to the account, so it sits on the account's
               row; an item still, for the menu's keys. It asks first. */}
@@ -378,6 +379,9 @@ function MenuEntries(props: { name: string; image: string }) {
         <Entry icon="crown" label="Premium" external onSelect={openPremium} />
       </If>
       <Entry icon="music" label="Spotify" external onSelect={() => openExternal(SPOTIFY_URL)} />
+      <If when={connectedBackend !== null}>
+        <Entry icon="code" label="连接设置" onSelect={openConnection} />
+      </If>
       <Separator />
       <Entry icon="info" label="About…" onSelect={() => setAboutOpen(true)} />
       <Entry icon="github" label="GitHub" external onSelect={() => openExternal(REPO_URL)} />

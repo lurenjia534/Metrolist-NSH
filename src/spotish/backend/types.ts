@@ -1,6 +1,6 @@
 // The one contract between the UI and whatever plays the music: the native
-// engine (`EngineBackend`, desktops and the terminal) or the demo
-// (`DemoBackend`, the web, phones and tests). Pages never see either; they go
+// engine on desktop, the official player on web/phones, or an explicitly
+// selected test fixture. Pages go
 // through the stores in `src/state`, which hold one `Backend`.
 
 import type { Accessor } from "nsh";
@@ -13,8 +13,8 @@ export type RepeatMode = "off" | "context" | "track";
 /** Where the session is. */
 export type HealthStatus = "starting" | "ready" | "signingIn" | "failed";
 
-/** A failure the backend reports: a stable `code` to branch on, a `message`
- * for logs (never shown to the user as it is). */
+/** A failure the backend reports: a stable `code` and the actual service or
+ * player explanation, shown when the user needs it to fix the connection. */
 export interface BackendError {
   code: string;
   message: string;
@@ -112,6 +112,8 @@ export interface Track {
   durationMs: number;
   explicit: boolean;
   playable: boolean;
+  /** Its original index in the provider's queue, including non-music items. */
+  contextIndex?: number;
   /** When it was added to the playlist (ISO 8601); empty or absent where
    * that is not known (albums, search results). */
   addedAt?: string;
@@ -210,7 +212,7 @@ export function lineAt(lyrics: Lyrics, ms: number): number {
  * (`errorOf` parses it). */
 export interface Backend {
   /** Which implementation this is. */
-  readonly kind: "engine" | "demo";
+  readonly kind: "engine" | "host" | "demo";
 
   // State, reactive.
   readonly player: Accessor<PlayerState>;

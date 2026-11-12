@@ -4,6 +4,7 @@
 pub mod audio;
 pub mod exports;
 pub mod media;
+pub mod mobile;
 pub mod spotify;
 pub mod theme;
 pub mod version;
@@ -16,6 +17,7 @@ use nsh_core::prelude::*;
 pub(crate) fn register(registry: &mut Registry) {
     registry
         .class::<exports::Spotify>()
+        .class::<mobile::SpotifyMobile>()
         .class::<media::MediaControls>()
         .class::<theme::SystemTheme>()
         .class::<audio::AudioMeter>()

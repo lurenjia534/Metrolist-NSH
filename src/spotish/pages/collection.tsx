@@ -4,7 +4,7 @@
 // list and scroll position.
 
 import { effect, List, type ListRef, reduceMotion, Text, untracked, View } from "nsh";
-import type { Collection } from "../backend/types";
+import { errorOf, type Collection } from "../backend/types";
 import { AppPage } from "../components/page";
 import { layout, pageEnd, playerOverlap, wideTracks } from "../components/layout";
 import { CardGrid } from "../components/library/cards";
@@ -248,6 +248,7 @@ export function CollectionPage(props: { uri: string }) {
         <If when={query.error()} else={<CollectionSkeleton phone={layout() !== "desktop"} />}>
           <ErrorState
             message="This page didn't load."
+            detail={errorOf(query.error()).message}
             onRetry={query.refetch}
           />
         </If>

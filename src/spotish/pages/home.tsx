@@ -10,6 +10,10 @@ import { createListWave, enter, waveDelay } from "../components/ui/motion";
 import { createListGroup, KEYS_VIEWABILITY } from "../components/ui/list-keys";
 import { currentRoute, rootOpens } from "../nav";
 import { AppPage } from "../components/page";
+import { connectedBackend } from "../state/engine";
+import { signedIn } from "../state/session";
+import { SpotifyConnectionPage } from "./connect";
+import { errorOf } from "../backend/types";
 
 /** The greeting. It rises in only when made with `entrance` (the page
  * opening): made again as the list's header, it just shows. */
@@ -29,13 +33,14 @@ export function HomePage() {
       {/* Virtualized both ways: the sections down the page are a list, and
           each section's cards a list across, so only what is near the view
           exists. */}
+      <If when={connectedBackend !== null && signedIn() !== true} else={
       <Reveal
         data={home.data()}
         placeholder={
           <View class={terminal ? "gap-1" : `gap-8 px-3 ${pageEnd()}`}>
             <Greeting text="Home" entrance />
             <If when={home.error()} else={<CardsSkeleton />}>
-              <ErrorState message="Home didn't load." onRetry={home.refetch} />
+              <ErrorState message="Home didn't load." detail={errorOf(home.error()).message} onRetry={home.refetch} />
             </If>
           </View>
         }
@@ -88,6 +93,7 @@ export function HomePage() {
           );
         }}
       </Reveal>
+      }><SpotifyConnectionPage /></If>
     </AppPage>
   );
 }

@@ -148,16 +148,16 @@ def runtime_sources(toolchain: Path, nsh: Path) -> tuple[Path, Path]:
     return source, runtime
 
 
-def media3_dependencies(toolchain: Path) -> tuple[list[Path], list[Path]]:
+def java_dependencies(toolchain: Path, name: str) -> tuple[list[Path], list[Path]]:
     """Use the pinned official Maven artifacts; no Gradle/Maven is needed to rebuild."""
-    manifest = json.loads((PROJECT / "android" / "media3-dependencies.json").read_text())
+    manifest = json.loads((PROJECT / "android" / f"{name}-dependencies.json").read_text())
     jars, aars = [], []
     for item in manifest["artifacts"]:
-        artifact = download(item["url"], toolchain / "media3" / item["file"], item["sha256"])
+        artifact = download(item["url"], toolchain / name / item["file"], item["sha256"])
         if artifact.suffix == ".jar":
             jars.append(artifact)
         else:
-            directory = toolchain / "media3" / artifact.stem
+            directory = toolchain / name / artifact.stem
             if not (directory / "classes.jar").exists():
                 extract_zip(artifact, directory)
             jars.append(directory / "classes.jar")
@@ -166,8 +166,16 @@ def media3_dependencies(toolchain: Path) -> tuple[list[Path], list[Path]]:
     return jars, aars
 
 
+def media3_dependencies(toolchain: Path) -> tuple[list[Path], list[Path]]:
+    return java_dependencies(toolchain, "media3")
+
+
+def spotify_dependencies(toolchain: Path) -> tuple[list[Path], list[Path]]:
+    return java_dependencies(toolchain, "spotify")
+
+
 def build_host(source: Path, runtime: Path, sdk: Path, tools: Path, java: str, work: Path,
-               jars: list[Path], generated: Path) -> Path:
+               jars: list[Path], generated: Path, *, copy_libraries: bool = True) -> Path:
     prepared = work / "source"
     classes = work / "classes"
     shutil.rmtree(prepared, ignore_errors=True)
@@ -179,9 +187,13 @@ def build_host(source: Path, runtime: Path, sdk: Path, tools: Path, java: str, w
     text = activity.read_text()
     text = text.replace("private NshView view;", "private NshView view;\n    private MetrolistHost metrolist;")
     text = text.replace("view.useStandaloneLimits();", "view.useStandaloneLimits();\n        metrolist = new MetrolistHost(this, view);")
+    text = text.replace("if (state == null) view.handleUrlSchemeIntent(getIntent());", "if (!metrolist.onNewIntent(getIntent()) && state == null) view.handleUrlSchemeIntent(getIntent());")
+    text = text.replace("        super.onNewIntent(intent);", "        super.onNewIntent(intent);\n        if (metrolist.onNewIntent(intent)) return;")
     text = text.replace("if (view == null || !view.handleBack()) super.onBackPressed();", "if (view == null || !view.handleBack()) moveTaskToBack(true);")
     text = text.replace("        view.destroy();", "        metrolist.close();\n        view.destroy();")
     text = text.replace("    @Override\n    protected void onDestroy()", "    @Override\n    protected void onActivityResult(int request, int result, android.content.Intent data) {\n        if (!metrolist.onActivityResult(request, result, data)) super.onActivityResult(request, result, data);\n    }\n\n    @Override\n    protected void onDestroy()")
+    text = text.replace("    @Override\n    protected void onDestroy()", "    @Override\n    protected void onStart() {\n        super.onStart();\n        metrolist.onStart();\n    }\n\n    @Override\n    protected void onStop() {\n        metrolist.onStop();\n        super.onStop();\n    }\n\n    @Override\n    protected void onDestroy()")
+    text = text.replace("    @Override\n    protected void onDestroy()", "    @Override\n    protected void onResume() {\n        super.onResume();\n        metrolist.onResume();\n    }\n\n    @Override\n    protected void onDestroy()")
     activity.write_text(text)
     classes.mkdir(parents=True)
     android_jar = sdk / "platforms" / f"android-{ANDROID_API}" / "android.jar"
@@ -197,7 +209,8 @@ def build_host(source: Path, runtime: Path, sdk: Path, tools: Path, java: str, w
     for previous in release.glob("classes*.dex"):
         previous.unlink()
     run(java, "-cp", tools / "lib" / "d8.jar", "com.android.tools.r8.D8", "--release", "--min-api", "26", "--lib", android_jar, "--output", release, jar, *jars)
-    shutil.copytree(runtime / "lib", release / "lib", dirs_exist_ok=True)
+    if copy_libraries:
+        shutil.copytree(runtime / "lib", release / "lib", dirs_exist_ok=True)
     return overlay
 
 
@@ -278,6 +291,8 @@ def media_manifest(apk: Path, work: Path, metadata: dict, sdk: Path, tools: Path
         for dex in sorted((overlay / "android" / "release").glob("classes*.dex")):
             output.write(dex, dex.name, compress_type=zipfile.ZIP_DEFLATED)
         output.write(PROJECT / "android" / "THIRD_PARTY_NOTICES.md", "assets/legal/THIRD_PARTY_NOTICES.md", compress_type=zipfile.ZIP_DEFLATED)
+        output.write(PROJECT / "android" / "spotify-sdk-LICENSE.txt", "assets/legal/spotify-android/LICENSE.txt", compress_type=zipfile.ZIP_DEFLATED)
+        output.write(PROJECT / "android" / "spotify-sdk-NOTICE.txt", "assets/legal/spotify-android/NOTICE.txt", compress_type=zipfile.ZIP_DEFLATED)
         output.write(PROJECT / "scripts" / "portable" / "NSH-LICENSE-APACHE.txt", "assets/legal/Apache-2.0.txt", compress_type=zipfile.ZIP_DEFLATED)
         output.write(PROJECT / "COPYING", "assets/legal/GPL-3.0.txt", compress_type=zipfile.ZIP_DEFLATED)
         output.write(PROJECT / "NOTICE.md", "assets/legal/NOTICE.md", compress_type=zipfile.ZIP_DEFLATED)
@@ -314,6 +329,9 @@ def main() -> None:
     tools = sdk_tools(toolchain, sdk)
     source, runtime = runtime_sources(toolchain, nsh)
     jars, aars = media3_dependencies(toolchain)
+    spotify_jars, spotify_aars = spotify_dependencies(toolchain)
+    jars.extend(spotify_jars)
+    aars.extend(spotify_aars)
     revision = source_revision()
     work = PROJECT / ".nsh" / "android-build"
     keystore, password = signing(toolchain, args, java)

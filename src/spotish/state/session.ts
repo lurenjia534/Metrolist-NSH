@@ -7,7 +7,7 @@
 import { effect, signal, Storage, untracked } from "nsh";
 import { clearAccount, hydrate } from "../data/cache";
 import { resetNav } from "../nav";
-import { backend } from "./engine";
+import { backend, connectedBackend } from "./engine";
 import { notify, report } from "./feedback";
 import { closeOverlays } from "./overlays";
 
@@ -18,6 +18,8 @@ const SIGNED_OUT = "signed-out";
 
 const account = signal<string | null>(null);
 const epoch = signal(0);
+export const connectionOpen = signal(false);
+export function openConnection(): void { connectionOpen.set(true); }
 
 void hydrate();
 Storage.getItem(LAST_ACCOUNT)
@@ -89,6 +91,10 @@ export const dataEpoch = () => epoch();
 
 /** Opens Spotify's login. */
 export function signIn(): void {
+  if (connectedBackend && !connectedBackend.configuration().configured) {
+    openConnection();
+    return;
+  }
   backend.signIn().catch((error) => report("signInFailed", error));
 }
 

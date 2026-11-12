@@ -24,7 +24,7 @@ if __name__ == '__main__':
             (fixtures / f'{name}.tsx').write_text(f'import {json.dumps("../../" + source)};\n')
         # A complete app's assets must stay inside its bundle root. Copy its
         # source and resources unchanged for the full-shell local-file case.
-        for directory in ('src', 'assets', 'server'):
+        for directory in ('src', 'assets', 'server', 'web'):
             shutil.rmtree(fixtures / directory, ignore_errors=True)
             shutil.copytree(ROOT / directory, fixtures / directory)
         for filename in ('theme.json', 'package.json'):
