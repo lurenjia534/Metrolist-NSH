@@ -54,10 +54,15 @@ function SelectionActions(props: {
   const allLiked = () => props.tracks.every(track => s.isLiked(track.id));
   const setLikes = () => {
     const liked = !allLiked();
-    for (const track of new Map(props.tracks.map(track => [track.id, track])).values()) {
-      if (s.isLiked(track.id) !== liked) s.toggleLike(track);
-    }
-    say(liked ? "已喜欢所选歌曲" : "已取消喜欢所选歌曲");
+    const tracks = [...new Map(props.tracks.map(track => [track.id, track])).values()];
+    void action(async () => {
+      for (const track of tracks) {
+        if (s.isLiked(track.id) === liked) continue;
+        if (account.signedIn() && track.source === "youtube") await account.setLike(track.id, liked);
+        else s.toggleLike(track);
+      }
+      props.onClear();
+    }, liked ? "已喜欢所选歌曲" : "已取消喜欢所选歌曲");
   };
   return <View testID="song-selection" style={{ gap: 8, padding: 12, borderRadius: 18, backgroundColor: c().selected }}>
     <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
@@ -92,8 +97,9 @@ export function LibraryPage() {
 }
 function DeviceLibrary() {
   const selection = createSelection(() => s.filteredTracks().map(track => track.id));
-  const selectedRows = computed(() => s.sortTracks(s.libraryTracks(), s.librarySort(), s.libraryDescending()).filter(track => selection.keys().includes(track.id)));
-  const selectedVisible = () => s.filteredTracks().filter(track => selection.keys().includes(track.id)).length;
+  const sortedRows = computed(() => s.sortTracks(s.libraryTracks(), s.librarySort(), s.libraryDescending()));
+  const selectedRows = computed(() => { const selected = new Set(selection.keys()); return sortedRows().filter(track => selected.has(track.id)); });
+  const selectedVisible = () => { const selected = new Set(selection.keys()); return s.filteredTracks().filter(track => selected.has(track.id)).length; };
   const beginSelection = () => { nav.libraryTab.set("songs"); selection.begin(); };
   const extendSelection = (id: string) => { nav.libraryTab.set("songs"); selection.extend(id); };
   const grid = () => s.settings().libraryView === "grid";
@@ -148,19 +154,24 @@ export function SongCollectionPage(props: { kind: "liked" | "history" | "playlis
   const key = (entry: { track: Track; index: number }) => props.kind === "playlist" ? String(entry.index) : entry.track.id;
   const selection = createSelection(() => entries().map(key));
   const tracks = computed(() => entries().map(entry => entry.track));
-  const selectedEntries = computed(() => allEntries().filter(entry => selection.keys().includes(key(entry))));
+  const selectedEntries = computed(() => { const selected = new Set(selection.keys()); return allEntries().filter(entry => selected.has(key(entry))); });
   const selectedRows = computed(() => selectedEntries().map(entry => entry.track));
-  const selectedVisible = () => entries().filter(entry => selection.keys().includes(key(entry))).length;
+  const selectedVisible = () => { const selected = new Set(selection.keys()); return entries().filter(entry => selected.has(key(entry))).length; };
   const beginSelection = () => { editing.set(false); selection.begin(); };
   const extendSelection = (entry: { track: Track; index: number }) => { editing.set(false); selection.extend(key(entry)); };
   const removeLabel = () => props.kind === "playlist" ? "从歌单移除" : props.kind === "history" ? "从播放历史移除" : "取消喜欢";
-  const removeSelected = () => {
+  const removeSelected = () => void action(async () => {
     if (props.kind === "playlist") s.removePlaylistEntries(nav.selectedPlaylist(), selectedEntries().map(entry => entry.index));
     else if (props.kind === "history") s.removeHistory(selectedRows().map(track => track.id));
-    else for (const track of selectedRows()) if (s.isLiked(track.id)) s.toggleLike(track);
+    else {
+      const tracks = [...new Map(selectedRows().map(track => [track.id, track])).values()];
+      for (const track of tracks) {
+        if (account.signedIn() && track.source === "youtube") await account.setLike(track.id, false);
+        else if (s.isLiked(track.id)) s.toggleLike(track);
+      }
+    }
     selection.clear();
-    say(props.kind === "liked" ? "已取消喜欢所选歌曲" : "已移除所选歌曲");
-  };
+  }, props.kind === "liked" ? "已取消喜欢所选歌曲" : "已移除所选歌曲");
   const sortingNames = () => props.kind === "playlist" ? playlistSortNames : {
     ...playlistSortNames, custom: props.kind === "history" ? "最近播放" : "最近喜欢",
   };

@@ -1,5 +1,5 @@
 import { expect, open, test } from "nsh/test";
-import type { App } from "nsh/test";
+import type { App, StubRequest } from "nsh/test";
 
 const alpha = { id: "selection-alpha", title: "Alpha song", artist: "Selection artist", album: "Selection album", artwork: "", duration: 180, source: "youtube" };
 const beta = { ...alpha, id: "selection-beta", title: "Beta song", duration: 120 };
@@ -96,4 +96,46 @@ test("long press selects a contiguous displayed range without starting playback"
   await app.press("id:selection-actions"); await app.press("id:selection-remove");
   await app.waitUntil(() => playlistIds(app).length === 1);
   expect(playlistIds(app)).toEqual([alpha.id]);
+});
+
+test("cloud batch likes and unlikes complete sequentially without duplicate requests or resurrected songs", async () => {
+  let liked: typeof alpha[] = [];
+  const requests: string[] = [];
+  const profile = { id: "0:selection-fixture", name: "Selection account", channelId: "selection-channel", verifiedAt: 1 };
+  const cloud = { profile, credentials: { cookie: "SAPISID=fixture-selection", authUser: "0", dataSyncId: "selection-fixture" },
+    library: { playlists: [], liked: [], songs: [], albums: [], artists: [] }, lastSynced: 0 };
+  const app = await open("../App.tsx", { width: 1440, height: 1100, platform: "linux", storage: {
+    ...storage, "metrolist.accounts": JSON.stringify({ accounts: [cloud], activeId: profile.id, syncEnabled: false, useAccountForBrowse: true }),
+  }, network: {
+    ...network,
+    "GET https://gateway.test/api/account": { body: profile },
+    "POST https://gateway.test/api/account/like": (request: StubRequest) => {
+      const input = JSON.parse(request.body!);
+      requests.push(`POST:${input.id}:${input.liked}`);
+      const track = [alpha, beta, gamma].find(item => item.id === input.id)!;
+      liked = input.liked ? [track, ...liked.filter(item => item.id !== input.id)] : liked.filter(item => item.id !== input.id);
+      return { delay: 50, body: { ok: true } };
+    },
+    "GET https://gateway.test/api/account/library?type=liked*": () => {
+      requests.push("GET:liked");
+      return { delay: 50, body: { type: "liked", items: [...liked] } };
+    },
+  } });
+  const savedCloud = () => JSON.parse(app.storage()["metrolist.accounts"]).accounts[0].library.liked;
+  await app.press("id:nav-library"); await app.press("id:library-playlists");
+  await app.press("id:page-library >> label:Selection playlist"); await app.waitFor("id:page-playlist");
+  await app.press("id:collection-select"); await app.press("id:selection-all");
+  await app.press("id:selection-actions"); await app.press("id:selection-like");
+  await app.waitUntil(() => savedCloud().length === 3);
+  await app.waitFor("已喜欢所选歌曲");
+  expect(requests).toEqual([alpha.id, beta.id, gamma.id].flatMap(id => [`POST:${id}:true`, "GET:liked"]));
+  expect(liked.map(track => track.id).sort()).toEqual([alpha.id, beta.id, gamma.id]);
+  await app.press("id:nav-liked"); await app.waitFor("id:page-liked");
+  await app.press("id:collection-select"); await app.press("id:selection-all");
+  await app.press("id:selection-actions"); await app.press("id:selection-remove");
+  await app.waitFor("已取消喜欢所选歌曲");
+  expect(savedCloud()).toEqual([]);
+  expect(liked).toEqual([]);
+  expect(requests.slice(6)).toEqual([gamma.id, beta.id, alpha.id].flatMap(id => [`POST:${id}:false`, "GET:liked"]));
+  expect(saved(app).libraryIds).toEqual(snapshot.libraryIds);
 });
