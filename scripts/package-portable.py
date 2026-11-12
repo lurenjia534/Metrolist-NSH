@@ -14,7 +14,7 @@ from nsh_path import NSH, NSH_ENV
 
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES = ROOT / 'scripts/portable'
-APP = json.loads((ROOT / 'nsh.json').read_text())
+APP = json.loads((ROOT / 'nsh.json').read_text(encoding='utf-8'))
 VERSION = APP['version']
 NSH_LOCK = json.loads((ROOT / 'scripts/nsh-toolchain.json').read_text())
 
@@ -68,9 +68,11 @@ def verify_native_package(app, target):
         raise RuntimeError(f'{executable} is not a native {target} executable')
     if not (resources / 'bundle.nshc').stat().st_size:
         raise RuntimeError('The packaged NSH application bundle is empty')
-    metadata = json.loads((resources / 'app.json').read_text())
+    metadata = json.loads((resources / 'app.json').read_text(encoding='utf-8'))
     if metadata['id'] != APP['id'] or metadata['version'] != VERSION:
         raise RuntimeError('Packaged NSH metadata differs from nsh.json')
+    if metadata.get('window') != APP['window']:
+        raise RuntimeError('Packaged window metadata differs from nsh.json')
     obsolete = [path.relative_to(app).as_posix() for path in app.rglob('*')
                 if path.name in ('node', 'node.exe', 'gateway', 'MetrolistLauncher', 'Launcher.cs', 'portable.json')]
     if obsolete:
@@ -128,6 +130,12 @@ def package(target, output, arch):
         app.mkdir(parents=True)
         bundle = app / (APP['name'] + '.app')
         shutil.move(str(native_out / bundle.name), bundle)
+    else:
+        # c5214aa omits window settings from its Linux and Windows app.json.
+        metadata = app / 'nsh/app.json'
+        info = json.loads(metadata.read_text(encoding='utf-8'))
+        info['window'] = APP['window']
+        metadata.write_text(json.dumps(info, ensure_ascii=False) + '\n', encoding='utf-8')
     copy_notices(app)
     shutil.copy2(ROOT / 'native/Cargo.lock', app / 'licenses/MetrolistNative-Cargo.lock')
     shutil.copy2(ROOT / '.nsh/rust/Cargo.lock', app / 'licenses/NativeRuntime-Cargo.lock')
