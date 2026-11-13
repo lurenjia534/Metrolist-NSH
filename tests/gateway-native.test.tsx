@@ -31,7 +31,8 @@ test("NSH native dispatcher imports the shared account code and computes real SH
   const requests = app.requests();
   expect(requests).toHaveLength(1);
   expect(requests[0].url).toBe("https://music.youtube.com/youtubei/v1/account/account_menu?prettyPrint=false");
-  expect(header(requests[0], "Cookie")).toBe("SAPISID=fixture-native-A");
+  // The account's cookie with a PREF carrying the request's language and region (InnertubeX).
+  expect(header(requests[0], "Cookie")).toBe("SAPISID=fixture-native-A; PREF=hl=zh-CN&gl=US");
   expect(header(requests[0], "Authorization")).toBe("SAPISIDHASH 1700000000_93a26163874abe823fbcc69c37b6e10403e851e2");
   expect(header(requests[0], "X-Goog-AuthUser")).toBe("0");
   expect(JSON.parse(requests[0].body!).context).toMatchObject({

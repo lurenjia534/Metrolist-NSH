@@ -3,6 +3,8 @@ import type { App } from "nsh/test";
 import { mediaFile } from "./local-media/files";
 
 const directNetwork = {
+  // The session's visitor, bootstrapped once as InnertubeX does, then the home page.
+  "GET https://www.youtube.com/sw.js_data": { body: ")]}'\n" + JSON.stringify([["yt.sw.adr", null, [[[...Array(13).fill(null), "fixture-session-visitor"]]]]]) },
   "POST https://music.youtube.com/youtubei/v1/browse?prettyPrint=false": { body: {} },
 };
 const read = (app: App) => JSON.parse(app.texts().find(text => text.startsWith("downloads:"))!.slice(10));
@@ -11,8 +13,8 @@ for (const platform of ["linux", "windows", "macos"] as const) {
   test(`${platform} starts with the native dispatcher and no localhost music service`, async () => {
     const app = await open("./runtime-fixture.tsx", { platform, network: directNetwork,
       storage: { "metrolist.settings": JSON.stringify({ autoRadio: false }) } });
-    await app.waitUntil(() => app.requests().length > 0);
-    expect(app.requests().map(request => request.url)).toEqual(["https://music.youtube.com/youtubei/v1/browse?prettyPrint=false"]);
+    await app.waitUntil(() => app.requests().length > 1);
+    expect(app.requests().map(request => request.url)).toEqual(["https://www.youtube.com/sw.js_data", "https://music.youtube.com/youtubei/v1/browse?prettyPrint=false"]);
     expect(JSON.parse(app.storage()["metrolist.settings"])).toMatchObject({ apiBase: "", nativeFirst: true });
   });
 }

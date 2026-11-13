@@ -1,6 +1,6 @@
 // Google / YouTube Music account APIs, following Metrolist and InnertubeX.
 // SPDX-License-Identifier: GPL-3.0-only
-import { ApiError, innertube, find, text, artwork, items, continuation } from './catalog.mjs';
+import { ApiError, innertube, find, text, artwork, items, continuation, acceptLanguage, freshVisitorData, WEB_USER_AGENT } from './catalog.mjs';
 import { normalizeAccount, authenticationHeaders, sapisid } from './auth.mjs';
 
 const ACCOUNT_ORIGIN = 'https://music.youtube.com';
@@ -21,15 +21,19 @@ function pageConfig(html, key) {
 
 export async function completeAccountSession(input, options = {}) {
   const account = requireAccount(normalizeAccount(input));
-  if (account.visitorData) return account;
+  if (account.visitorData && account.dataSyncId) return account;
   const url = new URL(ACCOUNT_ORIGIN);
   url.searchParams.set('authuser', account.authUser);
+  // A bare user agent gets YouTube Music's "browser not supported" page,
+  // which carries neither the visitor nor the data sync id.
   const response = await (options.fetch || fetch)(url, { headers: {
-    'User-Agent': 'Mozilla/5.0', ...await authenticationHeaders(account),
+    'User-Agent': WEB_USER_AGENT, Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': acceptLanguage(options.hl, options.gl), ...await authenticationHeaders(account),
   } });
   if (!response.ok) throw new ApiError(`YouTube Music 登录页面返回 HTTP ${response.status}`, response.status);
   const html = await response.text();
-  return { ...account, visitorData: pageConfig(html, 'VISITOR_DATA'),
+  return { ...account,
+    visitorData: account.visitorData || pageConfig(html, 'VISITOR_DATA') || await freshVisitorData(options) || '',
     dataSyncId: account.dataSyncId || pageConfig(html, 'DATASYNC_ID').split('||')[0] };
 }
 

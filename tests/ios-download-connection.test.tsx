@@ -4,6 +4,7 @@ test("fresh iOS starts directly and its download center does not require a music
   const app = await open("../App.tsx", { width: 390, height: 844, platform: "ios", storage: {
     "metrolist.settings": JSON.stringify({ autoRadio: false }),
   }, network: {
+    "GET https://www.youtube.com/sw.js_data": { body: ")]}'\n" + JSON.stringify([["yt.sw.adr", null, [[[...Array(13).fill(null), "fixture-session-visitor"]]]]]) },
     "POST https://music.youtube.com/youtubei/v1/browse?prettyPrint=false": { body: {
       contents: { singleColumnBrowseResultsRenderer: { tabs: [{ tabRenderer: { content: { sectionListRenderer: { contents: [
         { musicCarouselShelfRenderer: {
@@ -19,7 +20,7 @@ test("fresh iOS starts directly and its download center does not require a music
   await app.waitFor("id:song-menu-ios-startup-song");
   expect(app.shows("id:app-error")).toBe(false);
   expect(app.shows("id:toast")).toBe(false);
-  expect(app.requests().map(request => request.url)).toEqual(["https://music.youtube.com/youtubei/v1/browse?prettyPrint=false"]);
+  expect(app.requests().map(request => request.url)).toEqual(["https://www.youtube.com/sw.js_data", "https://music.youtube.com/youtubei/v1/browse?prettyPrint=false"]);
   await app.press("id:home-downloads"); await app.waitFor("id:page-downloads");
   expect(app.texts()).toContain("没有下载任务");
   expect(app.shows("id:download-connection-needed")).toBe(false);

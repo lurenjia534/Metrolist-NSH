@@ -40,6 +40,116 @@ export function rememberAnonymousVisitor(visitorData, options = {}) {
   return context;
 }
 
+// InnertubeX keeps one visitor for the whole session and sends it with every
+// request, signed in or not; it bootstraps it from the service worker's data
+// (www.youtube.com/sw.js_data), else from the YouTube Music page, and does not
+// repeat a failed bootstrap for 30 s.
+const VISITOR_URL = 'https://www.youtube.com/sw.js_data';
+const SERVICE_WORKER_VISITOR_TIMEOUT_MS = 4000;
+const VISITOR_FAILURE_COOLDOWN_MS = 30_000;
+const visitorFlights = new WeakMap();
+const visitorFailures = new WeakMap();
+
+/** `Accept-Language` for a locale, as InnertubeX's `YouTubeLocale`. */
+export function acceptLanguage(hl = 'zh-CN', gl = 'US') {
+  const language = hl.replace('_', '-');
+  const regional = language.includes('-') || !gl ? language : `${language}-${gl}`;
+  const fallback = language.split('-')[0];
+  return regional === fallback ? regional : `${regional},${fallback};q=0.9`;
+}
+
+/** The cookie with a PREF carrying the request's language and region, as
+ * InnertubeX's `injectPrefCookie`. */
+export function withPrefCookie(cookie, hl = 'zh-CN', gl = 'US') {
+  if (!cookie?.trim()) return `PREF=hl=${hl}&gl=${gl}`;
+  const pref = [];
+  const other = [];
+  for (const part of cookie.split(';').map(value => value.trim()).filter(Boolean)) {
+    if (/^PREF=/i.test(part)) pref.push(...part.slice(part.indexOf('=') + 1).split('&').filter(value => value && !value.startsWith('hl=') && !value.startsWith('gl=')));
+    else other.push(part);
+  }
+  return [...other, `PREF=${[`hl=${hl}`, `gl=${gl}`, ...pref].join('&')}`].join('; ');
+}
+
+export function parseServiceWorkerVisitor(textValue) {
+  try {
+    const value = JSON.parse(textValue.slice(textValue.indexOf('\n') + 1).trimStart())[0][2][0][0][13];
+    return typeof value === 'string' && value.trim() ? value : undefined;
+  } catch { return undefined; }
+}
+
+export function pageVisitor(html) {
+  return html.match(/"(?:VISITOR_DATA|visitorData)"\s*:\s*"([^"]+)"/)?.[1];
+}
+
+async function withTimeout(promise, ms) {
+  let timer;
+  try { return await Promise.race([promise, new Promise(resolve => { timer = setTimeout(() => resolve(undefined), ms); })]); }
+  finally { clearTimeout(timer); }
+}
+
+/** A fresh visitor for this transport: the service worker's, else the page's. */
+export async function freshVisitorData(options = {}) {
+  const transport = options.fetch || fetch;
+  const headers = { 'User-Agent': WEB_USER_AGENT, 'Accept-Language': acceptLanguage(options.hl, options.gl) };
+  const fromWorker = await withTimeout((async () => {
+    try {
+      const response = await transport(VISITOR_URL, { headers: { ...headers, Accept: 'application/json,text/plain,*/*' } });
+      return response.ok ? parseServiceWorkerVisitor(await response.text()) : undefined;
+    } catch { return undefined; }
+  })(), SERVICE_WORKER_VISITOR_TIMEOUT_MS);
+  if (fromWorker) return fromWorker;
+  try {
+    const response = await send(transport, `${ORIGIN}/`, { headers: { ...headers, Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' } }, { maxAttempts: 2 });
+    return response.ok ? pageVisitor(await response.text()) : undefined;
+  } catch { return undefined; }
+}
+
+/** The session's visitor: the account's own, else this transport's, made once
+ * (concurrent requests share one bootstrap). */
+export async function sessionVisitor(options = {}) {
+  if (options.account?.visitorData) return options.account.visitorData;
+  const known = getAnonymousVisitor(options);
+  if (known) return known.visitorData;
+  const transport = options.fetch || fetch;
+  if ((visitorFailures.get(transport) || 0) > Date.now()) return undefined;
+  let flight = visitorFlights.get(transport);
+  if (!flight) {
+    flight = freshVisitorData(options).then(visitorData => {
+      if (visitorData) rememberAnonymousVisitor(visitorData, { fetch: options.fetch });
+      else visitorFailures.set(transport, Date.now() + VISITOR_FAILURE_COOLDOWN_MS);
+      return visitorData;
+    }).finally(() => visitorFlights.delete(transport));
+    visitorFlights.set(transport, flight);
+  }
+  return flight;
+}
+
+const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+const MAX_RETRY_AFTER_MS = 5000;
+/** A request with InnertubeX's retries: transient statuses and network
+ * failures up to three attempts, 500 ms then doubling; a 429 only when the
+ * server says to wait, and not for long. */
+export async function send(transport, url, init, { maxAttempts = 3, initialDelay = 500 } = {}) {
+  let delay = initialDelay;
+  for (let attempt = 1; ; attempt++) {
+    let response;
+    try { response = await transport(url, init); }
+    catch (reason) {
+      // Only a failed connection or a timeout is worth another attempt.
+      if (attempt >= maxAttempts || !(reason instanceof TypeError || reason?.name === 'TimeoutError')) throw reason;
+      await new Promise(resolve => setTimeout(resolve, delay)); delay *= 2;
+      continue;
+    }
+    const retryAfter = response.status === 429 ? retryAfterMilliseconds(response.headers.get('Retry-After')) : undefined;
+    const retryable = TRANSIENT_STATUS.has(response.status) && (response.status !== 429 || (retryAfter !== undefined && retryAfter <= MAX_RETRY_AFTER_MS));
+    if (!retryable || attempt >= maxAttempts) return response;
+    await response.body?.cancel();
+    await new Promise(resolve => setTimeout(resolve, retryAfter ?? delay));
+    delay *= 2;
+  }
+}
+
 export function retryAfterMilliseconds(value, now = Date.now()) {
   if (!value) return undefined;
   const delay = /^\d+$/.test(value.trim()) ? Number(value) * 1000 : Date.parse(value) - now;
@@ -70,7 +180,8 @@ export async function playbackRequest(url, init, options, stage) {
 }
 
 export async function innertube(endpoint, body, options = {}) {
-  let visitorData = options.account?.visitorData;
+  // Playback bootstraps its own visitor (streaming.mjs); both share the cache.
+  let visitorData = endpoint === 'player' ? options.account?.visitorData : await sessionVisitor(options);
   if (body.continuation?.startsWith('nsh:')) {
     const state = JSON.parse(atob(body.continuation.slice(4)));
     body = { ...body, continuation: state.token };
@@ -82,6 +193,8 @@ export async function innertube(endpoint, body, options = {}) {
     url.searchParams.set('continuation', body.continuation);
     url.searchParams.set('ctoken', body.continuation);
   }
+  const hl = options.hl || 'zh-CN';
+  const gl = options.gl || 'US';
   const init = {
     method: 'POST',
     headers: {
@@ -93,14 +206,16 @@ export async function innertube(endpoint, body, options = {}) {
       'X-YouTube-Client-Name': '67',
       'X-YouTube-Client-Version': CLIENT_VERSION,
       'Referer': `${ORIGIN}/`,
+      'Accept-Language': acceptLanguage(hl, gl),
       ...await authenticationHeaders(options.account, ORIGIN),
+      Cookie: withPrefCookie(options.account?.cookie, hl, gl),
       ...(visitorData ? { 'X-Goog-Visitor-Id': visitorData } : {}),
     },
     body: JSON.stringify({
       context: {
         client: {
           clientName: 'WEB_REMIX', clientVersion: CLIENT_VERSION,
-          gl: options.gl || 'US', hl: options.hl || 'zh-CN',
+          gl, hl,
           ...(visitorData ? { visitorData } : {}),
         },
         user: { lockedSafetyMode: false, ...accountUser(options.account) },
@@ -109,7 +224,7 @@ export async function innertube(endpoint, body, options = {}) {
     }),
   };
   const response = endpoint === 'player' ? await playbackRequest(url, init, options, 'player') :
-    await (options.fetch || fetch)(url, init);
+    await send(options.fetch || fetch, url, init);
   if (!response.ok) throw upstreamError(response, 'catalog', `YouTube Music returned HTTP ${response.status}`);
   const result = await response.json();
   if (result.error) throw new ApiError(result.error.message, result.error.code || 502);

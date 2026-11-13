@@ -220,11 +220,18 @@ export async function refreshAccount() {
   const id = account.profile.id;
   sessionStatus.set("verifying");
   try {
-    const profile = await accountRequest<AccountProfile>("account", account.credentials);
+    // A session saved without its visitor or data sync id (an earlier login
+    // read YouTube Music's "browser not supported" page) is completed once,
+    // as at login: every request then carries the session's identity.
+    const incomplete = !account.credentials.visitorData || !account.credentials.dataSyncId;
+    const completed = incomplete ? await verifyLogin(account.credentials) : undefined;
+    const profile = completed?.account ?? await accountRequest<AccountProfile>("account", account.credentials);
+    if (completed) account.credentials = { ...account.credentials, ...completed.session };
     account.profile = { ...profile, id, verifiedAt: Date.now() };
     accounts.set(savedAccounts.map((item) => item.profile));
     if (activeId() === id) sessionStatus.set("connected");
     await saveAccounts();
+    if (completed && activeId() === id) onAccountChanged?.();
   } catch (reason) { if (activeId() === id) sessionStatus.set("error"); fail(reason); throw reason; }
 }
 export async function activateAccount(id: string) {

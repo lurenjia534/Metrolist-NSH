@@ -195,7 +195,7 @@ test("a new native login ignores session and progress events from a cancelled wi
 });
 
 test("cancel keeps the current account's completed startup refresh instead of restoring an obsolete verifying state", async () => {
-  const saved = { profile: { ...profileA, id: "0:a", verifiedAt: 1 }, credentials: { cookie: "SAPISID=fixture-a", authUser: "0", dataSyncId: "a" }, library: { playlists: [], liked: [], songs: [], albums: [], artists: [] }, lastSynced: 0 };
+  const saved = { profile: { ...profileA, id: "0:a", verifiedAt: 1 }, credentials: { cookie: "SAPISID=fixture-a", authUser: "0", dataSyncId: "a", visitorData: "visitor-a" }, library: { playlists: [], liked: [], songs: [], albums: [], artists: [] }, lastSynced: 0 };
   const app = await open("./native-login/fixture.tsx", { platform: "android", clock: {}, storage: {
     ...storage, "metrolist.accounts": JSON.stringify({ accounts: [saved], activeId: "0:a", syncEnabled: false, useAccountForBrowse: true }),
   }, network: { ...network(), "GET https://gateway.test/api/account": { delay: 1000, body: profileA } } });

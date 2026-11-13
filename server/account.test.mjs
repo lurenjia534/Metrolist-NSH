@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { ACCOUNT_HEADER, normalizeAccount, authenticationHeaders, accountFromRequest } from './auth.mjs';
 import { parseAccountInfo, parseAccounts } from './account.mjs';
-import { items, parseBrowse, continuation, libraryTokens } from './catalog.mjs';
+import { items, parseBrowse, continuation, libraryTokens, withPrefCookie } from './catalog.mjs';
 import { api } from './index.mjs';
 
 // Deliberately artificial credentials. Every account request in this file uses
@@ -79,7 +79,8 @@ test('concurrent account requests keep cookies, visitor data, and channel identi
   const responses = await Promise.all([accountA, accountB].map(account => api(request('account', account), { fetch: fetchFixture })));
   assert.deepEqual(await Promise.all(responses.map(response => response.json().then(value => value.name))), ['A', 'B']);
   for (const account of [accountA, accountB]) {
-    const call = calls.find(value => value.headers.Cookie === account.cookie);
+    // InnertubeX sends the account's cookie with its PREF carrying hl and gl.
+    const call = calls.find(value => value.headers.Cookie === withPrefCookie(account.cookie));
     assert.equal(call.headers['X-Goog-AuthUser'], account.authUser);
     assert.equal(call.context.client.visitorData, account.visitorData);
     assert.equal(call.context.user.onBehalfOfUser, account.dataSyncId);
@@ -130,7 +131,7 @@ test('channel switching requests the account list without the current delegated 
       requestType: 'ACCOUNTS_LIST_REQUEST_TYPE_CHANNEL_SWITCHER', callCircumstance: 'SWITCHING_USERS_FULL',
     });
     assert.equal(JSON.parse(options.body).context.user.onBehalfOfUser, undefined);
-    assert.equal(options.headers.Cookie, accountB.cookie);
+    assert.equal(options.headers.Cookie, withPrefCookie(accountB.cookie));
     return Response.json({ contents: [] });
   } });
   assert.deepEqual(await response.json(), { accounts: [] });
@@ -204,7 +205,7 @@ test('cloud likes, subscriptions, and playlist edits send the exact upstream mut
       calls++;
       assert.equal(endpointOf(url), endpoint);
       assert.deepEqual(payloadOf(options), payload);
-      assert.equal(options.headers.Cookie, accountA.cookie);
+      assert.equal(options.headers.Cookie, withPrefCookie(accountA.cookie));
       return Response.json(endpoint === 'playlist/create' ? { playlistId: 'PLnew' } : { status: 'STATUS_SUCCEEDED' });
     } });
     assert.equal(response.status, 200, `${input.action || endpoint}: ${await response.clone().text()}`);
@@ -222,7 +223,7 @@ test('creating a cloud playlist also saves its entered description against the n
   }), { fetch: async (url, options) => {
     const endpoint = endpointOf(url);
     calls.push({ endpoint, body: payloadOf(options) });
-    assert.equal(options.headers.Cookie, accountA.cookie);
+    assert.equal(options.headers.Cookie, withPrefCookie(accountA.cookie));
     return Response.json(endpoint === 'playlist/create' ? { playlistId: 'PLnew-description' } : { status: 'STATUS_SUCCEEDED' });
   } });
   assert.equal(response.status, 200);
@@ -332,4 +333,22 @@ test('a browser audio reference relays its resolved source without sending Googl
   assert.equal(upstream.headers.authorization, undefined);
   assert.equal(upstream.url, '/audio?signature=fixture');
   assert.equal(calls, 1);
+});
+
+test('a login whose page lacks the session fields asks as a real browser and falls back to the service worker visitor', async () => {
+  const seen = [];
+  const response = await api(request('account/login', null, { cookie: accountA.cookie, authUser: '0' }), {
+    fetch: async (url, options = {}) => {
+      const href = String(url);
+      seen.push({ href, agent: options.headers?.['User-Agent'] });
+      if (href === 'https://www.youtube.com/sw.js_data') return new Response(")]}'\n" + JSON.stringify([['yt.sw.adr', null, [[[...Array(13).fill(null), 'worker-visitor']]]]]));
+      if (!endpointOf(url)) return new Response('<title>unsupported</title>');
+      assert.equal(JSON.parse(options.body).context.client.visitorData, 'worker-visitor');
+      return Response.json(profile('verified'));
+    },
+  });
+  const body = await response.json();
+  assert.equal(body.session.visitorData, 'worker-visitor');
+  // The page was asked for with the web client's full user agent, never a bare "Mozilla/5.0".
+  assert.match(seen.find(call => call.href.startsWith('https://music.youtube.com/?'))?.agent || seen[0].agent, /Firefox\/140\.0/);
 });

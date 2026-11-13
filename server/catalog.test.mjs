@@ -92,3 +92,42 @@ test('stream metadata exposes a same-origin audio endpoint with real format info
   assert.equal(body.bitrate, 146959);
   assert.equal(body.headers, undefined);
 });
+
+// Request profile and session, as InnertubeX builds them.
+import { innertube as innertubeRequest, acceptLanguage, withPrefCookie as prefCookie, send as sendRequest } from './catalog.mjs';
+const workerData = visitor => new Response(")]}'\n" + JSON.stringify([['yt.sw.adr', null, [[[...Array(13).fill(null), visitor]]]]]));
+
+test('catalog requests carry the locale, its PREF and one bootstrapped session visitor', async () => {
+  const calls = [];
+  const transport = async (url, init = {}) => {
+    calls.push({ url: String(url), headers: init.headers || {}, body: init.body ? JSON.parse(init.body) : undefined });
+    if (String(url) === 'https://www.youtube.com/sw.js_data') return workerData('worker-visitor');
+    return Response.json({ contents: [] });
+  };
+  await Promise.all([innertubeRequest('browse', { browseId: 'FEmusic_home' }, { fetch: transport, hl: 'zh-CN', gl: 'US' }),
+    innertubeRequest('browse', { browseId: 'FEmusic_explore' }, { fetch: transport, hl: 'zh-CN', gl: 'US' })]);
+  assert.equal(calls.filter(call => call.url.endsWith('/sw.js_data')).length, 1);
+  for (const call of calls.filter(call => call.url.includes('/youtubei/v1/browse'))) {
+    assert.equal(call.headers['Accept-Language'], 'zh-CN,zh;q=0.9');
+    assert.equal(call.headers.Cookie, 'PREF=hl=zh-CN&gl=US');
+    assert.equal(call.headers['X-Goog-Visitor-Id'], 'worker-visitor');
+    assert.equal(call.body.context.client.visitorData, 'worker-visitor');
+  }
+  assert.equal(acceptLanguage('en', 'US'), 'en-US,en;q=0.9');
+  assert.equal(prefCookie('SID=a; PREF=f6=40000000&hl=ja&gl=JP; SAPISID=b', 'zh-CN', 'US'), 'SID=a; SAPISID=b; PREF=hl=zh-CN&gl=US&f6=40000000');
+});
+
+test('transient failures retry with backoff, a 429 only with a short Retry-After', async () => {
+  let attempts = 0;
+  const flaky = async () => (++attempts < 3 ? new Response('', { status: 503 }) : Response.json({ ok: true }));
+  assert.equal((await sendRequest(flaky, 'https://music.youtube.com/youtubei/v1/browse', {}, { initialDelay: 1 })).status, 200);
+  assert.equal(attempts, 3);
+  let limited = 0;
+  const bare429 = async () => { limited++; return new Response('', { status: 429 }); };
+  assert.equal((await sendRequest(bare429, 'https://music.youtube.com/youtubei/v1/browse', {}, { initialDelay: 1 })).status, 429);
+  assert.equal(limited, 1);
+  let waited = 0;
+  const shortWait = async () => (++waited < 2 ? new Response('', { status: 429, headers: { 'Retry-After': '0' } }) : Response.json({}));
+  assert.equal((await sendRequest(shortWait, 'https://music.youtube.com/youtubei/v1/browse', {}, { initialDelay: 1 })).status, 200);
+  assert.equal(waited, 2);
+});

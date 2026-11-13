@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { chooseAudioFormat, resolveWorkerAudio, streamMetadata } from './streaming.mjs';
-import { retryAfterMilliseconds } from './catalog.mjs';
+import { retryAfterMilliseconds, withPrefCookie } from './catalog.mjs';
+
+// www.youtube.com/sw.js_data as InnertubeX reads it: the visitor at [0][2][0][0][13].
+const serviceWorker = visitor => new Response(")]}'\n" + JSON.stringify([['yt.sw.adr', null, [[[...Array(13).fill(null), visitor]]]]]));
 import { api } from './index.mjs';
 
 const formats = [
@@ -64,13 +67,14 @@ function deferred() {
   return { promise, resolve };
 }
 
-test('an already loaded anonymous catalog supplies the first song visitor with zero watch requests', async () => {
-  let watches = 0, pages = 0, players = 0;
-  const visitors = [];
+test('the anonymous session visitor serves the catalog and the first songs with zero watch requests', async () => {
+  let watches = 0, pages = 0, players = 0, workers = 0;
+  const visitors = [], pageVisitors = [];
   const transport = async (url, init) => {
     const path = new URL(url).pathname;
+    if (path === '/sw.js_data') { workers++; return serviceWorker('session-visitor'); }
     if (path.endsWith('/browse')) {
-      pages++;
+      pages++; pageVisitors.push(init.headers['X-Goog-Visitor-Id']);
       return Response.json({ responseContext: { visitorData: `catalog-visitor-${pages}` }, contents: [] });
     }
     if (path === '/watch') { watches++; return new Response('{"VISITOR_DATA":"watch-visitor"}'); }
@@ -83,9 +87,11 @@ test('an already loaded anonymous catalog supplies the first song visitor with z
   await resolveWorkerAudio('catalog-first-song', { fetch: transport });
   await api(new Request('https://player.test/api/home'), { fetch: transport });
   await resolveWorkerAudio('catalog-second-song', { fetch: transport });
+  assert.equal(workers, 1);
   assert.equal(watches, 0);
   assert.equal(players, 2);
-  assert.deepEqual(visitors, ['catalog-visitor-1', 'catalog-visitor-1']);
+  assert.deepEqual(pageVisitors, ['session-visitor', 'session-visitor']);
+  assert.deepEqual(visitors, ['session-visitor', 'session-visitor']);
 });
 
 test('authenticated catalog responses never seed the anonymous playback visitor', async () => {
@@ -93,7 +99,7 @@ test('authenticated catalog responses never seed the anonymous playback visitor'
   const transport = async (url, init) => {
     const path = new URL(url).pathname;
     if (path.endsWith('/browse')) {
-      assert.equal(init.headers.Cookie, 'SAPISID=fixture-catalog-account');
+      assert.equal(init.headers.Cookie, withPrefCookie('SAPISID=fixture-catalog-account'));
       return Response.json({ responseContext: { visitorData: 'signed-in-response-visitor' }, contents: [] });
     }
     if (path === '/watch') { watches++; return new Response('{"VISITOR_DATA":"anonymous-watch-visitor"}'); }
@@ -115,6 +121,7 @@ test('an authenticated home response cannot replace a concurrent anonymous watch
   const visitors = [];
   const transport = async (url, init) => {
     const path = new URL(url).pathname;
+    if (path === '/sw.js_data' || path === '/') return new Response('', { status: 404 });
     if (path.endsWith('/browse')) return Response.json({ responseContext: { visitorData: 'private-home-visitor' } });
     if (path === '/watch') {
       watches++; watchStarted.resolve(); await finishWatch.promise;
@@ -141,6 +148,7 @@ test('anonymous catalog and a concurrent watch converge on one visitor without w
   const visitors = [];
   const transport = async (url, init) => {
     const path = new URL(url).pathname;
+    if (path === '/sw.js_data') return serviceWorker('concurrent-session-visitor');
     if (path.endsWith('/browse')) return Response.json({ responseContext: { visitorData: 'concurrent-catalog-visitor' } });
     if (path === '/watch') {
       watches++; watchStarted.resolve(); await finishWatch.promise;
@@ -156,7 +164,7 @@ test('anonymous catalog and a concurrent watch converge on one visitor without w
   finishWatch.resolve();
   await first;
   assert.equal(watches, 1);
-  assert.deepEqual(visitors, ['concurrent-catalog-visitor', 'concurrent-catalog-visitor']);
+  assert.deepEqual(visitors, ['concurrent-session-visitor', 'concurrent-session-visitor']);
 });
 
 test('missing catalog visitors and a different transport still bootstrap through watch', async () => {
