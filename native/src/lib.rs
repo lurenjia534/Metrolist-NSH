@@ -15,7 +15,7 @@ pub mod spotish;
 /// The native services imported by the application's TSX.
 #[native_module("metrolist/native")]
 fn native(registry: &mut Registry) {
-    registry.module::<NativeFiles>().module::<NativeMedia>();
+    registry.module::<NativeFiles>().module::<NativeMedia>().module::<NativeArtwork>();
     spotish::register(registry);
 }
 
@@ -245,5 +245,27 @@ impl NativeMedia {
         media::release(&id);
         #[cfg(target_arch = "wasm32")]
         let _ = id;
+    }
+}
+
+/// Cover colours read from the artwork's actual pixels.
+#[module]
+pub struct NativeArtwork;
+
+#[module]
+impl NativeArtwork {
+    /// A cover's colours (`#rrggbb`), most telling first; empty when it has none.
+    pub async fn colors(url: String) -> Result<Vec<String>, String> {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            background(spotish::mobile::palette::cover_colors(url))
+                .await
+                .map_err(|e| e.to_string())?
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = url;
+            Err("Browser covers use the browser host".into())
+        }
     }
 }

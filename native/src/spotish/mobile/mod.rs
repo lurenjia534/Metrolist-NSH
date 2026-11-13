@@ -4,7 +4,7 @@
 #[cfg(target_os = "ios")]
 mod ios;
 #[cfg(not(target_arch = "wasm32"))]
-mod palette;
+pub(crate) mod palette;
 
 use std::{cell::RefCell, rc::Rc};
 use nsh_core::prelude::*;

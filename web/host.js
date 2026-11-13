@@ -140,6 +140,7 @@ export function createHost(shell) {
       return saveBlob(file, args.name);
     },
     "app.metadata": setMetadata,
+    "app.coverColors": args => spotify.call("app.spotify.coverColors", args),
     "app.playback"(state) {
       if (!("mediaSession" in navigator)) return;
       navigator.mediaSession.playbackState = state.playing ? "playing" : "paused";

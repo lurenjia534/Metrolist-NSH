@@ -10,6 +10,7 @@ import { SleepTimerButton } from "./SleepTimer";
 import { Label, Tool, Pill, Art, Press, CommandMenu, Empty, palette as c, narrow, touch, spacious, action, say, time } from "../ui";
 import { motion, motionDuration, transition } from "../motion";
 import { barSize } from "../layout";
+import { coverColorsQuery } from "../coverColors";
 import { BarSlider, Cover, focusRing, IconButton, PlayButton } from "../spotish/components/ui/controls";
 import { Digits } from "../spotish/components/ui/digits";
 import { MusicLight, PlayerGlass } from "../spotish/components/ui/toolbar-fx";
@@ -168,9 +169,10 @@ function NowPlayingSummary(props: { cover: number; round?: boolean; center?: boo
 export function PlayerBar(props: { sidePlayer: boolean; onSidePlayer: () => void }) {
   const stacked = () => barSize() === "stacked";
   const tiny = () => windowSize().width < 560;
+  const colors = coverColorsQuery(() => p.currentTrack()?.artwork ?? "");
   return <If when={p.currentTrack()}>{(track) => <View style={enter("fadeInUp", 120)}><View class={`shadow-xl ${stacked() ? "rounded-[36px]" : "rounded-full"}`}>
     <Toolbar accessibilityLabel="播放器">
-      <PlayerGlass effect={lightEffect()} colors={[]} playing={p.playing()} testID="mini-player" radius={stacked() ? 36 : undefined} class={stacked() ? "flex-1 gap-2 rounded-[36px] px-3.5 pb-2.5 pt-3.5" : "h-18 flex-1 flex-row items-center justify-between gap-4 rounded-full pl-3.5 pr-5"}>
+      <PlayerGlass effect={lightEffect()} colors={colors()} playing={p.playing()} testID="mini-player" radius={stacked() ? 36 : undefined} class={stacked() ? "flex-1 gap-2 rounded-[36px] px-3.5 pb-2.5 pt-3.5" : "h-18 flex-1 flex-row items-center justify-between gap-4 rounded-full pl-3.5 pr-5"}>
         <If when={barSize() === "full"} else={<If when={stacked()} else={<>
           <View class="min-w-0 flex-1 flex-row items-center gap-2"><NowPlayingSummary cover={44} round /><LikeButton track={track()} /></View>
           <TransportControls quiet playTestID="mini-play-pause" />
@@ -441,10 +443,11 @@ function PlayerContent() {
   const padding = () => splitPlayer() ? 40 : 16;
   const coverWidth = () => splitPlayer() ? (bodyWidth() - 32) / 2.1 : shortLandscape() ? bodyWidth() * 0.36 : bodyWidth();
   const coverSize = () => Math.min(360, coverWidth(), Math.max(shortLandscape() ? 136 : 112, bodyHeight() - (shortLandscape() ? 24 : controlsHeight() + (touch() ? 100 : 88) + (p.repeat() !== "one" && p.upNext() ? 72 : 0))));
+  const colors = coverColorsQuery(() => p.currentTrack()?.artwork ?? "");
   animateLayoutOn(() => `${splitPlayer()}|${shortLandscape()}`);
   return <View class="min-h-0 min-w-0 flex-1 pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
     {/* The music's light rises from the bottom of the page. */}
-    <MusicLight effect={lightEffect()} colors={[]} playing={p.playing()} reach={windowSize().height * 0.45} />
+    <MusicLight effect={lightEffect()} colors={colors()} playing={p.playing()} reach={windowSize().height * 0.45} />
     <View class="z-10 min-w-0 shrink-0 flex-row items-center gap-2" style={{ paddingHorizontal: padding() - 8, height: shortLandscape() ? 52 : 64 }}>
       <IconButton testID="close-player" name="chevronDown" label="收起播放器" size={24} onPress={() => nav.fullPlayer.set(false)} />
       <View class="min-w-0 flex-1 items-center gap-0.5"><Text class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">正在播放</Text><Text class="line-clamp-1 text-sm font-semibold text-foreground">{p.queueTitle() || "当前播放"}</Text></View>

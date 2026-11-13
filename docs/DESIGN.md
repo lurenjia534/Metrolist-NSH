@@ -10,6 +10,7 @@ YouTube Music 工作区与 Spotify 工作区共用一套界面与动效：规则
 - 页面（`src/components/Page.tsx`）：每页覆盖 Linux 导航栈的 libadwaita 灰底；页内头部为侧栏开关、后退/前进、搜索（宽桌面在头部右侧展开为搜索框）；大标题 `text-4xl font-extrabold`，首页为问候语。长列表由页面自身的 `List` 滚动（合集、喜欢、历史、歌单、音乐库），搜索结果用 `Each`；不使用嵌套在 `Scroll` 里的 `viewport="parent"` 列表。
 - 列表与卡片（`src/components/Music.tsx`）：歌曲行 48–56 高，序号悬停变为播放符号、当前歌曲显示跳动条，宽屏有专辑列与等宽时长；卡片 `p-2.5`，封面带阴影，悬停时右下角升起按黄金比例计算大小的播放键。行与卡片按 spotish 的 `createListWave`/`listItemEntrance` 以波浪方式进入，封面翻转展开。
 - 颜色：全部来自主题 token（`palette()` 只是读 token 的便捷函数）。强调色只用于库中正在播放的歌单名、开启状态的开关与焦点环；主要按钮与播放键是前景色。纯黑主题是 `theme.json` 的一个变体（`src/providers.ts`）。
+- 音乐光效：播放器胶囊与“正在播放”的光取当前封面的颜色（`src/coverColors.ts`，与 spotish 的 `coverColorsQuery` 同义）。原生平台由 Rust `NativeArtwork.colors` 读取封面像素（spotish 的调色算法），网页由浏览器 host 的 `app.coverColors` 用 canvas 读取；按封面 URL 缓存，颜色未知或换歌后尚未取得时回落到 `primary`。
 - 图标：spotish 的 Tabler 图标集（`src/spotish/components/ui/icons.tsx`，已加入 YouTube Music 需要的字形），带悬停形变；`src/icons.tsx` 只做名称映射。
 - 共享控件由 `src/ui.tsx` 提供，其实现是 spotish 的 `IconButton`、`BarSlider`、`ActionButton` 层次与菜单形变；按钮、菜单、Dialog、Switch、Slider、Tab 使用 NSH base 的行为、键盘和无障碍语义。
 - 状态：收藏/保存显示状态，下载显示进度、取消/重试、离线播放。加载时显示与内容同形的骨架屏并交叉淡入（`Reveal`）。网络失败保留页面及重试入口。
