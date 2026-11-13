@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseAudioFormat, resolveWorkerAudio, streamMetadata } from './streaming.mjs';
+import { chooseAudioFormat, RANGE_CHUNK_BYTES, resolveWorkerAudio, streamMetadata } from './streaming.mjs';
 import { retryAfterMilliseconds, withPrefCookie } from './catalog.mjs';
 
 // www.youtube.com/sw.js_data as InnertubeX reads it: the visitor at [0][2][0][0][13].
@@ -360,15 +360,16 @@ test('player 429 without Retry-After does not fan out retries or become a 502', 
 });
 
 test('exhausted short retries remain bounded and authenticated player keeps 429 metadata', async () => {
-  let players = 0;
+  const requests = [];
   const account = { cookie: 'SAPISID=fixture-limited' };
   const response = await api(new Request('https://player.test/api/stream?id=account-limited', {
     headers: { 'X-Metrolist-Account': encodeURIComponent(JSON.stringify(account)) },
-  }), { fetch: async () => {
-    players++;
+  }), { fetch: async url => {
+    requests.push(new URL(url).pathname);
     return new Response('limited', { status: 429, headers: { 'Retry-After': '0' } });
   } });
-  assert.equal(players, 2);
+  // The visionOS visitor bootstrap and then the account player each retry once.
+  assert.deepEqual(requests, ['/watch', '/watch', '/youtubei/v1/player', '/youtubei/v1/player']);
   assert.equal(response.status, 429);
   assert.equal((await response.json()).stage, 'player');
 });
@@ -384,4 +385,40 @@ test('audio proxy 429 reports its source stage and server delay', async t => {
   assert.equal(response.headers.get('Retry-After'), '30');
   assert.equal((await response.json()).stage, 'audio');
   assert.equal(calls, 1);
+});
+
+test('the audio proxy reads googlevideo in bounded ranges for whole and open-ended requests', async t => {
+  const length = 2 * RANGE_CHUNK_BYTES + 4097;
+  const byte = index => index % 251;
+  const ranges = [];
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    const range = new Headers(init.headers).get('Range');
+    ranges.push(range);
+    const [, from, to] = /^bytes=(\d+)-(\d+)$/.exec(range);
+    const start = Number(from), end = Math.min(Number(to), length - 1);
+    const body = Uint8Array.from({ length: end + 1 - start }, (_, index) => byte(start + index));
+    return new Response(body, { status: 206, headers: {
+      'Content-Type': 'audio/mp4', 'Content-Range': `bytes ${start}-${end}/${length}` } });
+  });
+  const audio = 'https://player.test/api/audio?source=https%3A%2F%2Frr1.googlevideo.com%2Fvideoplayback&client=VISIONOS_0_1';
+
+  const whole = await api(new Request(audio));
+  assert.equal(whole.status, 200);
+  assert.equal(whole.headers.get('Content-Length'), String(length));
+  assert.equal(whole.headers.get('Content-Range'), null);
+  const bytes = new Uint8Array(await whole.arrayBuffer());
+  assert.equal(bytes.length, length);
+  assert.ok(bytes.every((value, index) => value === byte(index)));
+  assert.deepEqual(ranges.splice(0), [
+    `bytes=0-${RANGE_CHUNK_BYTES - 1}`,
+    `bytes=${RANGE_CHUNK_BYTES}-${2 * RANGE_CHUNK_BYTES - 1}`,
+    `bytes=${2 * RANGE_CHUNK_BYTES}-${length - 1}`,
+  ]);
+
+  const start = RANGE_CHUNK_BYTES + 5;
+  const seek = await api(new Request(audio, { headers: { Range: `bytes=${start}-` } }));
+  assert.equal(seek.status, 206);
+  assert.equal(seek.headers.get('Content-Range'), `bytes ${start}-${length - 1}/${length}`);
+  assert.equal((await seek.arrayBuffer()).byteLength, length - start);
+  assert.deepEqual(ranges, [`bytes=${start}-${start + RANGE_CHUNK_BYTES - 1}`, `bytes=${start + RANGE_CHUNK_BYTES}-${length - 1}`]);
 });

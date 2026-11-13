@@ -228,3 +228,70 @@ async fn local_audio_streams_get_head_ranges_and_releases_without_removing_the_f
     assert_eq!(tokio::fs::read(&path).await.unwrap(), audio);
     tokio::fs::remove_dir_all(directory).await.unwrap();
 }
+
+#[tokio::test]
+async fn relay_reads_remote_audio_once_in_bounded_ranges_and_answers_seeks_itself() {
+    use crate::ranges::{
+        CHUNK_BYTES,
+        tests::{LENGTH, payload, ranged_server},
+    };
+    let (url, requests, server) = ranged_server().await;
+    let relay = Relay::start().await.unwrap();
+    let registered = relay.insert(url, BTreeMap::new()).unwrap();
+    let client = reqwest::Client::new();
+    let download = [
+        format!("bytes=0-{}", CHUNK_BYTES - 1),
+        format!("bytes={CHUNK_BYTES}-{}", 2 * CHUNK_BYTES - 1),
+        format!("bytes={}-{}", 2 * CHUNK_BYTES, LENGTH - 1),
+    ];
+
+    // A player's first request carries no Range header.
+    let whole = client.get(&registered.url).send().await.unwrap();
+    assert_eq!(whole.status(), StatusCode::OK);
+    assert_eq!(whole.headers()[header::CONTENT_LENGTH], LENGTH.to_string());
+    assert_eq!(whole.headers()[header::ACCEPT_RANGES], "bytes");
+    assert!(whole.headers().get(header::CONTENT_RANGE).is_none());
+    assert!(whole.bytes().await.unwrap() == payload(0, LENGTH));
+    assert_eq!(*requests.lock().unwrap(), download);
+
+    // qtdemux through gvfs jumps between the end, the start and the middle.
+    for (start, end) in [
+        (LENGTH - 32, None),
+        (0, None),
+        (CHUNK_BYTES + 5, None),
+        (1029, Some(9231)),
+    ] {
+        let range = end.map_or(format!("bytes={start}-"), |end| {
+            format!("bytes={start}-{end}")
+        });
+        let seek = client
+            .get(&registered.url)
+            .header(header::RANGE, range)
+            .send()
+            .await
+            .unwrap();
+        let end = end.unwrap_or(LENGTH - 1);
+        assert_eq!(seek.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(
+            seek.headers()[header::CONTENT_RANGE],
+            format!("bytes {start}-{end}/{LENGTH}")
+        );
+        assert_eq!(
+            seek.headers()[header::CONTENT_LENGTH],
+            (end + 1 - start).to_string()
+        );
+        assert!(seek.bytes().await.unwrap() == payload(start, end + 1));
+    }
+    // Answered from the download: the source was read once.
+    assert_eq!(*requests.lock().unwrap(), download);
+
+    let refused = client
+        .get(&registered.url)
+        .header(header::RANGE, format!("bytes={LENGTH}-"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refused.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+    relay.release(&registered.id);
+    server.abort();
+}

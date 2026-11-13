@@ -62,24 +62,10 @@ function audioPlayerRecord(player, formats, client) {
   return { player, formats, expiresAt, nonce, client };
 }
 
-async function requestAudioPlayer(videoId, options = {}) {
-  if (options.account) {
-    const player = await innertube('player', {
-      videoId, contentCheckOk: true, racyCheckOk: true,
-      playbackContext: { contentPlaybackContext: { html5Preference: 'HTML5_PREF_WANTS' } },
-    }, options);
-    if (player.playabilityStatus?.status !== 'OK') {
-      throw new ApiError(player.playabilityStatus?.reason || '当前账号无法播放这首歌曲。');
-    }
-    const formats = directAudioFormats(player);
-    if (formats.length) return audioPlayerRecord(player, formats, 'WEB_REMIX');
-    if (player.videoDetails?.isPrivate) {
-      throw new ApiError('账号已授权，但这首私有歌曲需要 YouTube 的播放器解密或令牌；当前纯音频路径没有返回可用音源。');
-    }
-    // VISIONOS_0_1 is explicitly loginSupported=false upstream. Public tracks
-    // can use its proven direct format; Google credentials never go to it.
-  }
-  const { visitorData } = await watchVisitor(videoId, options);
+// InnerTubeX tries visitor-backed VISIONOS_0_1 first, signed in or not, with the session's
+// visitor. It is loginSupported=false, so Google credentials never go to it.
+async function visionPlayer(videoId, options = {}) {
+  const visitorData = options.account?.visitorData || (await watchVisitor(videoId, options)).visitorData;
   const response = await playbackRequest(`${MUSIC_ORIGIN}/youtubei/v1/player?prettyPrint=false`, {
     method: 'POST',
     headers: {
@@ -105,6 +91,28 @@ async function requestAudioPlayer(videoId, options = {}) {
   const formats = directAudioFormats(player);
   if (!formats.length) throw new ApiError('YouTube 没有为这首曲目返回可直接播放的纯音频格式。');
   return audioPlayerRecord(player, formats, 'VISIONOS_0_1');
+}
+
+async function requestAudioPlayer(videoId, options = {}) {
+  if (!options.account) return visionPlayer(videoId, options);
+  // Signed in, the account's own player is the fallback for what visionOS cannot play
+  // (private uploads); it is not a second request for every song.
+  let visionFailure;
+  try { return await visionPlayer(videoId, options); }
+  catch (error) { visionFailure = error; }
+  const player = await innertube('player', {
+    videoId, contentCheckOk: true, racyCheckOk: true,
+    playbackContext: { contentPlaybackContext: { html5Preference: 'HTML5_PREF_WANTS' } },
+  }, options);
+  if (player.playabilityStatus?.status !== 'OK') {
+    throw new ApiError(player.playabilityStatus?.reason || '当前账号无法播放这首歌曲。');
+  }
+  const formats = directAudioFormats(player);
+  if (formats.length) return audioPlayerRecord(player, formats, 'WEB_REMIX');
+  if (player.videoDetails?.isPrivate) {
+    throw new ApiError('账号已授权，但这首私有歌曲需要 YouTube 的播放器解密或令牌；当前纯音频路径没有返回可用音源。');
+  }
+  throw visionFailure;
 }
 
 async function playerRecord(videoId, options = {}) {
@@ -220,22 +228,80 @@ export function streamMetadata(media, request, params = {}, direct = false) {
   return { ...metadata, ...(direct ? { headers, cacheKey: media.cacheKey || `${params.id}:${media.formatId || media.quality || "audio"}` } : {}), url: direct ? upstream : url.href };
 }
 
-export async function proxyAudio(request, media, extraHeaders = {}) {
-  const headers = new Headers(media.headers);
-  headers.set('Accept-Encoding', 'identity');
-  const range = request.headers.get('Range');
-  if (range) headers.set('Range', range);
-  const response = await fetch(media.url, {
-    method: request.method === 'HEAD' ? 'HEAD' : 'GET', headers, signal: request.signal,
+// googlevideo sends a request for at most 10 MiB at full speed and holds one without a Range
+// header, or for more, to about twice the audio's real-time rate (~30 KB/s). yt-dlp's
+// http_chunk_size and InnerTubeX's bounded media ranges read YouTube media the same way.
+export const RANGE_CHUNK_BYTES = 10 * 1024 * 1024;
+
+function contentRange(response) {
+  const match = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(response.headers.get('Content-Range') || '');
+  return match && { last: Number(match[2]), total: Number(match[3]) };
+}
+
+/** Bytes `start..=end` (to the end without `end`) of a source as one response, fetched one
+ * bounded range after another. A source that ignores or refuses the range answers as it did. */
+export async function fetchRanges(url, headers, { start = 0, end, signal } = {}) {
+  const open = (from, to) => {
+    const request = new Headers(headers);
+    request.set('Accept-Encoding', 'identity');
+    request.set('Range', `bytes=${from}-${Math.min(to ?? Infinity, from + RANGE_CHUNK_BYTES - 1)}`);
+    return fetch(url, { headers: request, signal });
+  };
+  const first = await open(start, end);
+  const range = first.status === 206 && contentRange(first);
+  if (!range) return first;
+  const last = Math.min(end ?? range.total - 1, range.total - 1);
+  let next = range.last + 1;
+  let reader = first.body.getReader();
+  const body = new ReadableStream({
+    async pull(controller) {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (!done) { controller.enqueue(value); return; }
+        if (next > last) { controller.close(); return; }
+        const response = await open(next, last);
+        const part = response.status === 206 && contentRange(response);
+        if (!part) {
+          await response.body?.cancel();
+          throw upstreamError(response, 'audio', `音频源返回 HTTP ${response.status}。`);
+        }
+        next = part.last + 1;
+        reader = response.body.getReader();
+      }
+    },
+    cancel(reason) { return reader.cancel(reason); },
   });
+  const output = new Headers(first.headers);
+  output.set('Content-Length', String(last + 1 - start));
+  output.set('Content-Range', `bytes ${start}-${last}/${range.total}`);
+  return new Response(body, { status: 206, headers: output });
+}
+
+export async function proxyAudio(request, media, extraHeaders = {}) {
+  const range = request.headers.get('Range');
+  const bounds = range ? /^bytes=(\d+)-(\d*)$/.exec(range.trim()) : ['', '0', ''];
+  let response;
+  if (request.method === 'HEAD' || !bounds) {
+    const headers = new Headers(media.headers);
+    headers.set('Accept-Encoding', 'identity');
+    if (range) headers.set('Range', range);
+    response = await fetch(media.url, { method: request.method === 'HEAD' ? 'HEAD' : 'GET', headers, signal: request.signal });
+  } else {
+    response = await fetchRanges(media.url, media.headers, {
+      start: Number(bounds[1]), end: bounds[2] ? Number(bounds[2]) : undefined, signal: request.signal,
+    });
+  }
   if (!response.ok && response.status !== 416) throw upstreamError(response, 'audio', `音频源返回 HTTP ${response.status}。`);
   if (response.headers.get('Content-Type')?.includes('text/html')) {
     throw new ApiError('音频源返回了网页而非音频；当前服务节点无法取得 googlevideo 音频数据。');
   }
   const output = new Headers(response.headers);
+  let status = response.status;
+  // A player that asked for the whole file gets it as one.
+  if (!range && status === 206) { status = 200; output.delete('Content-Range'); }
   for (const [name, value] of Object.entries(extraHeaders)) output.set(name, value);
   output.set('Accept-Ranges', 'bytes');
   output.set('Cache-Control', 'private, no-store');
   if (!output.has('Content-Type')) output.set('Content-Type', media.mimeType);
-  return new Response(response.body, { status: response.status, headers: output });
+  return new Response(response.body, { status, headers: output });
 }

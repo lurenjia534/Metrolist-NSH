@@ -10,7 +10,9 @@ const network = {
     activeAccountHeaderRenderer: { accountName: { simpleText: `Native ${identity(request)}` },
       email: { simpleText: `native-${identity(request)}@example.test` }, accountPhoto: { thumbnails: [{ url: "https://images.test/avatar.jpg" }] } },
   } }),
-  "POST https://music.youtube.com/youtubei/v1/player?prettyPrint=false": (request: StubRequest) => ({ body: {
+  // visionOS goes first without credentials; these private uploads need the account's own player.
+  "POST https://music.youtube.com/youtubei/v1/player?prettyPrint=false": (request: StubRequest) => !header(request, "Cookie")
+    ? { body: { playabilityStatus: { status: "LOGIN_REQUIRED", reason: "Sign in" } } } : ({ body: {
     playabilityStatus: { status: "OK" }, videoDetails: { title: `Private ${identity(request)}`, author: "Fixture", isPrivate: true, lengthSeconds: "60" },
     streamingData: { expiresInSeconds: "3600", adaptiveFormats: [{
       itag: 140, mimeType: 'audio/mp4; codecs="mp4a.40.2"', bitrate: 128000, audioSampleRate: "44100", contentLength: "8",
@@ -20,6 +22,8 @@ const network = {
   "GET https://audio.test/A.m4a?*": { status: 206,
     headers: { "Content-Type": "audio/mp4", "Content-Length": "4", "Content-Range": "bytes 2-5/8" }, body: "2345" },
 };
+const playerClients = (app: App) => app.requests().filter(request => request.url.includes("/youtubei/v1/player"))
+  .map(request => `${header(request, "X-YouTube-Client-Name")}:${header(request, "Cookie") ? "account" : "no-credentials"}`);
 const read = (app: App) => JSON.parse(app.texts().find(text => text.startsWith("result:"))!.slice(7));
 const openFixture = () => open("./gateway-native-fixture.tsx", { width: 1000, height: 900, platform: "android", clock: { time: 1700000000000 }, network });
 
@@ -68,7 +72,7 @@ test("NSH native audio resolution returns account-specific signed AAC sources an
   expect(a).toMatchObject({ expiresAt: 1700003600000,
     headers: { Origin: "https://music.youtube.com", Referer: "https://music.youtube.com/", Accept: "*/*" } });
   expect(a.headers["User-Agent"]).toContain("Firefox/140.0");
-  expect(app.requests()).toHaveLength(2);
+  expect(playerClients(app).sort()).toEqual(["101:no-credentials", "101:no-credentials", "67:account", "67:account"]);
 });
 
 test("NSH executes issued browser audio references with Range and no second resolver or Google cookie", async () => {
@@ -79,7 +83,7 @@ test("NSH executes issued browser audio references with Range and no second reso
   expect(result).toMatchObject({ status: 206, body: "2345", range: "bytes 2-5/8" });
   expect(new URL(result.stream.url).origin).toBe("https://web.test");
   expect(new URL(new URL(result.stream.url).searchParams.get("source")!).pathname).toBe("/A.m4a");
-  expect(app.requests().filter(request => request.url.includes("/youtubei/v1/player"))).toHaveLength(1);
+  expect(playerClients(app)).toEqual(["101:no-credentials", "67:account"]);
   const audio = app.requests().find(request => request.url.startsWith("https://audio.test/"))!;
   expect(header(audio, "Range")).toBe("bytes=2-5");
   expect(header(audio, "Origin")).toBe("https://music.youtube.com");
@@ -103,7 +107,8 @@ test("native playback preserves a long Retry-After and the actual 429 stage with
   } });
   await app.press("Native playback error"); await app.waitFor("Done");
   expect(read(app)).toMatchObject({ status: 429, code: "rate-limited", stage: "player", retryAfterMs: 30000 });
-  expect(app.requests()).toHaveLength(1);
+  // Neither request waits out the long delay; visionOS falls back to the account's player once.
+  expect(playerClients(app)).toEqual(["101:no-credentials", "67:account"]);
 });
 
 test("native playback can retry one explicit zero-delay 429 using the shared resolver", async () => {
@@ -116,5 +121,5 @@ test("native playback can retry one explicit zero-delay 429 using the shared res
   await app.press("Native playback error"); await app.waitFor("Done");
   expect(app.texts().find(text => text.startsWith("error:"))).toBe("error:");
   expect(read(app).url.startsWith("https://audio.test/A.m4a")).toBe(true);
-  expect(app.requests()).toHaveLength(2);
+  expect(playerClients(app)).toEqual(["101:no-credentials", "101:no-credentials", "67:account"]);
 });

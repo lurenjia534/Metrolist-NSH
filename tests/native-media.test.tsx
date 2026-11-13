@@ -45,15 +45,15 @@ test("a native relay resolved after switching tracks is released without startin
   expect(releaseCalls(app)).toEqual([{ id: "stale" }, { id: "current" }]);
 });
 
-test("local files and headerless HTTP sources play directly without registering native relays", async () => {
+test("local files play directly; headerless HTTP sources also stream through the range relay", async () => {
   const app = await open("../.nsh/local-media/native-media.tsx", { platform: "windows", host: { handlers: {
-    "app.test.media.prepare": relay("unexpected"),
+    "app.test.media.prepare": relay("direct"),
     "app.test.media.release": null,
   } } });
   await app.press("Play local"); await app.waitFor("playing");
   await app.press("Play direct"); await app.waitFor("playing");
   await app.press("Clear");
-  expect(prepareCalls(app)).toEqual([]);
-  expect(releaseCalls(app)).toEqual([]);
-  expect(app.audio().filter(call => call.command === "open").map(call => call.src)).toEqual([mediaFile("offline.wav").url, "https://audio.test/direct.mp3"]);
+  expect(prepareCalls(app)).toEqual([{ url: "https://audio.test/direct.mp3", headers: {} }]);
+  expect(releaseCalls(app)).toEqual([{ id: "direct" }]);
+  expect(app.audio().filter(call => call.command === "open").map(call => call.src)).toEqual([mediaFile("offline.wav").url, relay("direct").url]);
 });

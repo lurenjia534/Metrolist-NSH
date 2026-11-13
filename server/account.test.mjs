@@ -257,10 +257,40 @@ test('saving a song uses fresh library feedback, ignoring unrelated pin toggles'
   assert.deepEqual(endpoints, ['next', 'feedback']);
 });
 
+test('signed-in normal songs use one visionOS request with the account visitor and no credentials', async () => {
+  const requests = [];
+  const response = await api(request('stream?id=signed-in-public&container=mp4', accountA), { fetch: async (url, options) => {
+    requests.push({ endpoint: endpointOf(url), client: options.headers['X-YouTube-Client-Name'], visitor: options.headers['X-Goog-Visitor-Id'],
+      cookie: options.headers.Cookie, authorization: options.headers.Authorization, user: JSON.parse(options.body).context.user });
+    return Response.json({ playabilityStatus: { status: 'OK' }, videoDetails: { title: 'Public', lengthSeconds: '60' },
+      streamingData: { expiresInSeconds: '3600', adaptiveFormats: [{ itag: 140, mimeType: 'audio/mp4; codecs="mp4a.40.2"',
+        bitrate: 128000, audioSampleRate: '44100', url: `https://audio.test/public?expire=${Math.floor(Date.now() / 1000) + 3600}` }] } });
+  }, directStreams: true });
+  const source = await response.json();
+  assert.equal(source.client, 'VISIONOS_0_1');
+  assert.equal(source.authenticated, false);
+  assert.deepEqual(requests, [{ endpoint: 'player', client: '101', visitor: 'visitor-A', cookie: undefined, authorization: undefined, user: { lockedSafetyMode: false } }]);
+});
+
+test('a visionOS 429 for a signed-in song falls back to the account player', async () => {
+  const clients = [];
+  const response = await api(request('stream?id=signed-in-limited&container=mp4', accountA), { fetch: async (url, options) => {
+    clients.push(options.headers['X-YouTube-Client-Name']);
+    if (!options.headers.Cookie) return new Response('limited', { status: 429 });
+    return Response.json({ playabilityStatus: { status: 'OK' }, streamingData: { expiresInSeconds: '3600', adaptiveFormats: [{
+      itag: 140, mimeType: 'audio/mp4; codecs="mp4a.40.2"', bitrate: 128000, url: 'https://audio.test/account-fallback' }] } });
+  }, directStreams: true });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).client, 'WEB_REMIX');
+  assert.deepEqual(clients, ['101', '67']);
+});
+
 test('account audio resolves per identity and native dispatch returns its signed source directly', async () => {
   const calls = [];
   const fetchFixture = async (url, options) => {
     assert.equal(endpointOf(url), 'player');
+    // A private upload is unplayable without the account's credentials.
+    if (!options.headers.Cookie) return Response.json({ playabilityStatus: { status: 'LOGIN_REQUIRED', reason: 'Sign in' } });
     const name = options.headers.Cookie.includes('fixture-A') ? 'A' : 'B';
     calls.push(name);
     return Response.json({
@@ -301,7 +331,8 @@ test('account-private songs with cipher-only formats cannot silently use an anon
   } });
   assert.equal(response.status, 502);
   assert.match((await response.json()).error, /私有歌曲/);
-  assert.equal(calls, 1);
+  // visionOS first, then the account's own player; neither has a direct format.
+  assert.equal(calls, 2);
 });
 
 test('a browser audio reference relays its resolved source without sending Google credentials or resolving again', async t => {

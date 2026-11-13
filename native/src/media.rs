@@ -20,13 +20,17 @@ use axum::{
 use tokio::sync::OnceCell;
 use tower_http::services::ServeFile;
 
-use crate::MediaSource;
+use crate::{
+    MediaSource,
+    ranges::{Download, Ranged, byte_range},
+};
 
 #[derive(Clone)]
 enum Source {
     Remote {
         url: String,
         headers: BTreeMap<String, String>,
+        download: Arc<Download>,
     },
     File(PathBuf),
 }
@@ -73,7 +77,15 @@ impl Relay {
                     .map_err(|_| "The file URL must reference a local path".to_string())?,
             )
         } else {
-            Source::Remote { url, headers }
+            Source::Remote {
+                download: Download::start(
+                    self.sources.client.clone(),
+                    url.clone(),
+                    headers.clone(),
+                ),
+                url,
+                headers,
+            }
         };
         let id = self
             .sources
@@ -92,7 +104,11 @@ impl Relay {
     }
 
     fn release(&self, id: &str) {
-        self.sources.entries.write().unwrap().remove(id);
+        if let Some(Source::Remote { download, .. }) =
+            self.sources.entries.write().unwrap().remove(id)
+        {
+            download.stop();
+        }
     }
 }
 
@@ -122,8 +138,12 @@ async fn relay(
     let Some(source) = source else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    let (url, source_headers) = match source {
-        Source::Remote { url, headers } => (url, headers),
+    let (url, source_headers, download) = match source {
+        Source::Remote {
+            url,
+            headers,
+            download,
+        } => (url, headers, download),
         Source::File(path) => {
             let mut request = Request::new(Body::empty());
             *request.method_mut() = method;
@@ -134,7 +154,97 @@ async fn relay(
             };
         }
     };
-    let mut request = state.client.request(method.clone(), url);
+    let range = headers.get(header::RANGE);
+    let bounds = match range {
+        None => Some((0, None)),
+        Some(value) => value.to_str().ok().and_then(byte_range),
+    };
+    let Some((start, end)) = bounds.filter(|_| method == Method::GET) else {
+        return forward(&state.client, method, url, source_headers, &headers).await;
+    };
+    if let Some((total, first)) = download.head().await
+        && download.reads(start)
+    {
+        let end = end.map_or(total - 1, |end| end.min(total - 1));
+        let mut outgoing = without_hop_headers(&first);
+        outgoing.insert(header::CONTENT_LENGTH, (end + 1 - start).into());
+        let status = if range.is_some() {
+            outgoing.insert(
+                header::CONTENT_RANGE,
+                format!("bytes {start}-{end}/{total}").parse().unwrap(),
+            );
+            StatusCode::PARTIAL_CONTENT
+        } else {
+            outgoing.remove(header::CONTENT_RANGE);
+            StatusCode::OK
+        };
+        outgoing.insert(header::ACCEPT_RANGES, "bytes".parse().unwrap());
+        let mut response = Response::new(Body::from_stream(download.read(start, end)));
+        *response.status_mut() = status;
+        *response.headers_mut() = outgoing;
+        return response;
+    }
+    // Reads far past the download, and sources it cannot keep, go to the source itself.
+    let mut first = HeaderMap::new();
+    if let Some(value) = headers.get(header::IF_RANGE) {
+        first.insert(header::IF_RANGE, value.clone());
+    }
+    let ranged = match Ranged::open(&state.client, &url, &source_headers, first, start, end).await {
+        Ok(ranged) => ranged,
+        Err(error) => return (StatusCode::BAD_GATEWAY, error.to_string()).into_response(),
+    };
+    let mut outgoing = without_hop_headers(ranged.headers());
+    let status = match ranged.span() {
+        Some(span) => {
+            outgoing.insert(header::CONTENT_LENGTH, (span.end + 1 - span.start).into());
+            if range.is_some() {
+                outgoing.insert(
+                    header::CONTENT_RANGE,
+                    format!("bytes {}-{}/{}", span.start, span.end, span.total)
+                        .parse()
+                        .unwrap(),
+                );
+                StatusCode::PARTIAL_CONTENT
+            } else {
+                outgoing.remove(header::CONTENT_RANGE);
+                StatusCode::OK
+            }
+        }
+        None => ranged.status(),
+    };
+    let mut response = Response::new(Body::from_stream(ranged.into_stream()));
+    *response.status_mut() = status;
+    *response.headers_mut() = outgoing;
+    response
+}
+
+/// Hop-by-hop transport headers describe the upstream connection, not this response.
+fn without_hop_headers(headers: &HeaderMap) -> HeaderMap {
+    let mut outgoing = headers.clone();
+    for name in [
+        "connection",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailer",
+        "transfer-encoding",
+        "upgrade",
+    ] {
+        outgoing.remove(name);
+    }
+    outgoing
+}
+
+/// A request the range reader does not serve (HEAD, multiple or suffix ranges), sent as it came.
+async fn forward(
+    client: &reqwest::Client,
+    method: Method,
+    url: String,
+    source_headers: BTreeMap<String, String>,
+    headers: &HeaderMap,
+) -> Response {
+    let mut request = client.request(method.clone(), url);
     for (name, value) in source_headers {
         request = request.header(name, value);
     }
@@ -152,20 +262,7 @@ async fn relay(
         Err(error) => return (StatusCode::BAD_GATEWAY, error.to_string()).into_response(),
     };
     let status = response.status();
-    let mut outgoing = response.headers().clone();
-    // Hop-by-hop transport headers describe the upstream connection, not this response.
-    for name in [
-        "connection",
-        "keep-alive",
-        "proxy-authenticate",
-        "proxy-authorization",
-        "te",
-        "trailer",
-        "transfer-encoding",
-        "upgrade",
-    ] {
-        outgoing.remove(name);
-    }
+    let outgoing = without_hop_headers(response.headers());
     let body = if method == Method::HEAD {
         Body::empty()
     } else {

@@ -1,6 +1,7 @@
 package com.longbridge.nsh;
 
 import android.content.Context;
+import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import androidx.media3.common.AudioAttributes;
@@ -10,9 +11,11 @@ import androidx.media3.common.PlaybackException;
 import androidx.media3.common.PlaybackParameters;
 import androidx.media3.common.Player;
 import androidx.media3.database.StandaloneDatabaseProvider;
+import androidx.media3.datasource.DataSource;
 import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.DataSpec;
 import androidx.media3.datasource.HttpDataSource;
+import androidx.media3.datasource.TransferListener;
 import androidx.media3.datasource.cache.CacheDataSource;
 import androidx.media3.datasource.cache.CacheWriter;
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor;
@@ -27,6 +30,7 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -159,7 +163,77 @@ public final class MetrolistAudio {
         }
         OkHttpDataSource.Factory network = new OkHttpDataSource.Factory(http).setDefaultRequestProperties(headers);
         return new CacheDataSource.Factory().setCache(cache)
-                .setUpstreamDataSourceFactory(new DefaultDataSource.Factory(context, network));
+                .setUpstreamDataSourceFactory(new DefaultDataSource.Factory(context, RangeChunkDataSource.factory(network)));
+    }
+
+    /**
+     * Reads an HTTP resource as consecutive ranges of at most 10 MiB. googlevideo sends such a request at
+     * full speed and holds one without a Range header, or for more, to about twice the audio's real-time
+     * rate. Media3 opens position 0 without a Range header. yt-dlp's http_chunk_size reads the same way.
+     */
+    static final class RangeChunkDataSource implements DataSource {
+        static final long CHUNK_BYTES = 10L << 20;
+        private final DataSource upstream;
+        private DataSpec request;
+        private long position, end;
+        private boolean ranged;
+
+        static DataSource.Factory factory(DataSource.Factory upstream) {
+            return () -> new RangeChunkDataSource(upstream.createDataSource());
+        }
+        private RangeChunkDataSource(DataSource upstream) { this.upstream = upstream; }
+
+        @Override public void addTransferListener(TransferListener listener) { upstream.addTransferListener(listener); }
+
+        @Override public long open(DataSpec dataSpec) throws IOException {
+            request = dataSpec;
+            position = dataSpec.position;
+            end = dataSpec.length == C.LENGTH_UNSET ? C.LENGTH_UNSET : dataSpec.position + dataSpec.length;
+            String scheme = dataSpec.uri.getScheme();
+            ranged = "http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme);
+            if (!ranged) return upstream.open(dataSpec);
+            openRange();
+            long total = total();
+            if (total == C.LENGTH_UNSET) {
+                // The source ignored the range; read the request as it was made.
+                upstream.close();
+                ranged = false;
+                return upstream.open(dataSpec);
+            }
+            if (end == C.LENGTH_UNSET || end > total) end = total;
+            return dataSpec.length == C.LENGTH_UNSET ? end - dataSpec.position : dataSpec.length;
+        }
+
+        private void openRange() throws IOException {
+            long length = end == C.LENGTH_UNSET ? CHUNK_BYTES : Math.min(CHUNK_BYTES, end - position);
+            upstream.open(request.subrange(position - request.position, length));
+        }
+
+        /** The resource length from the response's Content-Range, if it answered with one. */
+        private long total() {
+            for (Map.Entry<String, List<String>> header : upstream.getResponseHeaders().entrySet()) {
+                if (!"Content-Range".equalsIgnoreCase(header.getKey()) || header.getValue().isEmpty()) continue;
+                String value = header.getValue().get(0);
+                String total = value.substring(value.lastIndexOf('/') + 1).trim();
+                return total.matches("\\d+") ? Long.parseLong(total) : C.LENGTH_UNSET;
+            }
+            return C.LENGTH_UNSET;
+        }
+
+        @Override public int read(byte[] buffer, int offset, int length) throws IOException {
+            if (length == 0) return 0;
+            while (true) {
+                int read = upstream.read(buffer, offset, length);
+                if (read != C.RESULT_END_OF_INPUT) { position += read; return read; }
+                if (!ranged || position >= end) return C.RESULT_END_OF_INPUT;
+                upstream.close();
+                openRange();
+            }
+        }
+
+        @Override public Uri getUri() { return upstream.getUri(); }
+        @Override public Map<String, List<String>> getResponseHeaders() { return upstream.getResponseHeaders(); }
+        @Override public void close() throws IOException { upstream.close(); }
     }
 
     /** Store the next song's opening bytes in the same cache used by real playback. */

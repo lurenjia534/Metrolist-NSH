@@ -12,6 +12,10 @@
 
 **Android 0.7 沿用 0.5 / 0.6 的 `app.miku.metrolist.preview` 和同一签名，应用名为 `Metrolist NSH Preview`。** 可覆盖升级并保留账号、曲库与下载；最低 Android 8 / API 26。0.4 使用的 `app.miku.metrolist.next` 与它是不同应用，可从旧版导出曲库再导入。正式 Android 发布使用持久签名；构建检查产生的测试签名文件不作为正式升级包。
 
+### 播放限速修复
+
+googlevideo 会把不带 Range、或一次超过约 10 MiB 的音频请求限到约 30 KB/s，所以各平台播放常卡顿。现在桌面、iOS、Android、Web 与下载都改为每段不超过 10 MiB 的连续范围请求；登录后也像原版一样先走 VISIONOS，账号 player 只作后备。实测、原版依据与验证范围见 [播放限速说明](docs/playback-throttle.md)。
+
 ### 0.10：首页分类、推荐分区与发现导航
 
 首页顶部分类使用 YouTube Music 返回的真实标题与筛选参数，在首页切换推荐；再次点击、清除分类或返回可恢复原来的未筛选首页。刷新保留当前分类，加载更多保留已显示的分区。首页不会把“专注”转换成英文关键词搜索，也不会在分类结果中混入本地历史与旧推荐。

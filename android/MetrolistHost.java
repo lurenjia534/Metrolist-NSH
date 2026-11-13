@@ -166,25 +166,35 @@ public final class MetrolistHost implements AutoCloseable {
             File file = audioFile(id);
             File part = new File(file.getPath() + ".part");
             try {
-                connection = new URL(url).openConnection();
-                for (Map.Entry<String, Object> header : headers.entrySet()) connection.setRequestProperty(header.getKey(), String.valueOf(header.getValue()));
-                connection.setRequestProperty("Accept-Encoding", "identity");
-                if (connection instanceof HttpURLConnection) {
-                    int status = ((HttpURLConnection) connection).getResponseCode();
-                    if (status < 200 || status >= 300) throw new IOException("下载返回 HTTP " + status);
-                }
-                long total = connection.getContentLengthLong();
-                long bytes = 0, last = 0;
-                input = connection.getInputStream();
-                try (InputStream source = input; OutputStream output = new FileOutputStream(part)) {
+                long bytes = 0, total = -1, last = 0;
+                boolean ranged;
+                try (OutputStream output = new FileOutputStream(part)) {
                     byte[] buffer = new byte[65536];
-                    for (int read; (read = source.read(buffer)) != -1;) {
-                        if (cancelled) throw new IOException("已取消下载");
-                        output.write(buffer, 0, read);
-                        bytes += read;
-                        long now = System.currentTimeMillis();
-                        if (now - last >= 200) { progress(bytes, total, false); last = now; }
-                    }
+                    do {
+                        // googlevideo throttles a request without a range, or for more than 10 MiB.
+                        connection = new URL(url).openConnection();
+                        for (Map.Entry<String, Object> header : headers.entrySet()) connection.setRequestProperty(header.getKey(), String.valueOf(header.getValue()));
+                        connection.setRequestProperty("Accept-Encoding", "identity");
+                        connection.setRequestProperty("Range", "bytes=" + bytes + "-" + (bytes + MetrolistAudio.RangeChunkDataSource.CHUNK_BYTES - 1));
+                        int status = ((HttpURLConnection) connection).getResponseCode();
+                        if (status < 200 || status >= 300) throw new IOException("下载返回 HTTP " + status);
+                        String range = connection.getHeaderField("Content-Range");
+                        ranged = status == 206 && range != null && range.matches("bytes \\d+-\\d+/\\d+");
+                        if (ranged) total = Long.parseLong(range.substring(range.lastIndexOf('/') + 1));
+                        else if (bytes == 0) total = connection.getContentLengthLong();
+                        else throw new IOException("下载返回 HTTP " + status);
+                        input = connection.getInputStream();
+                        try (InputStream source = input) {
+                            for (int read; (read = source.read(buffer)) != -1;) {
+                                if (cancelled) throw new IOException("已取消下载");
+                                output.write(buffer, 0, read);
+                                bytes += read;
+                                long now = System.currentTimeMillis();
+                                if (now - last >= 200) { progress(bytes, total, false); last = now; }
+                            }
+                        }
+                        ((HttpURLConnection) connection).disconnect();
+                    } while (ranged && bytes < total && !cancelled);
                 }
                 if (cancelled) throw new IOException("已取消下载");
                 if (!part.renameTo(file)) throw new IOException("无法保存音频文件");

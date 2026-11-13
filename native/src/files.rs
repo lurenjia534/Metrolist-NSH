@@ -9,10 +9,11 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use axum::http::{HeaderMap, header};
 use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
 
-use crate::{DownloadInput, DownloadProgress, SavedFile};
+use crate::{DownloadInput, DownloadProgress, SavedFile, ranges::Ranged};
 
 struct Transfer {
     bytes: AtomicU64,
@@ -140,17 +141,31 @@ async fn transfer(
     tokio::fs::create_dir_all(directory)
         .await
         .map_err(|e| e.to_string())?;
-    let mut request = CLIENT.get_or_init(reqwest::Client::new).get(&input.url);
-    for (name, value) in &input.headers {
-        request = request.header(name, value);
-    }
+    let client = CLIENT.get_or_init(reqwest::Client::new);
     let mut response = tokio::select! {
         biased;
         _ = task.cancel.cancelled() => return Err("Download cancelled".into()),
-        response = request.header("Accept-Encoding", "identity").send() => response.map_err(|e| e.to_string())?.error_for_status().map_err(|e| e.to_string())?,
+        response = Ranged::open(client, &input.url, &input.headers, HeaderMap::new(), 0, None) => response.map_err(|e| e.to_string())?,
     };
-    task.total
-        .store(response.content_length().unwrap_or(0), Ordering::Relaxed);
+    if !response.status().is_success() {
+        return Err(format!(
+            "The audio source returned HTTP {}",
+            response.status().as_u16()
+        ));
+    }
+    task.total.store(
+        response.span().map_or_else(
+            || {
+                response
+                    .headers()
+                    .get(header::CONTENT_LENGTH)
+                    .and_then(|value| value.to_str().ok()?.parse().ok())
+                    .unwrap_or(0)
+            },
+            |span| span.total,
+        ),
+        Ordering::Relaxed,
+    );
     let mut file = tokio::fs::File::create(partial)
         .await
         .map_err(|e| e.to_string())?;

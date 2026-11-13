@@ -5,6 +5,7 @@ import { mkdir, readFile, writeFile, rename, rm } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { fetchRanges } from './streaming.mjs';
 
 const extensions = { 'audio/mp4': '.m4a', 'audio/mpeg': '.mp3', 'audio/webm': '.webm',
   'audio/ogg': '.ogg', 'audio/flac': '.flac', 'audio/wav': '.wav', 'audio/aac': '.aac' };
@@ -62,7 +63,7 @@ export function createDownloads({ resolveMedia, directory = process.env.DOWNLOAD
       const media = task.sourceUrl ? { url: task.sourceUrl, headers: {} } :
         await resolveMedia(task.id, { quality: task.quality, container: task.container, account: task.account, signal: task.controller.signal });
       task.controller.signal.throwIfAborted();
-      const response = await fetch(media.url, { headers: { ...media.headers, 'Accept-Encoding': 'identity' }, signal: task.controller.signal });
+      const response = await fetchRanges(media.url, media.headers, { signal: task.controller.signal });
       if (!response.ok) throw new Error(`音频下载失败（HTTP ${response.status}）`);
       const mimeType = (response.headers.get('Content-Type') || media.mimeType || 'application/octet-stream').split(';')[0];
       if (mimeType === 'text/html') throw new Error('音频源返回了网页而非音频，无法下载。');

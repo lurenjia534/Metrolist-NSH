@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-use std::{convert::Infallible, time::Duration};
+use std::{collections::BTreeMap, convert::Infallible, time::Duration};
 
 use axum::{
     Router,
@@ -226,6 +226,38 @@ async fn http_failure_is_not_saved_as_audio() {
     request.headers.clear();
     assert!(download(request).await.unwrap_err().contains("401"));
     assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 0);
+    tokio::fs::remove_dir_all(directory).await.unwrap();
+    server.abort();
+}
+
+#[tokio::test]
+async fn downloads_read_the_source_in_bounded_ranges() {
+    use crate::ranges::{
+        CHUNK_BYTES,
+        tests::{LENGTH, payload, ranged_server},
+    };
+    let (url, requests, server) = ranged_server().await;
+    let directory = std::env::temp_dir().join(format!("metrolist-ranged-download-{}", unique()));
+    let id = format!("ranged-{}", unique());
+    let result = download(DownloadInput {
+        id: id.clone(),
+        url,
+        name: "ranged.m4a".into(),
+        directory: directory.to_string_lossy().into_owned(),
+        headers: BTreeMap::new(),
+    })
+    .await
+    .unwrap();
+    assert_eq!(result.bytes, LENGTH);
+    assert!(tokio::fs::read(&result.destination).await.unwrap() == payload(0, LENGTH));
+    assert_eq!(
+        *requests.lock().unwrap(),
+        [
+            format!("bytes=0-{}", CHUNK_BYTES - 1),
+            format!("bytes={CHUNK_BYTES}-{}", 2 * CHUNK_BYTES - 1),
+            format!("bytes={}-{}", 2 * CHUNK_BYTES, LENGTH - 1),
+        ]
+    );
     tokio::fs::remove_dir_all(directory).await.unwrap();
     server.abort();
 }

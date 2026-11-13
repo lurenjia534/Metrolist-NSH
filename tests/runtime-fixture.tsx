@@ -2,7 +2,7 @@ import { AudioPlayer, host, mount, Scroll, signal, Text, View } from "nsh";
 import { Button } from "nsh/base";
 import * as p from "../src/playback";
 import * as s from "../src/store";
-import { NativeFiles } from "metrolist/native";
+import { NativeFiles, NativeMedia } from "metrolist/native";
 import type { Track } from "../src/model";
 
 // Replace the system services only inside this headless fixture. Rust transport
@@ -13,6 +13,10 @@ NativeFiles.cancel = id => { void host.call("app.test.files.cancel", { id }); };
 NativeFiles.remove = destination => host.call("app.test.files.remove", { destination });
 NativeFiles.copyInto = (source, directory, name) => host.call("app.test.files.copyInto", { source, directory, name });
 NativeFiles.exportAudio = (destination, name) => host.call("app.test.files.exportAudio", { destination, name });
+// The real relay stays in place; record which source each player URL streams.
+const relayed = signal<string[]>([]);
+const prepareRelay = NativeMedia.prepare;
+NativeMedia.prepare = (url, headers) => { relayed.update(list => [...list, url]); return prepareRelay(url, headers); };
 
 const alpha: Track = { id: "alpha", title: "Alpha", artist: "First artist", album: "Album", artwork: "", duration: 60, source: "audio", url: "https://audio.test/alpha.mp3" };
 const beta: Track = { ...alpha, id: "beta", title: "Beta", artist: "Second artist", url: "https://audio.test/beta.mp3" };
@@ -67,6 +71,7 @@ function Fixture() {
       <Text>{`stats:${JSON.stringify(s.statistics())}`}</Text>
       <Text>{`downloads:${JSON.stringify(s.downloadJobs())}`}</Text>
       <Text>{`error:${s.error()}`}</Text>
+      <Text>{`relayed:${JSON.stringify(relayed())}`}</Text>
     </View></Scroll>
   </View>;
 }

@@ -360,8 +360,9 @@ async function loadCurrent(startAt = 0, continueSession = false, refresh = false
     }
     let playbackUrl = source.url;
     const localIOS = platform.os === "ios" && source.url.startsWith("file:");
-    const signedHTTP = source.headers && Object.keys(source.headers).length && /^https?:/.test(source.url);
-    if (platform.os !== "web" && (localIOS || signedHTTP)) {
+    // The relay reads remote audio in bounded ranges: googlevideo throttles a player's own
+    // requests (no Range header, or more than 10 MiB) to about twice real time.
+    if (platform.os !== "web" && (localIOS || /^https?:/.test(source.url))) {
       const media = await NativeMedia.prepare(source.url, source.headers || {});
       if (request !== loadId) { NativeMedia.release(media.id); return; }
       nativeMediaId = media.id;

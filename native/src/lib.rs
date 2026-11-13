@@ -9,6 +9,8 @@ use nsh_core::prelude::*;
 mod files;
 #[cfg(not(target_arch = "wasm32"))]
 mod media;
+#[cfg(not(target_arch = "wasm32"))]
+mod ranges;
 
 pub mod spotish;
 

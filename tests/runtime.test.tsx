@@ -11,6 +11,8 @@ const network = {
   "GET https://gateway.test/api/stream?id=video&quality=auto*": { body: { url: "https://audio.test/auto.m4a", quality: "auto", mimeType: "audio/mp4", bitrate: 128000 } },
   "GET https://gateway.test/api/stream?id=video&quality=high*": { body: { url: "https://audio.test/high.m4a", quality: "high", mimeType: "audio/mp4", bitrate: 256000 } },
 };
+// Desktop players stream remote audio through the native range relay.
+const relayOpens = (app: App) => app.audio().filter((call) => call.command === "open").map((call) => /^http:\/\/127\.0\.0\.1:\d+\/media\/\d+$/.test(call.src) ? "relay" : call.src);
 const read = (app: App, name: string) => JSON.parse(app.texts().find((text) => text.startsWith(`${name}:`))!.slice(name.length + 1));
 const settings = (extra: object) => ({ "metrolist.settings": JSON.stringify({ apiBase: "https://gateway.test", autoRadio: false, ...extra }) });
 
@@ -22,7 +24,8 @@ test("pure audio quality changes preserve paused position and resolve the select
   expect(app.audio().filter((call) => call.command === "close")).toHaveLength(1);
   expect(read(app, "queue").playing).toBe(false);
   await app.press("Play"); await app.waitFor("Playing");
-  expect(app.audio().filter((call) => call.command === "open").map((call) => call.src)).toEqual(["https://audio.test/auto.m4a", "https://audio.test/high.m4a"]);
+  expect(relayOpens(app)).toEqual(["relay", "relay"]);
+  expect(read(app, "relayed")).toEqual(["https://audio.test/auto.m4a", "https://audio.test/high.m4a"]);
   expect(app.audio().some((call) => call.command === "seek" && call.position === 21)).toBe(true);
   expect(app.requests().some((request) => request.url.includes("quality=high&container=mp4"))).toBe(true);
 });
@@ -38,7 +41,8 @@ test("pausing an unresolved source prevents later autoplay and the next play use
   expect(app.audio()).toHaveLength(0);
   expect(read(app, "queue").playing).toBe(false);
   await app.press("Play"); await app.waitFor("Playing");
-  expect(app.audio().filter((call) => call.command === "open").map((call) => call.src)).toEqual(["https://audio.test/high.m4a"]);
+  expect(relayOpens(app)).toEqual(["relay"]);
+  expect(read(app, "relayed")).toEqual(["https://audio.test/high.m4a"]);
 });
 
 test("duplicate queue rows move independently and paused removal plus repeat keep correct audio", async () => {
@@ -68,7 +72,8 @@ test("changing quality during resolution keeps play intent and disposes the obso
   await app.press("Start video"); await app.waitFor("Loading");
   await app.press("High quality"); await app.waitFor("Playing");
   await app.clock!.fastForward(60001);
-  expect(app.audio().filter((call) => call.command === "open").map((call) => call.src)).toEqual(["https://audio.test/high.m4a"]);
+  expect(relayOpens(app)).toEqual(["relay"]);
+  expect(read(app, "relayed")).toEqual(["https://audio.test/high.m4a"]);
   expect(read(app, "queue").playing).toBe(true);
 });
 
