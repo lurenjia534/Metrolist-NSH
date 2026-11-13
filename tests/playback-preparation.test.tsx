@@ -93,12 +93,12 @@ test("changing quality replaces prepared URLs and retry explicitly refreshes a f
   expect(calls(app, "app.audio.open").slice(-1)[0].data).toMatchObject({ url: source("second", "high").url });
   expect(streamRequests(app, "second")).toHaveLength(2);
   await app.host.send("audio.state", { requestId: requestId(app), state: "idle", position: 0, duration: 60, bufferedPosition: 0,
-    playing: false, buffering: false, playWhenReady: false, error: "Source expired", errorCode: "http-403" });
+    playing: false, buffering: false, playWhenReady: false, error: "Source failed", errorCode: "network" });
   await app.press("Retry");
   expect(streamRequests(app, "second")).toHaveLength(3);
   expect(streamRequests(app, "second").slice(-1)[0].url.includes("refresh=1")).toBe(true);
   await app.host.send("audio.state", { requestId: requestId(app), state: "idle", position: 0, duration: 60, bufferedPosition: 0,
-    playing: false, buffering: false, playWhenReady: false, error: "Another expired source", errorCode: "http-410" });
+    playing: false, buffering: false, playWhenReady: false, error: "Source failed again", errorCode: "network" });
   await app.press("Resume");
   expect(streamRequests(app, "second")).toHaveLength(4);
   expect(streamRequests(app, "second").slice(-1)[0].url.includes("refresh=1")).toBe(true);

@@ -63,6 +63,15 @@ let savedPosition = 0;
 let startup: { requestedAt: number; resolvedAt: number; prepared: boolean } | undefined;
 let prepared: { track: Track; context: string; source?: StreamInfo; cacheRequested: boolean } | undefined;
 
+// Upstream MusicService.refreshStreamAndRetry: a source the CDN rejects with HTTP 403 or 410 (an
+// expired or refused URL) is resolved again and resumes where it stopped, a second later. A song
+// gets three attempts until it plays again; the rejection after them is reported.
+const RECOVERY_ATTEMPTS = 3;
+const RECOVERY_DELAY_MS = 1000;
+const recoveries = new Map<string, number>();
+/** The load whose source failure is handled; the engine and the player report one failure more than once. */
+let failedLoad = -1;
+
 function upcomingIndex() {
   if (!queue().length || currentIndex() < 0) return -1;
   if (repeat() === "one") return currentIndex();
@@ -159,9 +168,10 @@ class AndroidSource implements SourceControl {
 }
 
 function errorText(reason: unknown) { return reason && typeof reason === "object" && "message" in reason ? String(reason.message) : String(reason); }
+function errorCode(reason: unknown) { return reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "failed"; }
 function surfaceError(reason: unknown) { options.onError?.(errorText(reason)); }
 function reportError(reason: unknown) {
-  const code = reason && typeof reason === "object" && "code" in reason ? String(reason.code) : "failed";
+  const code = errorCode(reason);
   playRequested = false;
   batch(() => { playbackErrorCode.set(code); playbackError.set(code === "not-allowed" ? "点按播放以开始音频" : errorText(reason)); buffering.set(false); playing.set(false); });
   playbackPhase.set("error");
@@ -169,6 +179,31 @@ function reportError(reason: unknown) {
   cancelPreparation();
   updateMediaSession();
   if (code !== "not-allowed") surfaceError(reason);
+}
+
+/** The playing source failed: the native engine's error, or the player's. */
+async function sourceFailed(reason: unknown) {
+  if (errorCode(reason) === "not-allowed") { reportError(reason); return; }
+  const request = loadId;
+  if (failedLoad === request) return;
+  failedLoad = request;
+  let code = errorCode(reason);
+  // NSH's player reports no HTTP status. The source itself answers a one-byte read as it now answers
+  // the player; the desktop relay would answer from the bytes it already holds.
+  const source = streamInfo();
+  if (platform.os !== "android" && source && /^https?:/.test(source.url)) {
+    const status = await fetch(source.url, { headers: { ...source.headers, Range: "bytes=0-0" } }).then(response => response.status, () => 0);
+    if (request !== loadId) return;
+    if (status === 403 || status === 410) code = `http-${status}`;
+  }
+  const failure = { message: errorText(reason), code };
+  if (code !== "http-403" && code !== "http-410") { reportError(failure); return; }
+  const id = currentTrack()!.id;
+  const attempts = recoveries.get(id) ?? 0;
+  if (attempts >= RECOVERY_ATTEMPTS) { recoveries.delete(id); reportError(failure); return; }
+  recoveries.set(id, attempts + 1);
+  batch(() => { playing.set(false); buffering.set(playRequested); playbackPhase.set(playRequested ? "buffering" : "paused"); });
+  setTimeout(() => { if (request === loadId) void loadCurrent(position(), true, true, playRequested); }, RECOVERY_DELAY_MS);
 }
 
 export function initPlayback(configuration: PlaybackOptions) {
@@ -256,7 +291,11 @@ function receiveProgress(seconds: number, total: number) {
 
 function receiveNativeState(event: NativeAudioState) {
   if (!player || event.requestId !== loadId) return;
-  if (event.error) { reportError({ message: event.error, code: event.errorCode || "failed" }); return; }
+  if (event.error) {
+    if (failedLoad !== loadId) position.set(event.position);
+    void sourceFailed({ message: event.error, code: event.errorCode || "failed" });
+    return;
+  }
   const previousState = nativeState;
   const previousIntent = playRequested;
   const wasPlaying = playing();
@@ -315,7 +354,7 @@ export async function reconnectNativePlayback() {
   changed();
 }
 
-async function loadCurrent(startAt = 0, continueSession = false, refresh = false) {
+async function loadCurrent(startAt = 0, continueSession = false, refresh = false, play = true) {
   let track = currentTrack();
   if (!track) return;
   const wasPrepared = !refresh && prepared?.track.id === track.id && prepared.track.url === track.url
@@ -324,12 +363,12 @@ async function loadCurrent(startAt = 0, continueSession = false, refresh = false
   cancelPreparation();
   releaseSource();
   const request = loadId;
-  playRequested = true;
+  playRequested = play;
   lastPosition = startAt;
   savedPosition = startAt;
-  startup = { requestedAt: Date.now(), resolvedAt: 0, prepared: wasPrepared };
+  startup = play ? { requestedAt: Date.now(), resolvedAt: 0, prepared: wasPrepared } : undefined;
   if (!continueSession || listening?.track.id !== track.id) startListening(track);
-  batch(() => { position.set(startAt); duration.set(track.duration); buffering.set(true); playbackError.set(""); playbackErrorCode.set(""); playbackPhase.set("resolving"); playbackTiming.set(null); });
+  batch(() => { position.set(startAt); duration.set(track.duration); buffering.set(play); playbackError.set(""); playbackErrorCode.set(""); playbackPhase.set("resolving"); playbackTiming.set(null); });
   changed();
   try {
     const source = await options.resolveStream(track, { refresh });
@@ -383,16 +422,18 @@ async function loadCurrent(startAt = 0, continueSession = false, refresh = false
       buffering.set(event.buffering && playRequested);
       playbackPhase.set(!playRequested ? "paused" : event.buffering ? "buffering" : "playing");
     });
-    audio.on("error", (event) => { if (request === loadId) reportError(event); });
+    audio.on("error", (event) => { if (request === loadId) void sourceFailed(event); });
     audio.on("end", () => { if (request === loadId) { flushListening(); void advance(true); } });
     if (startAt > 0) audio.seek(startAt);
-    await audio.play();
+    if (!playRequested) { audio.preload(); batch(() => { buffering.set(false); playbackPhase.set("paused"); }); return; }
+    try { await audio.play(); } catch (reason) { if (request === loadId) void sourceFailed(reason); return; }
     if (request !== loadId || !playRequested) return;
     finishPlaybackStart();
   } catch (reason) { if (request === loadId) reportError(reason); }
 }
 
 function finishPlaybackStart() {
+  recoveries.delete(currentTrack()!.id);
   batch(() => { playing.set(true); buffering.set(false); playbackError.set(""); playbackErrorCode.set(""); playbackPhase.set("playing"); });
   if (startup) {
     const readyAt = Date.now();
@@ -435,8 +476,9 @@ export async function resumePlayback() {
   if (!currentTrack() || playRequested) return;
   if (duration() > 0 && position() >= duration()) seek(0);
   playRequested = true;
-  if (!player || (playbackError() && playbackErrorCode() !== "not-allowed")) {
-    await loadCurrent(position(), true, !!playbackError());
+  const failed = failedLoad === loadId;
+  if (!player || failed || (playbackError() && playbackErrorCode() !== "not-allowed")) {
+    await loadCurrent(position(), true, failed || !!playbackError());
     return;
   }
   const request = loadId;
@@ -446,7 +488,7 @@ export async function resumePlayback() {
     await player.play();
     if (request !== loadId || !playRequested || platform.os === "android") return;
     finishPlaybackStart();
-  } catch (reason) { if (request === loadId) reportError(reason); }
+  } catch (reason) { if (request === loadId) void sourceFailed(reason); }
 }
 export async function togglePlay() {
   if (playRequested || playing()) pause();

@@ -75,6 +75,10 @@ Web、Linux 与 Android 上都出现过同一个现象：无论是否登录，�
 
 **尚未验证**：Android 真机、Windows、macOS、iOS 上的实际播放（与 Linux 共用 Rust 中转代码，但没有在这些系统上运行）；Cloudflare Worker 线上部署；带真实账号的登录态解析（测试使用请求夹具）。YouTube 若调整阈值，`CHUNK_BYTES` / `RANGE_CHUNK_BYTES` 是唯一需要改的常量。
 
+## 地址被拒绝
+
+限速之外，签名地址过期或被拒绝时 googlevideo 返回 403 / 410。播放器遇到这种错误时会按原版 Metrolist 的方式以 `refresh=1` 重新解析并从原位置继续，见 [stream-recovery.md](stream-recovery.md)。429 不重新解析。
+
 ## 源码依据
 
 - [Metrolist `e6fea3b` MusicService / StreamUrlCache](https://github.com/MetrolistGroup/Metrolist/blob/e6fea3b36c68841bad21daa6252e1d69ecd3afbe/app/src/main/kotlin/com/metrolist/music/playback/StreamUrlCache.kt)
