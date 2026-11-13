@@ -17,34 +17,34 @@ export const providerRail = () =>
 export function ProviderSwitcher() {
   const compact = () => windowSize().width < 900;
   const spotify = () => activeProvider() === "spotify";
-  const background = () => spotify() ? token("sidebar") : palette().panel;
+  const background = () => spotify() ? token("sidebar") : palette().bg;
   const foreground = () => spotify() ? token("foreground") : palette().text;
   const muted = () => spotify() ? token("muted-foreground") : palette().sub;
-  const selected = () => spotify() ? token("sidebar-accent") : palette().selected;
+  const selected = () => spotify() ? token("secondary") : palette().secondary;
   return (
     <View testID="provider-switcher" style={{
       flexShrink: 0, backgroundColor: background(),
-      borderBottomWidth: providerRail() ? 0 : 1, borderRightWidth: providerRail() ? 1 : 0,
+      borderBottomWidth: 0, borderRightWidth: providerRail() ? 1 : 0,
       borderColor: spotify() ? token("sidebar-border") : palette().line,
       paddingTop: platform.os === "android" || platform.os === "ios" ? "env(safe-area-inset-top)" : 0,
       paddingBottom: providerRail() ? "env(safe-area-inset-bottom)" : 0,
       paddingLeft: "env(safe-area-inset-left)", paddingRight: providerRail() ? 0 : "env(safe-area-inset-right)",
     }}>
-      <View style={{ width: providerRail() ? 108 : undefined, flex: providerRail() ? 1 : undefined, minHeight: 56, minWidth: 0, flexDirection: providerRail() ? "column" : "row", alignItems: providerRail() ? "stretch" : "center", gap: providerRail() ? 14 : 20, paddingHorizontal: providerRail() ? 8 : compact() ? 12 : 24, paddingVertical: providerRail() ? 12 : 6 }}>
+      <View style={{ width: providerRail() ? 108 : undefined, flex: providerRail() ? 1 : undefined, minHeight: 52, minWidth: 0, flexDirection: providerRail() ? "column" : "row", alignItems: providerRail() ? "stretch" : "center", gap: providerRail() ? 14 : 20, paddingHorizontal: providerRail() ? 8 : compact() ? 8 : 18, paddingVertical: providerRail() ? 12 : 6 }}>
         <If when={providerRail() || !compact()}>
           <View style={{ flexDirection: providerRail() ? "column" : "row", alignItems: "center", gap: providerRail() ? 6 : 9, width: providerRail() ? undefined : 168 }}>
             <Image src={logo} style={{ width: 26, height: 26, borderRadius: 8 }} />
             <Text style={{ color: foreground(), fontSize: providerRail() ? 11 : 14, fontWeight: "600" }}>Metrolist</Text>
           </View>
         </If>
-        <Tabs style={{ flexDirection: providerRail() ? "column" : "row", flex: !providerRail() && compact() ? 1 : undefined, minWidth: 0, gap: 4, padding: 3, borderRadius: 16, backgroundColor: colorScheme() === "dark" ? "#ffffff08" : "#00000006" }} indicatorStyle={{ left: providerRail() ? 3 : undefined, right: providerRail() ? 3 : undefined, top: providerRail() ? undefined : 3, bottom: providerRail() ? undefined : 3, borderRadius: 13, backgroundColor: selected() }}>
+        <Tabs style={{ flexDirection: providerRail() ? "column" : "row", flex: !providerRail() && compact() ? 1 : undefined, minWidth: 0, gap: 2, padding: 3, borderRadius: 999, borderWidth: 1, borderColor: spotify() ? token("border") : palette().line, backgroundColor: spotify() ? token("card") : palette().panel }} indicatorStyle={{ left: providerRail() ? 3 : undefined, right: providerRail() ? 3 : undefined, top: providerRail() ? undefined : 3, bottom: providerRail() ? undefined : 3, borderRadius: 999, backgroundColor: selected() }}>
           <Each of={providers}>{provider => (
             <Tab testID={`provider-${provider().id}`} accessibilityLabel={`切换到 ${provider().label}`} selected={activeProvider() === provider().id}
               disabled={!providersReady() || switchingProvider()}
               onPress={() => void selectProvider(provider().id)}
-              style={{ flex: !providerRail() && compact() ? 1 : undefined, minWidth: 0, height: providerRail() ? 76 : 38, paddingHorizontal: providerRail() ? 4 : compact() ? 12 : 20, flexDirection: providerRail() ? "column" : "row", alignItems: "center", justifyContent: "center", gap: providerRail() ? 6 : 9, borderRadius: 13 }}
+              style={{ flex: !providerRail() && compact() ? 1 : undefined, minWidth: 0, height: providerRail() ? 76 : 34, paddingHorizontal: providerRail() ? 4 : compact() ? 12 : 18, flexDirection: providerRail() ? "column" : "row", alignItems: "center", justifyContent: "center", gap: providerRail() ? 6 : 8, borderRadius: 999 }}
               activeStyle={{ opacity: 0.7 }} class="transition-colors duration-200 motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-primary">
-              <Icon name={provider().icon} size={providerRail() ? 22 : 17} color={activeProvider() === provider().id ? provider().color : muted()} />
+              <Icon name={provider().icon} size={providerRail() ? 22 : 16} color={activeProvider() === provider().id ? provider().color : muted()} />
               <Text style={{ minWidth: 0, flexShrink: 1, fontSize: providerRail() ? 12 : 13, textAlign: "center", numberOfLines: providerRail() ? 2 : 1, fontWeight: activeProvider() === provider().id ? "600" : "400", color: activeProvider() === provider().id ? foreground() : muted() }}>{providerRail() && provider().id === "youtube" ? "YouTube\nMusic" : provider().label}</Text>
             </Tab>
           )}</Each>

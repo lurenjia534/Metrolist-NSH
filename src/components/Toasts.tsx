@@ -31,16 +31,17 @@ export function ToastHost() {
   cleanup(() => manager.dispose());
 
   const dismiss = () => toast.set("");
-  const bottom = () => safeArea().bottom + (fullPlayer() ? 80 : currentTrack() ? narrow() ? 156 : 112 : narrow() ? 84 : 24);
+  const bottom = () => safeArea().bottom + (fullPlayer() ? 80 : currentTrack() ? narrow() ? 156 : 100 : narrow() ? 84 : 24);
 
-  return <Overlay testID="toast-host" style={{ pointerEvents: "box-none", left: narrow() ? 16 : 240, right: 16, bottom: bottom(), alignItems: "center", minWidth: 0 }}>
-    <ToastStack placement="bottomCenter" motion={timings} style={{ width: "100%", maxWidth: 520, minWidth: 0 }} onExpandedChange={({ expanded: value }) => expanded.set(value)} onCancel={dismiss}>
+  return <Overlay testID="toast-host" style={{ pointerEvents: "box-none", left: 16, right: 16, bottom: bottom(), alignItems: narrow() ? "center" : "flex-end", minWidth: 0 }}>
+    <ToastStack placement={narrow() ? "bottomCenter" : "bottomRight"} motion={timings} style={{ width: "100%", maxWidth: 360, minWidth: 0 }} onExpandedChange={({ expanded: value }) => expanded.set(value)} onCancel={dismiss}>
       <Each of={shown()} key={entry => entry.id}>{entry =>
         <Toast testID="toast" transitionStatus={entry().status} accessibilityLabel={entry().value as string} onDismissRequest={dismiss}
-          startingClass={reduceMotion() ? "" : "opacity-0 translate-y-2"}
-          endingClass={reduceMotion() ? "opacity-0" : "opacity-0 translate-y-2"} swipingClass="transition-none"
-          style={{ minWidth: 0, borderRadius: 16, backgroundColor: palette().accent, paddingHorizontal: 20, paddingVertical: 16, boxShadow: palette().shadow, ...transition("opacity,transform", motion.fast) }}>
-          <Label size={14} color={palette().onAccent} weight="600">{entry().value as string}</Label>
+          startingClass={reduceMotion() ? "" : "opacity-0 translate-y-8 scale-90"}
+          endingClass={reduceMotion() ? "opacity-0" : "opacity-0 translate-x-12 scale-95"} swipingClass="transition-none" swipeDirection="right"
+          class="flex-row items-center gap-3 rounded-(--radius-card) border border-border bg-popover px-4 py-3 shadow-xl transition-all duration-300 ease-out motion-reduce:transition-none"
+          style={{ minWidth: 0 }}>
+          <Label size={14} color={palette().text} weight="500">{entry().value as string}</Label>
         </Toast>
       }</Each>
     </ToastStack>

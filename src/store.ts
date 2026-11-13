@@ -424,6 +424,12 @@ export async function playEndpoint(endpoint: PlayEndpoint, title: string) {
   addTracks(result.tracks, false);
   await player.playList(result.tracks, result.currentIndex ?? 0, title);
 }
+/** Plays an album or playlist from its card without opening its page. */
+export async function playCollection(collection: Collection) {
+  const result = await api.fetchBrowse(collection.browseId || collection.id, undefined, collection.params);
+  addTracks(result.tracks, false);
+  await player.playList(result.tracks, 0, result.title || collection.title);
+}
 export function saveSearchHistory(text: string) {
   const value = text.trim();
   if (!value) return;

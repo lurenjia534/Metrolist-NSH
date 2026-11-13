@@ -8,9 +8,9 @@ const remaining = () => `${Math.floor(p.sleepRemaining() / 60)}:${String(p.sleep
 
 export function SleepTimerButton() {
   return <If when={p.sleepActive()} else={<Tool testID="player-sleep" icon="clock" label="睡眠定时器" onPress={() => nav.dialog.set("sleep")} />}>
-    <Press testID="player-sleep" label="睡眠定时器" onPress={() => nav.dialog.set("sleep")} style={{ minHeight: 48, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: c().selected, borderRadius: 24 }}>
-      <Icon name="moon" size={18} color={c().accent} />
-      <Label testID="sleep-countdown" size={12} color={c().accent}>{p.sleepAfterTrack() ? "本首结束" : remaining()}</Label>
+    <Press testID="player-sleep" label="睡眠定时器" onPress={() => nav.dialog.set("sleep")} style={{ minHeight: 36, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", gap: 7, borderRadius: 999, backgroundColor: c().secondary }}>
+      <Icon name="moon" size={16} color="foreground" />
+      <Label testID="sleep-countdown" size={12} weight="600">{p.sleepAfterTrack() ? "本首结束" : remaining()}</Label>
     </Press>
   </If>;
 }
@@ -19,8 +19,8 @@ export function SleepTimerOptions(props: { close: () => void }) {
   const set = (minutes: number) => { p.setSleepTimer(minutes); props.close(); say(`${minutes} 分钟后暂停播放`); };
   return <View style={{ gap: 18 }}>
     <If when={p.sleepActive()} else={<Label color={c().sub} size={14}>选择播放时长，或听完当前这首再休息。</Label>}>
-      <View testID="sleep-status" style={{ padding: 18, gap: 8, borderRadius: 18, backgroundColor: c().selected }}>
-        <Label size={24} weight="600" color={c().accent}>{p.sleepAfterTrack() ? "播完这首停止" : remaining()}</Label>
+      <View testID="sleep-status" style={{ padding: 16, gap: 6, borderRadius: 12, borderWidth: 1, borderColor: c().line, backgroundColor: c().card }}>
+        <Label size={24} weight="800">{p.sleepAfterTrack() ? "播完这首停止" : remaining()}</Label>
         <Label color={c().sub} size={13} lines={2}>{p.sleepAfterTrack() ? p.currentTrack()?.title : `后暂停播放 · ${new Date(p.sleepUntil()!).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}</Label>
       </View>
     </If>

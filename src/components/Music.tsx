@@ -1,4 +1,4 @@
-import { View, Scroll, List, Clipboard, windowSize, type JSX } from "nsh";
+import { View, Scroll, List, Clipboard, Text, signal, untracked, windowSize, type JSX } from "nsh";
 import * as s from "../store";
 import * as p from "../playback";
 import * as nav from "../navigation";
@@ -6,7 +6,13 @@ import * as together from "../together";
 import * as account from "../account";
 import * as cloud from "../cloudActions";
 import { Icon } from "../icons";
-import { Art, Label, Press, Tool, CommandMenu, palette as c, narrow, pageGutter, action, say, time, type CommandItem } from "../ui";
+import { Art, Tool, CommandMenu, ROW, SectionTitle, narrow, touch, action, say, time, type CommandItem } from "../ui";
+import { wideTracks } from "../layout";
+import { pageWave } from "./Page";
+import { Cover, focusRing, keyRing, LAYER, PlayButton, terminal } from "../spotish/components/ui/controls";
+import { Digits } from "../spotish/components/ui/digits";
+import { PlayingBars } from "../spotish/components/ui/playing";
+import { listItemEntrance, waveDelay, type ListWave, WAVE } from "../spotish/components/ui/motion";
 import { isTrack, type Track, type Collection, type Playlist, type CatalogItem } from "../model";
 
 export function shareTrack(track: Track) {
@@ -34,51 +40,161 @@ export function songCommands(track: Track): CommandItem[] {
   ];
 }
 export function SongMenu(props: { track: Track }) { return <CommandMenu label={`更多 ${props.track.title}`} testID={`song-menu-${props.track.id}`} items={songCommands(props.track)} />; }
-export function TrackRow(props: { track: Track; list?: Track[]; index?: number; compact?: boolean; active?: boolean; menu?: boolean; playLabel?: string; selected?: boolean; selecting?: boolean; onSelect?: () => void; onLongPress?: () => void; onPlay?: () => void; trailing?: JSX.Element; actionsBelow?: boolean; rank?: number }) {
-  const active = () => props.active ?? p.currentTrack()?.id === props.track.id;
-  return <View testID={`track-${props.track.id}`} style={{ minWidth: 0, borderRadius: 12, paddingHorizontal: 4, backgroundColor: active() || props.selected ? c().selected : "transparent" }}>
-    <View style={{ flexDirection: "row", minWidth: 0, minHeight: props.compact ? 68 : 76, alignItems: "center", gap: 8 }}>
-    <If when={props.selecting}><Tool icon={props.selected ? "checkCircle" : "album"} label={`${props.selected ? "取消选择" : "选择"} ${props.track.title}`} active={props.selected} onPress={() => props.onSelect?.()} /></If>
-    <If when={props.rank !== undefined}><Label size={14} color={c().sub} style={{ width: 24, textAlign: "center" }}>{props.rank}</Label></If>
-    <Press label={props.selecting ? `${props.selected ? "取消选择" : "选择"} ${props.track.title}` : props.playLabel || `播放 ${props.track.title}`} testID={`play-track-${props.track.id}`} onLongPress={props.onLongPress} onPress={() => props.selecting ? props.onSelect?.() : together.isGuest() ? action(() => together.suggestTrack(props.track), "点歌请求已发送") : props.onPlay ? props.onPlay() : action(() => props.list && props.index !== undefined ? p.playList(props.list, props.index) : p.playTrack(props.track, props.list))} style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 12, minWidth: 0, paddingVertical: 8 }}>
-      <View style={{ width: props.compact ? 48 : 52, height: props.compact ? 48 : 52, flexShrink: 0 }}>
-        <Art track={props.track} size={props.compact ? 48 : 52} radius={8} />
-        <If when={active()}><View accessibilityElementsHidden style={{ position: "absolute", right: 2, bottom: 2, width: 22, height: 22, borderRadius: 7, backgroundColor: c().accent, alignItems: "center", justifyContent: "center" }}><Icon name={p.playbackPhase() === "resolving" || p.playbackPhase() === "buffering" ? "clock" : p.playing() ? "volume" : "pause"} size={14} color={c().onAccent} /></View></If>
-      </View>
-      <View style={{ flex: 1, minWidth: 0, gap: 5 }}><Label lines={1} size={narrow() ? 15 : 14} weight="600" color={active() ? c().accent : c().text}>{props.track.title}</Label><View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}><If when={s.isLiked(props.track.id)}><Icon name="heart" size={12} color={c().danger} filled /></If><If when={s.downloads().some(t => t.id === props.track.id)}><Icon name="download" size={12} color={c().good} /></If><Label lines={1} size={12} color={c().sub} style={{ flex: 1 }}>{props.track.artist}{props.track.duration ? ` · ${time(props.track.duration)}` : ""}</Label></View></View>
-    </Press>
-    <If when={!narrow() && windowSize().width >= 1100 && !props.compact}><Label lines={1} size={12} color={c().faint} style={{ width: 128 }}>{props.track.album}</Label><Tool icon="heart" label={s.isLiked(props.track.id) ? "取消喜欢" : "喜欢这首歌"} active={s.isLiked(props.track.id)} onPress={() => s.toggleLike(props.track)} /></If>
-    <If when={!props.actionsBelow}>{props.trailing}</If><If when={!props.selecting && props.menu !== false}><SongMenu track={props.track} /></If>
-    </View>
-    <If when={props.actionsBelow}><View testID={`track-actions-${props.track.id}`} style={{ flexDirection: "row", justifyContent: "flex-end", gap: 8, paddingBottom: 4 }}>{props.trailing}</View></If>
+/** The header row over a track list (spotish `TrackHeader`): a TITLE
+ * (and ALBUM) overline from the covers' edge, a clock over the lengths. */
+export function TrackHeader(props: { numbered?: boolean }) {
+  return <View class="mb-1 h-8 flex-row items-center gap-3 border-b border-border/60 px-3">
+    <If when={props.numbered ?? true}><View class="w-6" /></If>
+    <Text class="flex-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground" style={{ flexBasis: 48 }}>标题</Text>
+    <If when={wideTracks()}><Text class="flex-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">专辑</Text></If>
+    <View class="w-[34px]" />
+    <View class="w-12 items-end"><Icon name="clock" size={14} color="muted-foreground" /></View>
+    <View class={touch() ? "w-11" : "w-8"} />
   </View>;
 }
-export function TrackList(props: { tracks: Track[]; compact?: boolean; title?: string }) {
-  return <List each={props.tracks} viewport="parent" estimatedItemSize={props.compact ? 68 : 76} keyExtractor={(track, index) => `${track.id}-${index}`}>
-    {(track, index) => <TrackRow track={track()} list={props.tracks} index={index()} compact={props.compact} onPlay={() => action(() => p.playList(props.tracks, index(), props.title))} />}
-  </List>;
+
+/** A track (spotish `TrackRow`): the number (a play glyph on hover, the
+ * playing bars on the current track), a 36pt cover, title and artists,
+ * the album where there is room, Like, the length and its menu. With the
+ * page's `wave` it slides in from the right, its cover flipping open. */
+export function TrackRow(props: { track: Track; list?: Track[]; index?: number; compact?: boolean; active?: boolean; menu?: boolean; playLabel?: string; selected?: boolean; selecting?: boolean; onSelect?: () => void; onLongPress?: () => void; onPlay?: () => void; trailing?: JSX.Element; actionsBelow?: boolean; rank?: number; numbered?: boolean; wave?: ListWave }) {
+  const { style: entrance, cover: coverIn, text: textIn } = untracked(() => listItemEntrance({ wave: props.wave, key: () => props.track.id, index: () => props.index ?? 0, axis: "translateX", turns: WAVE.rows }));
+  const current = () => props.active ?? p.currentTrack()?.id === props.track.id;
+  const liked = () => s.isLiked(props.track.id);
+  const numbered = () => !props.compact && !props.selecting && (props.numbered ?? props.index !== undefined);
+  const wide = () => !props.compact && wideTracks();
+  const play = () => props.selecting ? props.onSelect?.() : together.isGuest() ? action(() => together.suggestTrack(props.track), "点歌请求已发送") : props.onPlay ? props.onPlay() : action(() => props.list && props.index !== undefined ? p.playList(props.list, props.index) : p.playTrack(props.track, props.list));
+  return <View testID={`track-${props.track.id}`} style={entrance} class={`group min-w-0 rounded-(--radius) ${props.selected ? "bg-secondary" : current() ? "bg-row-hover" : ""} transition-colors duration-150 hover:bg-row-hover motion-reduce:transition-none`}>
+    <View class={`min-w-0 flex-row items-center gap-1 pr-1 ${props.compact ? "h-14" : "h-14"}`}>
+      <If when={props.selecting}><View class="pl-2"><Tool icon={props.selected ? "checkCircle" : "circle"} label={`${props.selected ? "取消选择" : "选择"} ${props.track.title}`} active={props.selected} onPress={() => props.onSelect?.()} /></View></If>
+      <View role="button" testID={`play-track-${props.track.id}`} accessibilityLabel={props.selecting ? `${props.selected ? "取消选择" : "选择"} ${props.track.title}` : props.playLabel || `播放 ${props.track.title}`} onPress={play} onLongPress={props.onLongPress}
+        class={`min-w-0 flex-1 flex-row items-center gap-3 self-stretch rounded-(--radius) pl-3 active:opacity-70 ${focusRing}`}>
+        <If when={numbered() || props.rank !== undefined}><View class="w-6 items-end">
+          <If when={current()} else={<View class="relative items-end justify-center">
+            <Digits class={`text-xs text-muted-foreground ${LAYER} group-hover:-translate-y-1 group-hover:opacity-0`}>{String(props.rank ?? (props.index ?? 0) + 1)}</Digits>
+            <View class={`absolute right-0 scale-50 opacity-0 ${LAYER} group-hover:scale-100 group-hover:opacity-100 group-active:scale-90`}><Icon name="play" size={12} color="foreground" /></View>
+          </View>}><PlayingBars playing={p.playing()} /></If>
+        </View></If>
+        <View style={coverIn} class="relative">
+          <Art track={props.track} size={props.compact ? 40 : 36} radius={4} />
+          <If when={!numbered() && props.rank === undefined}><View class={`absolute inset-0 items-center justify-center rounded-sm ${current() ? "bg-black/55 opacity-100" : "bg-black/45 opacity-0 group-hover:opacity-100"} ${LAYER}`}>
+            <If when={current()} else={<Icon name="play" size={14} color="#ffffff" />}><PlayingBars playing={p.playing()} size={12} /></If>
+          </View></If>
+        </View>
+        <View class="min-w-0 flex-1 gap-0.5" style={textIn}>
+          <Text class={`line-clamp-1 text-sm text-foreground ${current() ? "font-semibold" : "font-medium"}`}>{props.track.title}</Text>
+          <View class="flex-row items-center gap-1.5">
+            <If when={s.downloads().some((t) => t.id === props.track.id)}><Icon name="download" size={12} color="primary" /></If>
+            <Text class="line-clamp-1 flex-1 text-xs text-muted-foreground">{props.track.artist}{props.compact && props.track.duration ? ` · ${time(props.track.duration)}` : ""}</Text>
+          </View>
+        </View>
+        <If when={wide()}><Text class="line-clamp-1 min-w-0 flex-1 text-xs text-muted-foreground">{props.track.album}</Text></If>
+      </View>
+      <If when={!narrow() && !props.compact}><View class={liked() ? "" : `opacity-0 ${LAYER} group-hover:opacity-100`}><Tool icon="heart" label={liked() ? "取消喜欢" : "喜欢这首歌"} active={liked()} size={16} onPress={() => s.toggleLike(props.track)} /></View>
+        <Digits class="w-12 text-right text-xs text-muted-foreground">{props.track.duration ? time(props.track.duration) : ""}</Digits></If>
+      <If when={!props.actionsBelow}>{props.trailing}</If>
+      <If when={!props.selecting && props.menu !== false}><View class={touch() ? "" : `opacity-60 ${LAYER} group-hover:opacity-100`}><SongMenu track={props.track} /></View></If>
+    </View>
+    <If when={props.actionsBelow}><View testID={`track-actions-${props.track.id}`} class="flex-row justify-end gap-2 pb-1">{props.trailing}</View></If>
+  </View>;
 }
-export const cardSize = () => narrow() ? Math.min(172, Math.floor((windowSize().width - pageGutter() * 2 - 16) / 2)) : 172;
-export function MusicCard(props: { item: CatalogItem; list?: Track[]; size?: number }) {
-  const size = () => props.size || cardSize();
-  const coverHeight = () => (size() - 4) / (isTrack(props.item) ? props.item.thumbnailAspectRatio || 1 : 1);
-  return <Press label={props.item.title} onPress={() => isTrack(props.item) ? together.isGuest() ? action(() => together.suggestTrack(props.item as Track), "点歌请求已发送") : action(() => p.playTrack(props.item as Track, props.list)) : nav.browse(props.item as Collection)} style={{ width: size(), flexShrink: 0, gap: 10, padding: 2 }}>
-    <View style={{ width: size() - 4, height: coverHeight() }}><Art track={isTrack(props.item) ? props.item : undefined} src={isTrack(props.item) ? undefined : props.item.artwork} size={size() - 4} style={{ height: coverHeight() }} radius={!isTrack(props.item) && props.item.type === "artist" ? size() : 12} icon={!isTrack(props.item) && props.item.type === "artist" ? "artist" : "album"} /><If when={isTrack(props.item) || props.item.type !== "artist"}><View style={{ position: "absolute", bottom: 8, right: 8, width: 36, height: 36, borderRadius: 24, backgroundColor: c().scrim, alignItems: "center", justifyContent: "center" }}><Icon name="play" size={20} color={c().text} /></View></If></View>
-    <View style={{ gap: 5 }}><Label lines={2} size={14} weight="600">{props.item.title}</Label><Label lines={1} size={12} color={c().sub}>{isTrack(props.item) ? props.item.artist : props.item.subtitle || ({ album: "专辑", artist: "歌手", playlist: "歌单" }[props.item.type])}</Label></View>
-  </Press>;
+/** A short list of tracks (a search's songs): every row, no recycling. */
+export function TrackList(props: { tracks: Track[]; compact?: boolean; title?: string; wave?: ListWave; header?: boolean }) {
+  const wave = untracked(() => props.wave ?? pageWave());
+  return <View>
+    <If when={props.header ?? !props.compact}><TrackHeader /></If>
+    <Each of={props.tracks} key={(track) => track.id}>{(track, index) => <View class="pb-1"><TrackRow track={track()} list={props.tracks} index={index()} compact={props.compact} wave={wave} onPlay={() => action(() => p.playList(props.tracks, index(), props.title))} /></View>}</Each>
+  </View>;
 }
-export function ItemRail(props: { items: CatalogItem[]; all?: boolean }) {
-  const coverHeight = () => Math.max(...props.items.map(item => (cardSize() - 4) / (isTrack(item) ? item.thumbnailAspectRatio || 1 : 1)), 0);
-  return <Scroll horizontal scrollbar={false} style={{ height: coverHeight() + 100 }} contentStyle={{ flexDirection: "row", gap: 16, paddingBottom: 12 }}><Each of={props.items}>{(item) => <MusicCard item={item()} list={props.items.filter(isTrack)} />}</Each></Scroll>;
+
+const PHI = (1 + Math.sqrt(5)) / 2;
+/** A card's width in a row, pt (spotish `CARD_WIDTH`). */
+export const CARD_WIDTH = 160;
+const playSize = (card: number) => Math.round((card - 2 * 10) / PHI ** 3);
+const playInset = (card: number) => Math.round(playSize(card) / PHI ** 2);
+export const cardSize = () => narrow() ? 148 : CARD_WIDTH;
+
+/** A card (spotish `Card`): picture, name, and what it is. A wash comes in
+ * on hover, the cover grows a hair and the play button rises over it (shown
+ * on phones and while it plays). With its row's `wave` it rises in, its
+ * cover flipping open. */
+export function Card(props: { label: string; onPress: () => void; onPlay?: () => void; playing?: boolean; cover: JSX.Element; title: string; subtitle: string; width?: number; fill?: boolean; wave?: ListWave; index?: number; itemKey: string; testID?: string }) {
+  const width = () => props.width ?? cardSize();
+  const buttonSize = () => touch() ? Math.max(40, playSize(width())) : Math.max(36, playSize(width()));
+  const { style: rise, cover: coverIn, text: textIn } = untracked(() => listItemEntrance({ wave: props.wave, key: () => props.itemKey, index: () => props.index ?? 0, axis: "translateY", turns: WAVE.cards, coverTurn: "any" }));
+  return <View testID={props.testID} role="button" accessibilityLabel={props.label} onPress={props.onPress} style={props.fill ? rise : { ...rise, width: width() }}
+    class={`group shrink-0 gap-2 rounded-(--radius-card) p-2.5 transition duration-200 ease-out hover:bg-row-hover active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100 ${focusRing}`}>
+    <View class="relative">
+      <View class="transition duration-300 ease-out group-hover:scale-[1.01] motion-reduce:transition-none motion-reduce:group-hover:scale-100"><View style={coverIn}>{props.cover}</View></View>
+      <If when={props.onPlay}><View style={{ right: playInset(width()), bottom: playInset(width()) }} class={`absolute transition duration-200 ease-out group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100 motion-reduce:transition-none ${touch() || props.playing ? "translate-y-0 scale-100 opacity-100" : "translate-y-3 scale-75 opacity-0"}`}>
+        <PlayButton labels={["播放", "暂停"]} playing={!!props.playing} size={buttonSize()} onPress={() => props.onPlay?.()} />
+      </View></If>
+    </View>
+    <View class="gap-1" style={textIn}>
+      <Text class="line-clamp-1 text-sm font-semibold text-foreground">{props.title}</Text>
+      <Text class="line-clamp-2 text-xs text-muted-foreground">{props.subtitle}</Text>
+    </View>
+  </View>;
 }
-export function CollectionRow(props: { item: Collection }) {
-  return <View style={{ minWidth: 0, flexDirection: "row", alignItems: "center", gap: 12 }}><Press label={props.item.title} onPress={() => nav.browse(props.item)} style={{ flex: 1, minWidth: 0, minHeight: 76, flexDirection: "row", alignItems: "center", gap: 16 }}><Art src={props.item.artwork} size={56} radius={props.item.type === "artist" ? 36 : 8} icon={props.item.type === "artist" ? "artist" : "album"} /><View style={{ flex: 1, minWidth: 0, gap: 6 }}><Label lines={1} weight="600">{props.item.title}</Label><Label lines={1} size={12} color={c().sub}>{props.item.subtitle}</Label></View></Press><Tool icon={props.item.type === "artist" ? "checkCircle" : "bookmark"} label={s.isCollectionSaved(props.item.id) ? "移除收藏" : "收藏"} active={s.isCollectionSaved(props.item.id)} onPress={() => s.toggleCollectionSaved(props.item)} /></View>;
+const kindName = { album: "专辑", artist: "歌手", playlist: "歌单" } as const;
+export function MusicCard(props: { item: CatalogItem; list?: Track[]; width?: number; fill?: boolean; wave?: ListWave; index?: number }) {
+  const artist = () => !isTrack(props.item) && props.item.type === "artist";
+  const open = () => isTrack(props.item) ? together.isGuest() ? action(() => together.suggestTrack(props.item as Track), "点歌请求已发送") : action(() => p.playTrack(props.item as Track, props.list)) : nav.browse(props.item as Collection);
+  const playing = () => isTrack(props.item) ? p.currentTrack()?.id === props.item.id && p.playing() : p.queueTitle() === props.item.title && p.playing();
+  const play = () => playing() ? action(p.togglePlay) : isTrack(props.item) ? open() : action(() => s.playCollection(props.item as Collection));
+  return <Card label={props.item.title} itemKey={props.item.id} onPress={open} onPlay={artist() || together.isGuest() && !isTrack(props.item) ? undefined : play} playing={playing()} width={props.width} fill={props.fill} wave={props.wave} index={props.index} title={props.item.title}
+    subtitle={isTrack(props.item) ? props.item.artist : props.item.subtitle || kindName[props.item.type]}
+    cover={<Cover src={props.item.artwork} round={artist()} fallback={artist() ? "user" : "disc"} class="shadow-md" />} />;
 }
-export function PlaylistCover(props: { playlist: Playlist; size: number }) {
-  return <View style={{ width: props.size, height: props.size, flexDirection: "row", flexWrap: "wrap", overflow: "hidden", borderRadius: 12, backgroundColor: c().selected }}><If when={props.playlist.tracks.length >= 4} else={<Art track={props.playlist.tracks[0]} size={props.size} radius={12} />}><Each of={props.playlist.tracks.slice(0, 4)}>{(track) => <Art track={track()} size={props.size / 2} radius={0} />}</Each></If></View>;
+/** A titled row of cards that scrolls sideways (spotish `CardRow`), 216
+ * tall, running out to the page's edges. Not a virtualized `List`: nested
+ * in the page's own scroller, a horizontal List renders no cells in release
+ * builds on Linux; a shelf holds a couple of dozen cards at most. */
+export function CardRow(props: { items: CatalogItem[]; wave?: ListWave; delay?: number; title?: string; class?: string; testID?: string }) {
+  const wave = untracked(() => (props.wave ?? pageWave()).child(props.delay ?? 0));
+  const songs = () => props.items.filter(isTrack);
+  return <View class={`gap-2 ${props.class ?? ""}`}>
+    <If when={props.title}><SectionTitle title={props.title!} /></If>
+    <Scroll testID={props.testID} horizontal scrollbar={false} class="-mx-3" style={{ height: cardSize() + 72 }} contentClass="flex-row px-1 pt-1">
+      <Each of={props.items} key={(item) => item.id}>{(item, index) => <MusicCard item={item()} list={songs()} wave={wave} index={index()} />}</Each>
+    </Scroll>
+  </View>;
 }
-export function PlaylistCard(props: { playlist: Playlist; grid?: boolean }) {
-  return <Press label={props.playlist.name} onPress={() => nav.openPlaylist(props.playlist.id)} style={{ width: props.grid ? cardSize() : undefined, flexDirection: props.grid ? "column" : "row", gap: 12, alignItems: props.grid ? "stretch" : "center", minHeight: props.grid ? undefined : 76, padding: 2 }}>
-    <PlaylistCover playlist={props.playlist} size={props.grid ? cardSize() - 4 : 56} /><View style={{ flex: props.grid ? undefined : 1, minWidth: 0, gap: 6 }}><Label size={14} weight="600" lines={1}>{props.playlist.name}</Label><Label size={12} color={c().sub}>{props.playlist.tracks.length} 首歌曲</Label></View>
-  </Press>;
+/** Cards that fill their rows (spotish `CardGrid`): as many columns as fit. */
+export function CardGrid(props: { items: CatalogItem[]; wave?: ListWave; delay?: number }) {
+  const wave = untracked(() => (props.wave ?? pageWave()).child(props.delay ?? 0));
+  const room = signal(0);
+  const width = () => { const w = room(); return w > 0 ? w / Math.max(1, Math.floor(w / cardSize())) : cardSize(); };
+  return <View class="-mx-3 flex-row flex-wrap" onLayout={(event) => room.set(event.bounds.size.width)}>
+    <Each of={props.items} key={(item) => item.id}>{(item, index) => <MusicCard item={item()} width={Math.floor(width())} wave={wave} index={index()} list={props.items.filter(isTrack)} />}</Each>
+  </View>;
+}
+export function ItemRail(props: { items: CatalogItem[]; all?: boolean; wave?: ListWave }) {
+  return <CardRow items={props.items} wave={props.wave} />;
+}
+/** An album, artist or playlist as a row: a cover (round for an artist), the
+ * name and what it is, and saving it. */
+export function CollectionRow(props: { item: Collection; wave?: ListWave; index?: number }) {
+  const { style: entrance, cover: coverIn, text: textIn } = untracked(() => listItemEntrance({ wave: props.wave, key: () => props.item.id, index: () => props.index ?? 0, axis: "translateX", turns: WAVE.rows }));
+  const artist = () => props.item.type === "artist";
+  return <View style={entrance} class="group min-w-0 flex-row items-center gap-1 rounded-(--radius) pr-1 transition-colors duration-150 hover:bg-row-hover motion-reduce:transition-none">
+    <View role="button" accessibilityLabel={props.item.title} onPress={() => nav.browse(props.item)} class={`h-14 min-w-0 flex-1 flex-row items-center gap-3 rounded-(--radius) pl-3 active:opacity-70 ${focusRing}`}>
+      <View style={coverIn}><Cover src={props.item.artwork} size={40} round={artist()} fallback={artist() ? "user" : "disc"} class={artist() ? "" : "rounded-sm"} /></View>
+      <View class="min-w-0 flex-1 gap-0.5" style={textIn}><Text class="line-clamp-1 text-sm font-medium text-foreground">{props.item.title}</Text><Text class="line-clamp-1 text-xs text-muted-foreground">{props.item.subtitle || kindName[props.item.type]}</Text></View>
+    </View>
+    <Tool icon={artist() ? "checkCircle" : "bookmark"} label={s.isCollectionSaved(props.item.id) ? "移除收藏" : "收藏"} active={s.isCollectionSaved(props.item.id)} onPress={() => s.toggleCollectionSaved(props.item)} />
+  </View>;
+}
+/** A playlist's cover: its first four covers, or the first. */
+export function PlaylistCover(props: { playlist: Playlist; size?: number; class?: string }) {
+  return <View class={`overflow-hidden rounded-md bg-secondary ${props.size ? "" : "aspect-square w-full"} ${props.class ?? ""}`} style={props.size ? { width: props.size, height: props.size } : undefined}>
+    <If when={props.playlist.tracks.length >= 4} else={<Cover src={props.playlist.tracks[0]?.artwork ?? ""} size={props.size} fallback="playlist" />}>
+      <View class="flex-1 flex-row flex-wrap"><Each of={props.playlist.tracks.slice(0, 4)}>{(track) => <View class="h-1/2 w-1/2"><Cover src={track().artwork} fallback="music" class="rounded-none" /></View>}</Each></View>
+    </If>
+  </View>;
+}
+export function PlaylistCard(props: { playlist: Playlist; grid?: boolean; wave?: ListWave; index?: number; width?: number }) {
+  return <If when={props.grid} else={<View role="button" accessibilityLabel={props.playlist.name} onPress={() => nav.openPlaylist(props.playlist.id)} class={`h-14 flex-row items-center gap-3 rounded-(--radius) px-3 ${ROW}`}><PlaylistCover playlist={props.playlist} size={40} /><View class="min-w-0 flex-1 gap-0.5"><Text class="line-clamp-1 text-sm font-medium text-foreground">{props.playlist.name}</Text><Text class="text-xs text-muted-foreground">歌单 · {props.playlist.tracks.length} 首歌曲</Text></View></View>}>
+    <Card label={props.playlist.name} itemKey={props.playlist.id} width={props.width} wave={props.wave} index={props.index} onPress={() => nav.openPlaylist(props.playlist.id)} onPlay={props.playlist.tracks.length ? () => action(() => p.playList(props.playlist.tracks, 0, props.playlist.name)) : undefined} playing={p.queueTitle() === props.playlist.name && p.playing()} title={props.playlist.name} subtitle={`歌单 · ${props.playlist.tracks.length} 首歌曲`} cover={<PlaylistCover playlist={props.playlist} class="shadow-md" />} />
+  </If>;
 }

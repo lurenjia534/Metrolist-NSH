@@ -4,13 +4,15 @@
 
 ## 基础
 
-- 平台：桌面与网页共用侧栏布局，窄屏使用三项底栏。窄屏操作目标48，桌面图标按钮36。
-- 颜色：深色/纯黑/浅色，通过 ui 的 palette 语义角色定义；紫灰选中面、薰衣草主色，照片保留原图。
-- 字体：正文桌面14、手机16；辅助12；小标题20/24；页面标题28/32。标题最多两级。
-- 间距：4/8/12/16/24/32；图片圆角8/12，大播放器封面24，Material选项chip为圆角胶囊。
-- 共享控件由 src/ui.tsx 提供。按钮、菜单、Dialog、Switch、Slider、Tab使用NSH base的行为、键盘和无障碍语义。
-- 列表由List虚拟化；首页横向架控制页内条目数。页面拥有自己的Scroll，输入与列表同一边距。
-- 状态：收藏/保存显示状态，下载显示进度、取消/重试、离线播放。空白只在实际没有内容时显示。网络失败保留页面及重试入口。
+YouTube Music 工作区与 Spotify 工作区共用一套界面与动效：规则以 spotish 的设计文档为准（[huacnlee/spotish docs/DESIGN.md](https://github.com/huacnlee/spotish/blob/main/docs/DESIGN.md)），代码直接复用 `src/spotish/components/ui`（控件、图标、动效、骨架屏、菜单、播放器表面与音乐光效）。差异只有强调色（YouTube 红，`theme.json` 的 `primary`）和 YouTube Music 自己的功能（心情分类、歌曲列表架、一起听、下载、云端音乐库）。
+
+- 外壳（`App.tsx`、`src/layout.ts`）：桌面为三块圆角面板的侧栏（导航、你的音乐、账号与设置；860 以下为图标栏，宽度 72/228/274），页面直接铺在窗口底色上，播放器是悬浮在页面底部的 72pt 胶囊（`inset-x-3 bottom-1`，内含音乐光效），跨断点时以 `animateLayoutOn` 过渡。手机与窄窗口为单列、迷你播放器卡片与三项标签栏。
+- 页面（`src/components/Page.tsx`）：每页覆盖 Linux 导航栈的 libadwaita 灰底；页内头部为侧栏开关、后退/前进、搜索（宽桌面在头部右侧展开为搜索框）；大标题 `text-4xl font-extrabold`，首页为问候语。长列表由页面自身的 `List` 滚动（合集、喜欢、历史、歌单、音乐库），搜索结果用 `Each`；不使用嵌套在 `Scroll` 里的 `viewport="parent"` 列表。
+- 列表与卡片（`src/components/Music.tsx`）：歌曲行 48–56 高，序号悬停变为播放符号、当前歌曲显示跳动条，宽屏有专辑列与等宽时长；卡片 `p-2.5`，封面带阴影，悬停时右下角升起按黄金比例计算大小的播放键。行与卡片按 spotish 的 `createListWave`/`listItemEntrance` 以波浪方式进入，封面翻转展开。
+- 颜色：全部来自主题 token（`palette()` 只是读 token 的便捷函数）。强调色只用于库中正在播放的歌单名、开启状态的开关与焦点环；主要按钮与播放键是前景色。纯黑主题是 `theme.json` 的一个变体（`src/providers.ts`）。
+- 图标：spotish 的 Tabler 图标集（`src/spotish/components/ui/icons.tsx`，已加入 YouTube Music 需要的字形），带悬停形变；`src/icons.tsx` 只做名称映射。
+- 共享控件由 `src/ui.tsx` 提供，其实现是 spotish 的 `IconButton`、`BarSlider`、`ActionButton` 层次与菜单形变；按钮、菜单、Dialog、Switch、Slider、Tab 使用 NSH base 的行为、键盘和无障碍语义。
+- 状态：收藏/保存显示状态，下载显示进度、取消/重试、离线播放。加载时显示与内容同形的骨架屏并交叉淡入（`Reveal`）。网络失败保留页面及重试入口。
 
 ## 页面与状态所有者
 

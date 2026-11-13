@@ -26,12 +26,12 @@ writeFileSync(join(client, "version.json"), JSON.stringify({ version: appMetadat
 let html = readFileSync(join(client, "index.html"), "utf8");
 html = html.replace('<html lang="en">', '<html lang="zh-CN">');
 html = html.replace("<title>Metrolist</title>", '<title>Metrolist NSH</title>\n<meta name="description" content="用 Native Shell 编写的跨平台音乐客户端。探索 YouTube Music、建立歌单、收藏与聆听。">\n<meta name="referrer" content="strict-origin-when-cross-origin">');
-html = html.replace("</style>", "html,body{background:#0e0d12;color:#e9e6f2} #status .spinner{border-top-color:#c7c3f5}\n</style>");
+html = html.replace("</style>", "html,body{background:#070809;color:#f3f5f6} #status .spinner{border-top-color:#ff4e5b}\n</style>");
 writeFileSync(join(client, "index.html"), html);
 writeFileSync(join(client, "index.html.gz"), gzipSync(html));
 writeFileSync(join(client, "index.html.br"), brotliCompressSync(html));
 const manifest = JSON.parse(readFileSync(join(client, "manifest.webmanifest"), "utf8"));
-Object.assign(manifest, { name: "Metrolist · NSH", short_name: "Metrolist", lang: "zh-CN", theme_color: "#0e0d12", background_color: "#0e0d12", description: "Metrolist NSH 音乐播放器", display: "standalone" });
+Object.assign(manifest, { name: "Metrolist · NSH", short_name: "Metrolist", lang: "zh-CN", theme_color: "#070809", background_color: "#070809", description: "Metrolist NSH 音乐播放器", display: "standalone" });
 writeFileSync(join(client, "manifest.webmanifest"), JSON.stringify(manifest));
 
 // The gateway uses only Web-standard APIs and needs no bundler dependency.

@@ -1,4 +1,4 @@
-import { mount, View, Image, Scroll, signal, platform, keymap, host, colorScheme, reduceMotion, windowSize } from "nsh";
+import { mount, View, Scroll, Text, signal, effect, platform, keymap, host, colorScheme, reduceMotion } from "nsh";
 import { NavStack, NavPage, Tabs, Tab } from "nsh/base";
 import * as s from "./src/store";
 import * as p from "./src/playback";
@@ -8,91 +8,118 @@ import * as account from "./src/account";
 import { AccountPage } from "./src/pages/Account";
 import { CloudDialogs } from "./src/components/CloudLibrary";
 import { Icon } from "./src/icons";
-import { Label, Tool, Pill, Art, Press, palette as c, narrow, spacious, pageGutter, action } from "./src/ui";
-import { transition } from "./src/motion";
+import { Tool, Art, palette as c, spacious, action } from "./src/ui";
 import { HomePage, SearchPage, ExplorePage } from "./src/pages/Discover";
 import { LibraryPage, SongCollectionPage, CollectionPage } from "./src/pages/Library";
 import { DownloadsPage, StatisticsPage } from "./src/pages/Activity";
 import { SettingsPage } from "./src/pages/Settings";
 import { TogetherPage } from "./src/pages/Together";
-import { MiniPlayer, FullPlayer } from "./src/components/Player";
+import { MiniPlayer, PlayerBar, FullPlayer } from "./src/components/Player";
 import { ToastHost } from "./src/components/Toasts";
 import { Dialogs } from "./src/components/Dialogs";
 import { TrackRow } from "./src/components/Music";
-import logo from "./assets/metrolist-icon.png";
-import appInfo from "./nsh.json";
+import { Sidebar } from "./src/components/Sidebar";
+import { ErrorBanner, HeaderActions, PageBody, PageHeader, RouteContext, routeTitle } from "./src/components/Page";
+import { barSize, layout, railSidebar, sidebarShown, sidebarWidth, systemHeader } from "./src/layout";
 import { ProviderSwitcher, providerRail } from "./src/components/ProviderSwitcher";
-import { activeProvider, initializeProviders, providerError, providersReady, selectProvider, switchingProvider } from "./src/providers";
+import { activeProvider, applyWorkspaceTheme, initializeProviders, providerError, providersReady, selectProvider, switchingProvider } from "./src/providers";
 import { SpotifyWorkspace } from "./src/spotish/App";
+import { IconButton, focusRing } from "./src/spotish/components/ui/controls";
+import { animateLayoutOn } from "./src/spotish/components/ui/motion";
 
-const sidePlayer = signal(true);
-const systemHeader = platform.os === "ios" || platform.os === "android";
+// The YouTube Music workspace in the Spotify workspace's shells
+// (src/spotish/shells): on the desktops the sidebar down the left and the
+// pages on the window's ground, the player floating over their bottom; on
+// phones one column, the mini player and tabs.
+const sidePlayer = signal(false);
 const primary = [{ page: "home", label: "首页", icon: "home" }, { page: "search", label: "搜索", icon: "search" }, { page: "library", label: "音乐库", icon: "library" }] as const;
-const pageTitles: Record<nav.Page, string> = { home: "首页", search: "搜索", library: "音乐库", liked: "喜欢的音乐", history: "最近播放", collection: "", playlist: "歌单", downloads: "下载", stats: "聆听统计", settings: "设置", browse: "探索", together: "一起听", account: "账号" };
-function NavItem(props: { page: nav.Page; label: string; icon: string; count?: number }) {
-  const selected = () => primary.some(item => item.page === props.page) ? nav.activeTab() === props.page : nav.page() === props.page;
-  return <Press testID={`nav-${props.page}`} label={props.label} selected={selected()} onPress={() => nav.navigate(props.page, true)} style={{ minHeight: 48, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", gap: 14, borderRadius: 28 }}><Icon name={props.icon} size={22} color={selected() ? c().accent : c().sub} /><Label weight={selected() ? "600" : "400"} size={14} style={{ flex: 1 }}>{props.label}</Label><If when={props.count}><Label size={11} color={c().sub}>{props.count}</Label></If></Press>;
+
+function Screen(props: { route: nav.Route }) {
+  switch (props.route.page) {
+    case "home": return <HomePage route={props.route} />;
+    case "search": return <SearchPage route={props.route} />;
+    case "library": return <LibraryPage route={props.route} />;
+    case "liked": case "history": case "playlist": return <SongCollectionPage kind={props.route.page} route={props.route} />;
+    case "collection": return <CollectionPage route={props.route} />;
+    case "browse": return <PageBody route={props.route} inset={false}><ExplorePage /></PageBody>;
+    case "downloads": return <PageBody route={props.route}><DownloadsPage /></PageBody>;
+    case "stats": return <PageBody route={props.route}><StatisticsPage /></PageBody>;
+    case "settings": return <PageBody route={props.route}><SettingsPage /></PageBody>;
+    case "together": return <PageBody route={props.route}><TogetherPage /></PageBody>;
+    case "account": return <PageBody route={props.route}><AccountPage /></PageBody>;
+  }
 }
-function Sidebar() {
-  return <View testID="desktop-sidebar" style={{ width: 216, backgroundColor: c().panel, paddingHorizontal: 16, paddingTop: 28, paddingBottom: 16, borderRightWidth: 1, borderColor: c().line, gap: 20 }}>
-    <View style={{ flexDirection: "row", gap: 12, alignItems: "center", paddingHorizontal: 8, paddingBottom: 8 }}><Image src={logo} style={{ width: 38, height: 38, borderRadius: 12 }} /><View style={{ gap: 3 }}><Label size={22} weight="700">Metrolist</Label><Label size={10} color={c().faint}>{`NSH · ${appInfo.version}`}</Label></View></View>
-    <View style={{ gap: 5 }}><Each of={primary}>{item => <NavItem page={item().page} label={item().label} icon={item().icon} />}</Each></View>
-    <View style={{ height: 1, backgroundColor: c().line, marginHorizontal: 12 }} />
-    <View style={{ gap: 3 }}><NavItem page="liked" label="喜欢的音乐" icon="heart" count={s.likedIds().length} /><NavItem page="downloads" label="下载" icon="download" count={s.downloading().length} /><NavItem page="history" label="最近播放" icon="clock" /><NavItem page="stats" label="聆听统计" icon="stats" /><NavItem page="together" label="一起听" icon="users" /></View>
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12 }}><Label size={12} color={c().sub} style={{ flex: 1 }}>我的歌单</Label><Tool testID="create-playlist" icon="plus" label="新建歌单" onPress={nav.newPlaylist} /></View>
-    <Scroll style={{ flex: 1 }} scrollbar={false} contentStyle={{ gap: 4 }}><Each of={s.playlists()}>{playlist => <Press label={playlist().name} selected={nav.page() === "playlist" && nav.selectedPlaylist() === playlist().id} onPress={() => nav.openPlaylist(playlist().id)} style={{ flexDirection: "row", alignItems: "center", minHeight: 42, gap: 12, paddingHorizontal: 14, borderRadius: 12 }}><Icon name="queue" size={18} color={c().sub} /><Label size={13} lines={1} style={{ flex: 1 }}>{playlist().name}</Label></Press>}</Each></Scroll>
-    <Pill label="导入音乐" icon="upload" onPress={nav.showImport} /><NavItem page="account" label={account.currentAccount()?.name || "登录账号"} icon="artist" /><NavItem page="settings" label="设置" icon="settings" />
+
+/** The stack of pages; each covers the stack's own background. */
+function Pages() {
+  return <NavStack state={nav.stack} testID="main-navigation" class="min-h-0 min-w-0 flex-1" onChange={({ routes }) => nav.onRoutesChanged(routes)}>{route => <NavPage title={routeTitle(route)} animation={reduceMotion() ? "none" : primary.some(item => item.page === route.page) ? "fade" : "slide"} popOnBack={!nav.handlesBack(route)} onBackPress={() => { if (nav.handlesBack(route)) nav.goBack(); }}
+    headerVisible={systemHeader} headerLeft={systemHeader && nav.handlesBack(route) ? <IconButton testID="navigate-back" name="chevronLeft" label="返回" size={22} onPress={nav.goBack} /> : undefined} headerRight={systemHeader ? <HeaderActions /> : undefined}
+    headerStyle={{ backgroundColor: c().bg, color: c().text, tintColor: c().text }} statusBar={{ foreground: s.settings().theme === "light" || s.settings().theme === "system" && colorScheme() === "light" ? "dark" : "light" }}>
+    <RouteContext.Provider value={{ key: route.key, page: route.page }}>
+      <View class={systemHeader ? "min-h-0 flex-1 bg-sidebar" : "absolute inset-0 bg-sidebar"}>
+        <If when={!systemHeader}><PageHeader route={route} /></If>
+        <ErrorBanner />
+        <Screen route={route} />
+      </View>
+    </RouteContext.Provider>
+  </NavPage>}</NavStack>;
+}
+
+/** The Now Playing view beside the pages, a panel of its own. */
+function SidePlayer() {
+  return <View testID="side-player" class="w-80 shrink-0 gap-4 rounded-(--radius-panel) border border-border bg-card p-4">
+    <View class="flex-row items-center gap-1"><Text class="line-clamp-1 flex-1 text-base font-bold text-foreground">{p.queueTitle() || "正在播放"}</Text><IconButton name="maximize" label="打开播放器" hint onPress={() => nav.showPlayer()} /><IconButton name="close" label="收起正在播放" hint onPress={() => sidePlayer.set(false)} /></View>
+    <View role="button" accessibilityLabel="打开封面" onPress={() => nav.showPlayer()} class={`rounded-(--radius-card) active:scale-[0.98] ${focusRing}`}><Art track={p.currentTrack()} size={286} radius={12} style={{ boxShadow: c().shadow }} /></View>
+    <View class="gap-1"><Text class="line-clamp-2 text-2xl font-extrabold text-foreground">{p.currentTrack()?.title}</Text><Text class="line-clamp-1 text-sm text-muted-foreground">{p.currentTrack()?.artist}</Text></View>
+    <View class="min-h-0 flex-1 rounded-(--radius-card) bg-secondary pt-2">
+      <View class="flex-row items-center pl-3 pr-1"><Text class="flex-1 text-sm font-bold text-foreground">接下来</Text><IconButton name="playlist" label="完整队列" onPress={() => nav.showPlayer("queue")} /></View>
+      <Scroll class="flex-1" scrollbar={false} contentClass="px-1 pb-2"><Each of={p.queue().slice(p.currentIndex() + 1, p.currentIndex() + 9)}>{(track, index) => <TrackRow compact menu={false} track={track()} onPlay={() => action(() => p.playAt(p.currentIndex() + index() + 1))} />}</Each>
+        <If when={p.currentIndex() >= p.queue().length - 1}><Text class="p-3 text-xs text-muted-foreground">{s.settings().autoRadio ? "播放结束后继续电台推荐" : "已到队列末尾"}</Text></If></Scroll>
+    </View>
   </View>;
 }
-function BottomNav() {
+
+function DesktopShell() {
+  // Crossing a breakpoint, the sidebar and the player bar glide to their
+  // new arrangement.
+  animateLayoutOn(() => `${sidebarWidth()}|${barSize()}|${sidePlayer()}`);
+  return <View class="min-h-0 flex-1 flex-row gap-2 px-2 pb-2" style={{ paddingTop: systemHeader ? 8 : 0, paddingBottom: "calc(env(safe-area-inset-bottom) + 8px)" }}>
+    <If when={sidebarShown()}><View class="shrink-0" style={{ width: sidebarWidth() }}><Sidebar compact={railSidebar()} /></View></If>
+    <View class="relative min-h-0 min-w-0 flex-1">
+      <Pages />
+      <If when={p.currentTrack() && !nav.fullPlayer()}><View class="absolute inset-x-3 bottom-1"><PlayerBar sidePlayer={sidePlayer()} onSidePlayer={() => sidePlayer.set(!sidePlayer())} /></View></If>
+    </View>
+    <If when={spacious() && sidePlayer() && p.currentTrack() && nav.page() !== "settings"}><SidePlayer /></If>
+  </View>;
+}
+
+/** The phone's tabs (spotish `AppTabs`), on the player's surface. */
+function AppTabs() {
   const selected = (page: nav.Page) => nav.activeTab() === page;
-  const horizontal = () => windowSize().height < 480;
-  return <View testID="mobile-tabs" style={{ flexShrink: 0, backgroundColor: c().panel, borderTopWidth: 1, borderColor: c().line, paddingTop: horizontal() ? 2 : 8, paddingBottom: "calc(env(safe-area-inset-bottom) + 6px)", paddingLeft: "env(safe-area-inset-left)", paddingRight: "env(safe-area-inset-right)" }}>
-    <Tabs style={{ flexDirection: "row", minHeight: horizontal() ? 48 : 60 }} indicatorStyle={{ top: horizontal() ? 4 : 0, height: horizontal() ? 40 : 32, marginHorizontal: 20, borderRadius: 24, backgroundColor: c().selected }}>
-      <Each of={primary}>{item => <Tab testID={`nav-mobile-${item().page}`} accessibilityLabel={item().label} selected={selected(item().page)} onPress={() => nav.navigate(item().page, true)} style={{ flex: 1, minWidth: 0, minHeight: horizontal() ? 48 : 60, flexDirection: horizontal() ? "row" : "column", alignItems: "center", justifyContent: horizontal() ? "center" : "flex-start", gap: horizontal() ? 8 : 5, borderRadius: 24, ...transition("colors,opacity") }} activeStyle={{ opacity: 0.7 }}>
-        <View style={{ height: 32, justifyContent: "center" }}><Icon name={item().icon} size={24} color={selected(item().page) ? c().accent : c().sub} /></View><Label size={12} weight={selected(item().page) ? "600" : "400"} color={selected(item().page) ? c().accent : c().sub}>{item().label}</Label>
+  return <View testID="mobile-tabs" class="shrink-0 border-t border-border bg-player px-2 pt-1 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
+    <Tabs class="flex-row items-stretch" indicatorClass="hidden">
+      <Each of={primary}>{item => <Tab testID={`nav-mobile-${item().page}`} accessibilityLabel={item().label} selected={selected(item().page)} onPress={() => nav.navigate(item().page, true)} class={`group min-h-12 flex-1 items-center justify-center gap-1 rounded-(--radius) py-1.5 active:opacity-60 ${focusRing}`}>
+        <Icon name={item().icon} size={24} color={selected(item().page) ? "foreground" : "muted-foreground"} />
+        <Text class={`text-xs ${selected(item().page) ? "font-semibold text-foreground" : "font-normal text-muted-foreground"}`}>{item().label}</Text>
       </Tab>}</Each>
     </Tabs>
   </View>;
 }
-function HeaderActions() {
-  return <View style={{ flexDirection: "row", flexShrink: 0, alignItems: "center", gap: 2 }}><If when={nav.page() === "home" || nav.page() === "library"}><Tool testID="header-search" icon="search" label="搜索音乐" onPress={() => nav.navigate("search")} /></If><If when={!narrow()}><Tool testID="header-together" icon="users" label="一起听" active={!!together.room()} onPress={() => nav.navigate("together")} /></If><If when={!narrow() && (nav.page() === "home" || nav.page() === "library")}><Tool testID="header-history" icon="clock" label="最近播放" onPress={() => nav.navigate("history")} /><Tool testID="header-stats" icon="stats" label="聆听统计" onPress={() => nav.navigate("stats")} /></If><Tool testID="header-settings" icon="settings" label="设置" onPress={() => nav.navigate("settings")} /><Press testID="header-account" label={account.currentAccount()?.name || "登录 YouTube Music"} onPress={() => nav.navigate("account")} style={{ width: 48, height: 48, flexShrink: 0, alignItems: "center", justifyContent: "center", borderRadius: 24 }}><Art src={account.currentAccount()?.avatar} size={32} radius={24} icon="artist" /></Press><If when={spacious() && p.currentTrack()}><Tool icon="queue" label={sidePlayer() ? "收起侧边播放器" : "展开侧边播放器"} active={sidePlayer()} onPress={() => sidePlayer.update(value => !value)} /></If></View>;
+
+function PhoneShell() {
+  return <View class="min-h-0 flex-1">
+    <View class="min-h-0 flex-1"><Pages /></View>
+    <MiniPlayer />
+    <AppTabs />
+  </View>;
 }
-const routeTitle = (route: nav.Route) => route.title || route.collection?.title || pageTitles[route.page];
-function Header(props: { route: nav.Route }) {
-  return <View testID="page-header" style={{ flexDirection: "row", gap: 8, alignItems: "center", height: narrow() ? 76 : 88, flexShrink: 0, paddingHorizontal: narrow() ? 16 : 30 }}><If when={nav.canGoBack()}><Tool icon="left" label="返回" testID="navigate-back" onPress={nav.goBack} /></If><Label testID="page-title" size={narrow() ? 28 : 30} weight="600" lines={1} style={{ flex: 1 }}>{routeTitle(props.route)}</Label><HeaderActions /></View>;
-}
-function Screen(props: { route: nav.Route }) {
-  switch (props.route.page) {
-    case "home": return <HomePage />;
-    case "search": return <SearchPage />;
-    case "library": return <LibraryPage />;
-    case "liked": case "history": case "playlist": return <SongCollectionPage kind={props.route.page} />;
-    case "collection": return <CollectionPage />;
-    case "browse": return <ExplorePage />;
-    case "downloads": return <DownloadsPage />;
-    case "stats": return <StatisticsPage />;
-    case "settings": return <SettingsPage />;
-    case "together": return <TogetherPage />;
-    case "account": return <AccountPage />;
-  }
-}
-function SidePlayer() {
-  return <View style={{ width: 280, backgroundColor: c().panel, borderLeftWidth: 1, borderColor: c().line, padding: 20, paddingTop: 28, gap: 20 }}><View style={{ flexDirection: "row", alignItems: "center" }}><Label size={16} weight="600" style={{ flex: 1 }}>正在播放</Label><Tool icon="expand" label="打开播放器" onPress={() => nav.showPlayer()} /></View><Press label="打开封面" onPress={() => nav.showPlayer()}><Art track={p.currentTrack()} size={240} radius={16} /></Press><View style={{ gap: 8 }}><Label size={20} weight="600" lines={2}>{p.currentTrack()?.title}</Label><Label color={c().sub} size={14}>{p.currentTrack()?.artist}</Label></View><View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}><Label size={13} color={c().sub}>接下来</Label><Tool icon="queue" label="完整队列" onPress={() => nav.showPlayer("queue")} /></View><Scroll style={{ flex: 1 }} scrollbar={false}><Each of={p.queue().slice(p.currentIndex() + 1, p.currentIndex() + 9)}>{(track, index) => <TrackRow compact track={track()} onPlay={() => action(() => p.playAt(p.currentIndex() + index() + 1))} />}</Each><If when={p.currentIndex() >= p.queue().length - 1}><Label size={12} color={c().faint}>{s.settings().autoRadio ? "播放结束后继续电台推荐" : "已到队列末尾"}</Label></If></Scroll><Pill label="歌词" icon="lyrics" onPress={() => nav.showPlayer("lyrics")} /></View>;
-}
+
 function YouTubeWorkspace() {
   keymap.bind({ "space": () => { if (!p.remoteControlled()) void action(p.togglePlay); }, "mod+k": () => nav.navigate("search", true), "mod+right": () => { if (!p.remoteControlled()) void action(p.next); }, "mod+left": () => { if (!p.remoteControlled()) void action(p.previous); } });
-  return <View testID="metrolist-app" style={{ flex: 1, minWidth: 0, minHeight: 0, backgroundColor: c().bg, paddingBottom: narrow() ? 0 : "env(safe-area-inset-bottom)" }}>
-    <View style={{ flex: 1, minHeight: 0, flexDirection: "row" }}><If when={!narrow()}><Sidebar /></If><View style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
-      <NavStack state={nav.stack} testID="main-navigation" style={{ flex: 1, minWidth: 0, minHeight: 0 }} onChange={({ routes }) => nav.onRoutesChanged(routes)}>{route => <NavPage title={routeTitle(route)} animation={reduceMotion() ? "none" : primary.some(item => item.page === route.page) ? "fade" : "slide"} popOnBack={!nav.handlesBack(route)} onBackPress={() => { if (nav.handlesBack(route)) nav.goBack(); }} headerVisible={systemHeader} headerLeft={systemHeader && nav.handlesBack(route) ? <Tool icon="left" label="返回" testID="navigate-back" onPress={nav.goBack} /> : undefined} headerRight={systemHeader ? <HeaderActions /> : undefined} headerStyle={{ backgroundColor: c().bg, color: c().text, tintColor: c().accent }} statusBar={{ foreground: s.settings().theme === "light" || s.settings().theme === "system" && colorScheme() === "light" ? "dark" : "light" }} style={{ flex: 1, minWidth: 0, minHeight: 0, backgroundColor: c().bg }}>
-        <If when={!systemHeader}><Header route={route} /></If>
-        <Scroll testID={`content-${route.page}`} style={{ flex: 1, minWidth: 0, minHeight: 0 }} contentStyle={{ paddingHorizontal: pageGutter(), paddingTop: 4, paddingBottom: 32 }} keyboardShouldPersistTaps="handled"><View style={{ width: "100%", minWidth: 0, maxWidth: 1440, alignSelf: "center", gap: 16 }}>
-          <If when={s.error()}><View testID="app-error" style={{ flexDirection: "row", alignItems: "center", padding: 14, backgroundColor: c().selected, borderRadius: 16, gap: 12 }}><Label size={12} color={c().accent} style={{ flex: 1 }} lines={3}>{s.error()}</Label><Tool icon="close" label="关闭提示" onPress={s.clearError} /></View></If>
-          <Screen route={route} />
-        </View></Scroll>
-      </NavPage>}</NavStack>
-    </View><If when={spacious() && sidePlayer() && p.currentTrack() && nav.page() !== "settings"}><SidePlayer /></If></View>
-    <MiniPlayer /><If when={narrow()}><BottomNav /></If>
+  // Pure black is a theme of its own: the same roles, every surface darker.
+  effect(() => applyWorkspaceTheme(s.settings().theme));
+  return <View testID="metrolist-app" class="min-h-0 min-w-0 flex-1 bg-sidebar">
+    <If when={layout() === "desktop"} else={<PhoneShell />}><DesktopShell /></If>
     <FullPlayer /><Dialogs /><CloudDialogs />
     <ToastHost />
   </View>;
@@ -110,11 +137,11 @@ function App() {
   void together.initializeTogether().catch(s.showError);
   keymap.bind("mod+shift+1", () => void selectProvider("youtube"));
   keymap.bind("mod+shift+2", () => void selectProvider("spotify"));
-  return <View testID="metrolist-shell" style={{ flex: 1, minWidth: 0, minHeight: 0, flexDirection: providerRail() ? "row" : "column", backgroundColor: c().bg }}>
+  return <View testID="metrolist-shell" class="min-h-0 min-w-0 flex-1 bg-sidebar" style={{ flexDirection: providerRail() ? "row" : "column" }}>
     <ProviderSwitcher />
 
-    <View style={{ flex: 1, minHeight: 0, minWidth: 0, pointerEvents: switchingProvider() ? "none" : "auto" }}>
-      <If when={providerError()}><View testID="provider-error" style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 18, paddingVertical: 8, gap: 12, backgroundColor: c().selected }}><Label size={13} style={{ flex: 1 }}>{providerError()}</Label><Tool icon="close" label="关闭切换提示" onPress={() => providerError.set("")} /></View></If>
+    <View class="min-h-0 min-w-0 flex-1" style={{ pointerEvents: switchingProvider() ? "none" : "auto" }}>
+      <If when={providerError()}><View testID="provider-error" class="flex-row items-center gap-3 bg-secondary px-4 py-2"><Text class="flex-1 text-sm text-foreground">{providerError()}</Text><Tool icon="close" label="关闭切换提示" onPress={() => providerError.set("")} /></View></If>
       <If when={providersReady()}>
         <If when={activeProvider() === "youtube"}><YouTubeWorkspace /></If>
         <If when={activeProvider() === "spotify"}><SpotifyWorkspace /></If>

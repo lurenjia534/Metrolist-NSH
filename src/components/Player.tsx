@@ -1,5 +1,5 @@
-import { View, Scroll, List, Clipboard, signal, computed, effect, createAnimatedValue, createMotion, windowSize, reduceMotion, colorScheme, type ListRef, type JSX } from "nsh";
-import { Button, Dialog, Tab, Tabs } from "nsh/base";
+import { Text, View, Scroll, List, Clipboard, signal, computed, effect, cleanup, createAnimatedValue, createMotion, windowSize, reduceMotion, colorScheme, type ListRef, type JSX, type Motion, type MotionSpec } from "nsh";
+import { Button, Dialog, Tab, Tabs, Toolbar } from "nsh/base";
 import * as s from "../store";
 import * as p from "../playback";
 import * as nav from "../navigation";
@@ -7,14 +7,29 @@ import * as together from "../together";
 import { Icon } from "../icons";
 import { SongMenu, TrackRow, shareTrack, songCommands } from "./Music";
 import { SleepTimerButton } from "./SleepTimer";
-import { Label, Tool, Pill, Art, Rail, Press, CommandMenu, Empty, palette as c, narrow, touch, action, say, time } from "../ui";
+import { Label, Tool, Pill, Art, Press, CommandMenu, Empty, palette as c, narrow, touch, spacious, action, say, time } from "../ui";
 import { motion, motionDuration, transition } from "../motion";
+import { barSize } from "../layout";
+import { BarSlider, Cover, focusRing, IconButton, PlayButton } from "../spotish/components/ui/controls";
+import { Digits } from "../spotish/components/ui/digits";
+import { MusicLight, PlayerGlass } from "../spotish/components/ui/toolbar-fx";
+import { LightMenu } from "../spotish/components/player/light-menu";
+import { NEW_COVER } from "../spotish/components/player/parts";
+import { lightEffect } from "../spotish/state/visual";
+import { animateLayoutOn, enter, lazyMotion } from "../spotish/components/ui/motion";
+import { DURATION, EASING, SCALE } from "../spotish/components/ui/tokens";
+import type { IconName } from "../spotish/components/ui/icons";
 import type { Track } from "../model";
 
-const compactMini = () => narrow() || windowSize().width < (touch() ? 1180 : 1000);
+// The player as the Spotify workspace draws it (src/spotish/components/
+// player): the desktop's bar, a pill floating over the pages with the music
+// light inside it; the phone's mini player; and Now Playing, the light
+// rising from the bottom of the page. Made of the parts below.
+
 const splitPlayer = () => windowSize().width >= 960 && windowSize().height >= 540;
 const shortLandscape = () => windowSize().width >= 600 && windowSize().height < 540;
 const waitingToPlay = () => p.playbackPhase() === "resolving" || p.playbackPhase() === "buffering";
+const pauses = () => p.playing() || waitingToPlay();
 const playbackLabel = () => ({ idle: "待播放", resolving: "正在连接音源…", buffering: "正在缓冲…", playing: "正在播放", paused: "已暂停", error: "播放失败" }[p.playbackPhase()]);
 const nextLabel = () => {
   const next = p.nextPreparation();
@@ -22,99 +37,172 @@ const nextLabel = () => {
   return next.state === "cached" ? "开头已缓冲" : next.state === "ready" ? "音源已准备" : "正在准备下一首…";
 };
 
-// Dragging changes only this preview. The player receives one seek on release.
-function SeekRail(props: { large?: boolean; testID?: string; showTime?: boolean }) {
-  const draft = signal<number | undefined>();
-  effect(() => { p.currentTrack()?.id; draft.set(undefined); });
-  const value = () => draft() ?? p.position();
-  const duration = () => p.duration() || p.currentTrack()?.duration || 1;
-  const commit = (next: number) => {
-    void action(() => p.seek(next));
-    draft.set(undefined);
-  };
-  return <View style={{ flex: 1, minWidth: 0, minHeight: (touch() ? 48 : props.large ? 40 : 28) + (props.showTime ? 18 : 0) }}>
-    <Rail testID={props.testID} large={props.large} label="播放进度" value={value()} max={duration()} bufferedValue={p.bufferedPosition() > 0 ? p.bufferedPosition() : undefined} disabled={p.remoteControlled()} onChange={draft.set} onChangeEnd={commit} />
-    <If when={props.showTime}><View style={{ flexDirection: "row", justifyContent: "space-between", gap: 12 }}>
-      <Label testID="player-position" size={12} color={c().sub}>{time(value())}</Label>
-      <Label testID="player-status" size={12} color={waitingToPlay() ? c().accent : c().sub}>{waitingToPlay() ? playbackLabel() : time(duration())}</Label>
-    </View></If>
+/** Shuffle, previous, play / pause, next and repeat (spotish
+ * `TransportControls`). `quiet`: a faint play disc. */
+function TransportControls(props: { large?: boolean; minimal?: boolean; quiet?: boolean; playTestID?: string }) {
+  const icon = () => (props.large ? 22 : 18);
+  const locked = () => p.remoteControlled();
+  return <View class={`flex-row items-center ${props.large ? "gap-6" : "gap-4"}`} role="toolbar" accessibilityLabel="播放控制">
+    <If when={!props.minimal}><IconButton name="shuffle" label="随机播放" size={18} pressed={p.shuffle()} tinted disabled={locked()} onPress={p.toggleShuffle} /></If>
+    <IconButton name="skipBack" label="上一首" size={icon()} disabled={locked()} onPress={() => void action(p.previous)} />
+    <PlayButton testID={props.playTestID} labels={["播放", "暂停"]} tinted quiet={props.quiet} playing={pauses()} size={props.large ? 56 : 36} disabled={locked()} onPress={() => void action(p.togglePlay)} />
+    <IconButton name="skipForward" label="下一首" size={icon()} disabled={locked()} onPress={() => void action(p.next)} />
+    <If when={!props.minimal}><IconButton name={p.repeat() === "one" ? "repeatOne" : "repeat"} label={p.repeat() === "off" ? "开启列表循环" : p.repeat() === "all" ? "开启单曲循环" : "关闭循环"} size={18} pressed={p.repeat() !== "off"} tinted disabled={locked()} onPress={p.cycleRepeat} /></If>
   </View>;
 }
 
-function MiniProgress() {
-  const progress = createAnimatedValue(0);
+/** The position, 0..1, as a native value that runs on between the player's
+ * ticks, so the bar moves every frame with no JS. */
+function positionFill() {
+  const fill = createAnimatedValue(0);
   let trackId = "";
   effect(() => {
-    const nextId = p.currentTrack()?.id || "";
-    const ratio = Math.min(1, p.position() / (p.duration() || p.currentTrack()?.duration || 1));
-    const newTrack = nextId !== trackId;
-    trackId = nextId;
-    if (newTrack || !p.playing() || reduceMotion()) progress.set(ratio);
-    else void progress.timing(ratio, { duration: motion.progress, easing: "linear" });
+    const id = p.currentTrack()?.id || "";
+    const duration = p.duration() || p.currentTrack()?.duration || 0;
+    const ratio = duration ? Math.min(1, p.position() / duration) : 0;
+    const jump = id !== trackId;
+    trackId = id;
+    if (jump || !p.playing() || reduceMotion()) fill.set(ratio);
+    else void fill.timing(ratio, { duration: motion.progress, easing: "linear" });
   });
-  return <View accessibilityElementsHidden style={{ height: 2, flexShrink: 0, backgroundColor: c().raised, overflow: "hidden" }}>
-    <View style={{ height: 2, backgroundColor: c().accent, scale: [progress, 1], transformOrigin: "left" }} />
+  return fill;
+}
+
+/** The playback position (spotish `SeekBar`): the bar, the times beside it
+ * (`inline`) or under it. Dragging previews; the player gets one seek as
+ * it is let go. */
+function SeekBar(props: { inline?: boolean; quiet?: boolean; testID?: string; status?: boolean }) {
+  const draft = signal<number | undefined>();
+  effect(() => { p.currentTrack()?.id; draft.set(undefined); });
+  const fill = positionFill();
+  const duration = () => p.duration() || p.currentTrack()?.duration || 1;
+  const value = () => draft() ?? p.position();
+  const times = `text-xs text-muted-foreground ${props.quiet ? "opacity-70" : ""}`;
+  const slider = <View testID={props.testID} class="min-w-0 flex-1"><BarSlider label="播放进度" tinted quiet={props.quiet} value={value()} max={duration()} fill={fill} disabled={p.remoteControlled()} class="flex-1"
+    onChange={(v) => { draft.set(v); fill.set(v / duration()); }} onChangeEnd={(v) => { void action(() => p.seek(v)); draft.set(undefined); }} /></View>;
+  return <If when={props.inline} else={<View class="w-full gap-1">
+    <View class="flex-row">{slider}</View>
+    <View class="flex-row justify-between"><Digits class={times}>{time(value())}</Digits><Text testID={props.status ? "player-status" : undefined} class={`text-xs ${waitingToPlay() ? "text-foreground" : "font-mono tabular-nums text-muted-foreground"}`}>{waitingToPlay() ? playbackLabel() : time(duration())}</Text></View>
+  </View>}>
+    <View class="w-full flex-row items-center gap-2"><View class="min-w-10 items-end"><Digits class={`whitespace-nowrap ${times}`}>{time(value())}</Digits></View>{slider}<View class="min-w-10"><Digits class={`whitespace-nowrap ${times}`}>{time(p.duration() || p.currentTrack()?.duration || 0)}</Digits></View></View>
+  </If>;
+}
+
+/** Mute and the volume (spotish `VolumeControl`). */
+function VolumeControl(props: { quiet?: boolean }) {
+  const icon = (): IconName => p.volume() <= 0 ? "volumeMute" : p.volume() < 0.5 ? "volumeLow" : "volume";
+  return <View class="flex-row items-center">
+    <IconButton name={icon()} label={p.volume() ? "静音" : "取消静音"} onPress={() => s.updateSettings({ volume: p.volume() ? 0 : 0.7 })} />
+    <View class="w-24 pl-1 pr-3"><BarSlider tinted quiet={props.quiet} label="音量" value={p.volume()} max={1} class="w-full" onChange={(volume) => s.updateSettings({ volume })} onChangeEnd={(volume) => s.updateSettings({ volume })} /></View>
   </View>;
 }
 
-function MiniSurface(props: { track: Track }) {
-  const entrance = createMotion({ enter: { duration: motion.enter, keyframes: [{ opacity: 0, translateY: motion.shift }, { opacity: 1, translateY: 0 }] } });
-  return <View testID="mini-player" style={{ flexShrink: 0, minWidth: 0, backgroundColor: c().card, borderTopWidth: 1, borderColor: c().line, paddingHorizontal: compactMini() ? 12 : 24, paddingTop: 6, paddingBottom: compactMini() ? 2 : 8, gap: 4, ...entrance.style }}>
-    <View style={{ flexDirection: "row", alignItems: "center", gap: compactMini() ? 6 : 20, minHeight: 58, minWidth: 0 }}>
-      <Press testID="open-player" label="打开播放器" onPress={() => nav.showPlayer()} style={{ flex: compactMini() ? 1 : 0.8, flexDirection: "row", alignItems: "center", gap: compactMini() ? 10 : 14, minWidth: 0 }}>
-        <Art track={props.track} size={compactMini() ? 46 : 54} radius={10} />
-        <View style={{ flex: 1, gap: 4, minWidth: 0 }}>
-          <Label size={14} weight="600" lines={1}>{props.track.title}</Label>
-          <Label testID="mini-player-status" size={12} color={p.playbackError() ? c().danger : waitingToPlay() ? c().accent : c().sub} lines={1}>{p.playbackError() ? "播放失败 · 点按查看" : waitingToPlay() ? playbackLabel() : p.playbackPhase() === "paused" ? `已暂停 · ${props.track.artist}` : props.track.artist}</Label>
-        </View>
-      </Press>
-      <If when={!compactMini()}>
-        <View style={{ flex: 1.2, minWidth: 0, gap: 2, alignItems: "center" }}>
-          <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
-            <Tool icon="shuffle" label="随机播放" active={p.shuffle()} disabled={p.remoteControlled()} onPress={p.toggleShuffle} />
-            <Tool icon="previous" label="上一首" disabled={p.remoteControlled()} onPress={() => action(p.previous)} />
-            <PlayButton small />
-            <Tool icon="next" label="下一首" disabled={p.remoteControlled()} onPress={() => action(p.next)} />
-            <Tool icon={p.repeat() === "one" ? "repeatOne" : "repeat"} label="循环播放" active={p.repeat() !== "off"} disabled={p.remoteControlled()} onPress={p.cycleRepeat} />
-          </View>
-          <View style={{ flexDirection: "row", width: "100%", minWidth: 0, alignItems: "center", gap: 8, maxWidth: 520 }}>
-            <Label size={10} color={c().sub}>{time(p.position())}</Label><SeekRail /><Label size={10} color={c().sub}>{time(p.duration() || props.track.duration)}</Label>
-          </View>
-        </View>
-      </If>
-      <If when={compactMini()} else={
-        <View style={{ flex: 0.7, minWidth: 160, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
-          <Tool icon="heart" label="喜欢" active={s.isLiked(props.track.id)} onPress={() => s.toggleLike(props.track)} />
-          <Tool icon="lyrics" label="歌词" onPress={() => nav.showPlayer("lyrics")} />
-          <Tool icon="queue" label="队列" onPress={() => nav.showPlayer("queue")} />
-          <Tool icon={p.volume() ? "volume" : "mute"} label={p.volume() ? "静音" : "取消静音"} onPress={() => s.updateSettings({ volume: p.volume() ? 0 : 0.7 })} />
-          <View style={{ width: 64 }}><Rail label="音量" value={p.volume() * 100} onChange={value => s.updateSettings({ volume: value / 100 })} /></View>
-        </View>
-      }><PlayButton small /><Tool icon="next" label="下一首" disabled={p.remoteControlled()} onPress={() => action(p.next)} /><Tool testID="mini-queue" icon="queue" label="打开播放队列" onPress={() => nav.showPlayer("queue")} /></If>
-    </View>
-    <If when={compactMini()}><MiniProgress /></If>
+const LIKE_DOTS = 8;
+const LIKE_SPRING: [number, number, number, number] = [0.34, 1.96, 0.64, 1];
+const LIKE_POP: MotionSpec = { keyframes: [{ scale: 1 }, { scale: 0.82, offset: 0.3 }, { scale: 1 }], duration: DURATION.slow, easing: LIKE_SPRING };
+const UNLIKE_DIP: MotionSpec = { keyframes: [{ scale: 1 }, { scale: SCALE.press }, { scale: 1 }], duration: DURATION.fast, easing: EASING.out };
+function burst(i: number, k: number): MotionSpec {
+  const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
+  const angle = (((360 / LIKE_DOTS) * i + rand(-16, 16)) * Math.PI) / 180;
+  const reach = 20 * k * rand(0.68, 1.18);
+  const x = Math.cos(angle) * reach, y = Math.sin(angle) * reach, size = rand(0.6, 1.4);
+  return { keyframes: [{ opacity: 0, translateX: 0, translateY: 0, scale: 0.4 * size }, { opacity: 1, translateX: x * 0.25, translateY: y * 0.25, scale: size, offset: 0.2 }, { opacity: 0, translateX: x, translateY: y, scale: rand(0.35, 0.75) * size }], duration: Math.round(600 * rand(0.78, 1.22)), delay: Math.round(rand(0, 70)), easing: EASING.out };
+}
+/** Like (spotish `LikeButton`): liking pops the heart and sprays red dots;
+ * unliking only dips it. Only the press plays it, never a track change. */
+function LikeButton(props: { track: Track; size?: number }) {
+  const pop = lazyMotion();
+  let dots: Motion[] = [];
+  const made = signal(false);
+  const bursting = signal(false);
+  let burstId = 0;
+  const makeDots = () => { if (!dots.length) { dots = Array.from({ length: LIKE_DOTS }, () => createMotion({ initial: { opacity: 0 } })); made.set(true); } return dots; };
+  cleanup(() => { pop.stop(); for (const d of dots) d.stop(); });
+  const k = () => (props.size ?? 18) / 16;
+  const liked = () => s.isLiked(props.track.id);
+  const press = () => {
+    const liking = !liked();
+    s.toggleLike(props.track);
+    if (reduceMotion()) return;
+    const id = ++burstId;
+    if (!liking) { for (const d of dots) d.stop(); bursting.set(false); void pop.play(UNLIKE_DIP); return; }
+    void pop.play(LIKE_POP);
+    const flying = makeDots();
+    bursting.set(true);
+    void Promise.all(flying.map((d, i) => d.play(burst(i, k())))).then(() => { if (id === burstId) bursting.set(false); });
+  };
+  return <View class="items-center justify-center">
+    <View style={pop.style}><IconButton name="heartFilled" label={liked() ? "取消喜欢" : "喜欢"} size={props.size ?? 18} pressed={liked()} pressedColor="liked" onPress={press} /></View>
+    <If when={bursting() && made()}>{makeDots().map((d) => <View class="pointer-events-none absolute rounded-full bg-liked" style={{ width: 2.5 * k(), height: 2.5 * k(), ...d.style }} />)}</If>
   </View>;
 }
 
-export function MiniPlayer() {
-  return <If when={p.currentTrack()}>{track => <MiniSurface track={track()} />}</If>;
-}
-
-function PlayButton(props: { small?: boolean }) {
-  const pauses = () => p.playing() || waitingToPlay();
-  const state = createAnimatedValue(pauses() ? 1 : 0);
-  effect(() => { void state.timing(pauses() ? 1 : 0, { duration: motionDuration(motion.fast), easing: "easeOut" }); });
-  const playOpacity = state.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
-  const playScale = state.interpolate({ inputRange: [0, 1], outputRange: [1, 0.65] });
-  const pauseScale = state.interpolate({ inputRange: [0, 1], outputRange: [0.65, 1] });
-  return <Button testID={props.small ? "mini-play-pause" : "player-play-pause"} accessibilityLabel={pauses() ? "暂停" : "播放"} disabled={p.remoteControlled()} onPress={() => void action(p.togglePlay)}
-    style={{ width: props.small ? 48 : 116, height: props.small ? 48 : 64, flexShrink: 0, borderRadius: props.small ? 24 : 28, backgroundColor: c().accent, alignItems: "center", justifyContent: "center", ...transition() }}
-    activeStyle={{ scale: reduceMotion() ? 1 : motion.pressScale }} disabledStyle={{ opacity: 0.5 }} class="focus-visible:ring-2 focus-visible:ring-primary">
-    <View accessibilityElementsHidden style={{ width: props.small ? 24 : 34, height: props.small ? 24 : 34 }}>
-      <View style={{ position: "absolute", top: 0, left: 0, opacity: playOpacity, scale: playScale }}><Icon name="play" size={props.small ? 24 : 34} color={c().onAccent} /></View>
-      <View style={{ position: "absolute", top: 0, left: 0, opacity: state, scale: pauseScale }}><Icon name="pause" size={props.small ? 24 : 34} color={c().onAccent} /></View>
+const NEW_WORDS: MotionSpec = { keyframes: [{ opacity: 0, translateY: 6 }, { opacity: 1, translateY: 0 }], duration: 320, delay: 80, easing: "easeOut" };
+/** What plays (spotish `NowPlayingSummary`): the cover, which settles in
+ * with a small overshoot when the track changes, and its words rising after
+ * it; it opens the player. */
+function NowPlayingSummary(props: { cover: number; round?: boolean; center?: boolean }) {
+  const coverIn = lazyMotion();
+  const wordsIn = lazyMotion();
+  let shown = p.currentTrack()?.id;
+  effect(() => {
+    const now = p.currentTrack()?.id;
+    if (now !== shown && now) { void coverIn.play(NEW_COVER); void wordsIn.play(NEW_WORDS); }
+    shown = now;
+  });
+  cleanup(() => { coverIn.stop(); wordsIn.stop(); });
+  const status = () => p.playbackError() ? "播放失败 · 点按查看" : waitingToPlay() ? playbackLabel() : p.currentTrack()?.artist ?? "";
+  return <Button testID="open-player" accessibilityLabel="打开播放器" onPress={() => nav.showPlayer()} class={`group min-w-0 flex-1 flex-row items-center gap-3 rounded-full pr-2 active:scale-[0.98] motion-reduce:active:scale-100 ${focusRing}`}>
+    <View class="transition duration-150 ease-out group-hover:opacity-85 motion-reduce:transition-none"><View style={coverIn.style}><Art track={p.currentTrack()} size={props.cover} radius={props.round ? props.cover / 2 : 6} /></View></View>
+    <View class={`min-w-0 flex-1 gap-0.5 ${props.center ? "items-center" : ""}`} style={wordsIn.style}>
+      <Text class={`line-clamp-1 text-sm font-semibold text-foreground ${props.center ? "text-center" : ""}`}>{p.currentTrack()?.title}</Text>
+      <Text testID="mini-player-status" class={`line-clamp-1 text-xs ${p.playbackError() ? "text-destructive" : "text-muted-foreground"}`}>{status()}</Text>
     </View>
   </Button>;
+}
+
+/** The desktop's bar (spotish `PlayerBar`): a 72pt pill over the pages, the
+ * music light inside it. Full: what plays and Like on the left quarter, the
+ * transport over the position in the middle, lyrics, the queue, the volume
+ * and the light's menu on the right. Compact: one row. Stacked: two. */
+export function PlayerBar(props: { sidePlayer: boolean; onSidePlayer: () => void }) {
+  const stacked = () => barSize() === "stacked";
+  const tiny = () => windowSize().width < 560;
+  return <If when={p.currentTrack()}>{(track) => <View style={enter("fadeInUp", 120)}><View class={`shadow-xl ${stacked() ? "rounded-[36px]" : "rounded-full"}`}>
+    <Toolbar accessibilityLabel="播放器">
+      <PlayerGlass effect={lightEffect()} colors={[]} playing={p.playing()} testID="mini-player" radius={stacked() ? 36 : undefined} class={stacked() ? "flex-1 gap-2 rounded-[36px] px-3.5 pb-2.5 pt-3.5" : "h-18 flex-1 flex-row items-center justify-between gap-4 rounded-full pl-3.5 pr-5"}>
+        <If when={barSize() === "full"} else={<If when={stacked()} else={<>
+          <View class="min-w-0 flex-1 flex-row items-center gap-2"><NowPlayingSummary cover={44} round /><LikeButton track={track()} /></View>
+          <TransportControls quiet playTestID="mini-play-pause" />
+          <IconButton testID="mini-queue" name="playlist" label="打开播放队列" onPress={() => nav.showPlayer("queue")} />
+          <LightMenu placement="top" />
+        </>}><>
+          <View class="h-11 flex-row items-center gap-2"><NowPlayingSummary cover={44} round /><LikeButton track={track()} /></View>
+          <View class="h-10 flex-row items-center justify-between"><IconButton testID="mini-queue" name="playlist" label="打开播放队列" onPress={() => nav.showPlayer("queue")} /><TransportControls quiet minimal={tiny()} playTestID="mini-play-pause" /><LightMenu placement="top" /></View>
+        </></If>}>
+          <View class="w-1/4 min-w-0 flex-row items-center gap-2"><NowPlayingSummary cover={44} round /><LikeButton track={track()} /></View>
+          <View class="max-w-180 flex-1 items-center gap-1"><TransportControls quiet playTestID="mini-play-pause" /><SeekBar inline quiet /></View>
+          <View class="w-1/4 flex-row items-center justify-end gap-1 pr-2">
+            <IconButton name="microphone" label="歌词" hint onPress={() => nav.showPlayer("lyrics")} />
+            <IconButton testID="mini-queue" name="playlist" label="打开播放队列" hint onPress={() => nav.showPlayer("queue")} />
+            <If when={spacious()}><IconButton name="sidebarRight" label={props.sidePlayer ? "收起正在播放" : "显示正在播放"} hint pressed={props.sidePlayer} onPress={props.onSidePlayer} /></If>
+            <VolumeControl quiet />
+            <LightMenu placement="top" />
+          </View>
+        </If>
+      </PlayerGlass>
+    </Toolbar>
+  </View></View>}</If>;
+}
+
+/** The phone's mini player over the tabs (spotish `MiniPlayer`): a card
+ * that opens the player. */
+export function MiniPlayer() {
+  return <If when={p.currentTrack()}>{() => <View testID="mini-player" class="mx-2 mb-2 h-14 flex-row items-center gap-1 rounded-(--radius-card) border border-border bg-secondary pl-2 pr-1" style={enter("fadeInUp", 60)}>
+    <NowPlayingSummary cover={40} />
+    <PlayButton testID="mini-play-pause" labels={["播放", "暂停"]} tinted playing={pauses()} size={40} disabled={p.remoteControlled()} onPress={() => void action(p.togglePlay)} />
+    <IconButton testID="mini-queue" name="playlist" label="打开播放队列" size={20} onPress={() => nav.showPlayer("queue")} />
+  </View>}</If>;
 }
 
 export function LyricsView() {
@@ -155,7 +243,7 @@ export function LyricsView() {
     }>
       <List ref={ref.set} each={s.lyrics()!.lines} estimatedItemSize={92} style={{ flex: 1, minHeight: 0 }} contentStyle={{ paddingTop: shortLandscape() ? 28 : 72, paddingBottom: shortLandscape() ? 60 : 120, paddingHorizontal: 4 }} scrollbar={false} onScrollDragStart={() => follow.set(false)} keyExtractor={(line, index) => `${line.time}-${index}`}>
         {(line, index) => <Press label={`${time(line().time)} ${line().text}`} disabled={p.remoteControlled()} onPress={() => { void action(() => p.seek(line().time + offset())); follow.set(true); }} style={{ paddingVertical: 14, minHeight: 68, paddingHorizontal: 8, alignItems: s.settings().lyricAlignment === "center" ? "center" : "flex-start" }}>
-          <Label size={size()} weight="600" color={index() === active() ? c().accent : c().faint} style={{ lineHeight: size() * 1.4, textAlign: s.settings().lyricAlignment, ...transition("color", motion.instant) }}>{line().text || "♪"}</Label>
+          <Label size={size()} weight="600" color={index() === active() ? c().text : c().faint} style={{ lineHeight: size() * 1.4, textAlign: s.settings().lyricAlignment, ...transition("color", motion.instant) }}>{line().text || "♪"}</Label>
         </Press>}
       </List>
       <If when={!follow()}><View style={{ flexDirection: "row", justifyContent: "center", flexShrink: 0 }}><Pill label="回到当前歌词" icon="lyrics" onPress={() => follow.set(true)} /></View></If>
@@ -205,7 +293,7 @@ export function QueueView() {
       </View>}
     </List>
     <If when={!shortLandscape()} else={<Label size={11} color={c().sub} lines={1}>{p.remoteControlled() ? "与主持人同步" : s.settings().autoRadio ? "队列结束后自动续播" : "自动续播已关闭"}</Label>}>
-    <View style={{ padding: 14, borderRadius: 16, backgroundColor: c().card, gap: 8, flexShrink: 0 }}>
+    <View style={{ padding: 14, borderRadius: 12, backgroundColor: c().wash, gap: 8, flexShrink: 0 }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, minWidth: 0 }}>
         <Icon name="radio" size={20} color={c().accent} />
         <Label size={12} lines={2} style={{ flex: 1, minWidth: 0 }}>{p.remoteControlled() ? "与主持人的队列同步" : p.radioLoading() ? "正在获取电台推荐…" : s.settings().autoRadio ? "队列结束后自动续播" : "自动续播已关闭"}</Label>
@@ -216,48 +304,44 @@ export function QueueView() {
   </View>;
 }
 
+/** Now Playing's words and controls (spotish's details): title and
+ * artist with Like, the quiet position with its times, the transport with
+ * a 56pt faint play disc, then the sleep timer. */
 function Transport(props: { onHeight: (height: number) => void }) {
   const track = p.currentTrack;
-  return <View onLayout={({ bounds }) => props.onHeight(bounds.size.height)} style={{ gap: 12, minWidth: 0, flexShrink: 0 }}>
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, minWidth: 0 }}>
-      <View style={{ flex: 1, gap: 6, minWidth: 0 }}>
-        <Label size={shortLandscape() ? 20 : 24} weight="600" lines={2}>{track()?.title}</Label>
-        <Press label="查看歌手" onPress={() => { nav.fullPlayer.set(false); if (track()?.artistId) nav.browse({ id: track()!.artistId!, browseId: track()!.artistId!, title: track()!.artist, subtitle: "", artwork: "", type: "artist" }); else nav.performSearch(track()?.artist || "", "artists"); }}>
-          <Label size={15} color={c().sub} lines={1}>{track()?.artist}</Label>
-        </Press>
+  const artist = () => { nav.fullPlayer.set(false); if (track()?.artistId) nav.browse({ id: track()!.artistId!, browseId: track()!.artistId!, title: track()!.artist, subtitle: "", artwork: "", type: "artist" }); else nav.performSearch(track()?.artist || "", "artists"); };
+  return <View onLayout={({ bounds }) => props.onHeight(bounds.size.height)} class="min-w-0 shrink-0 gap-6">
+    <View class="min-w-0 flex-row items-center gap-3" style={enter("fadeInUp", 140)}>
+      <View class="min-w-0 flex-1 gap-1" selectable>
+        <Text class={`line-clamp-2 font-extrabold text-foreground ${shortLandscape() ? "text-2xl" : "text-3xl"}`}>{track()?.title}</Text>
+        <Button accessibilityLabel="查看歌手" onPress={artist} class={`self-start rounded-sm active:opacity-70 ${focusRing}`}><Text class="line-clamp-1 text-base text-muted-foreground hover:text-foreground hover:underline">{track()?.artist}</Text></Button>
       </View>
-      <Tool icon="share" label="分享歌曲" onPress={() => track() && shareTrack(track()!)} />
-      <Tool icon="heart" label="喜欢" active={!!track() && s.isLiked(track()!.id)} onPress={() => track() && s.toggleLike(track()!)} />
+      <IconButton name="share" label="分享歌曲" size={20} onPress={() => track() && shareTrack(track()!)} />
+      <If when={track()}>{(current) => <LikeButton track={current()} size={24} />}</If>
     </View>
-    <SeekRail testID="player-seek" large showTime />
-    <View style={{ flexDirection: "row", justifyContent: "space-evenly", alignItems: "center", minWidth: 0 }}>
-      <Tool icon="previous" label="上一首" large size={30} disabled={p.remoteControlled()} onPress={() => void action(p.previous)} />
-      <PlayButton />
-      <Tool icon="next" label="下一首" large size={30} disabled={p.remoteControlled()} onPress={() => void action(p.next)} />
-    </View>
-    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", minWidth: 0 }}>
-      <Tool icon="shuffle" label="随机播放" active={p.shuffle()} disabled={p.remoteControlled()} onPress={p.toggleShuffle} />
+    <View style={enter("fadeInUp", 200)}><SeekBar quiet testID="player-seek" status /></View>
+    <View class="items-center gap-2" style={enter("fadeInUp", 260)}>
+      <TransportControls large quiet playTestID="player-play-pause" />
       <SleepTimerButton />
-      <Tool icon={p.repeat() === "one" ? "repeatOne" : "repeat"} label={p.repeat() === "off" ? "开启列表循环" : p.repeat() === "all" ? "开启单曲循环" : "关闭循环"} active={p.repeat() !== "off"} disabled={p.remoteControlled()} onPress={p.cycleRepeat} />
     </View>
-    <If when={p.remoteControlled()}><Label color={c().accent} size={12} style={{ textAlign: "center" }}>由主持人控制 · {together.room()?.roomCode}</Label></If>
-    <If when={p.playbackError()}><View style={{ padding: 12, borderRadius: 16, backgroundColor: c().card, gap: 10 }}><Label color={c().danger} size={12} lines={4}>{p.playbackError()}</Label><Pill label="重试播放" icon="refresh" onPress={() => void action(p.retryPlayback)} /></View></If>
+    <If when={p.remoteControlled()}><Text class="text-center text-xs text-muted-foreground">由主持人控制 · {together.room()?.roomCode}</Text></If>
+    <If when={p.playbackError()}><View role="alert" class="gap-2.5 rounded-(--radius-card) border border-border bg-card p-3"><Text class="line-clamp-4 text-xs text-destructive">{p.playbackError()}</Text><Pill label="重试播放" icon="refresh" onPress={() => void action(p.retryPlayback)} /></View></If>
   </View>;
 }
 
+/** The cover, which settles in with a small overshoot as the track changes
+ * and zooms in as Now Playing opens. */
 function CoverArt(props: { size: number }) {
   const change = createMotion();
   let id = p.currentTrack()?.id;
   effect(() => {
     const next = p.currentTrack()?.id;
-    if (next !== id) {
-      id = next;
-      void change.play({ duration: motion.base, keyframes: [{ opacity: 0.55, scale: 0.985 }, { opacity: 1, scale: 1 }] });
-    }
+    if (next !== id) { id = next; if (!reduceMotion()) void change.play(NEW_COVER); }
   });
-  return <View style={{ alignItems: "center", justifyContent: "center", flexShrink: 0, ...change.style }}>
-    <Art track={p.currentTrack()} size={props.size} radius={20} style={{ boxShadow: c().shadow }} />
-  </View>;
+  cleanup(() => change.stop());
+  return <View class="shrink-0 items-center justify-center" style={enter("zoomIn", 60)}><View style={change.style}>
+    <Art track={p.currentTrack()} size={props.size} radius={16} style={{ boxShadow: "0 20px 50px #00000073" }} />
+  </View></View>;
 }
 
 function PanelFade(props: { children?: JSX.Element }) {
@@ -274,29 +358,34 @@ function PanelFade(props: { children?: JSX.Element }) {
   return <View style={{ flex: 1, minWidth: 0, minHeight: 0, opacity }}>{props.children}</View>;
 }
 
+/** Song, lyrics and queue: a capsule whose indicator slides. */
 function PlayerTabs() {
   const tabs = [{ value: "cover", label: "歌曲", icon: "album" }, { value: "lyrics", label: "歌词", icon: "lyrics" }, { value: "queue", label: "播放队列", icon: "queue" }] as const;
   const selected = () => splitPlayer() && nav.playerTab() === "cover" ? "queue" : nav.playerTab();
-  return <Tabs testID="player-tabs" style={{ flexDirection: "row", padding: 4, gap: 4, minWidth: 0, backgroundColor: c().panel, borderRadius: 22 }} indicatorStyle={{ top: 4, bottom: 4, borderRadius: 18, backgroundColor: c().selected }}>
+  return <Tabs testID="player-tabs" class="flex-row gap-1 rounded-full border border-border bg-card p-1" indicatorClass="top-1 bottom-1 rounded-full bg-secondary transition-all duration-240 ease-in-out motion-reduce:transition-none">
     <Each of={splitPlayer() ? tabs.slice(1) : tabs} key={item => item.value}>{item =>
       <Tab testID={`player-tab-${item().value}`} accessibilityLabel={item().label} selected={selected() === item().value} onPress={() => nav.playerTab.set(item().value)}
-        style={{ flex: 1, minWidth: 0, height: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, borderRadius: 18, ...transition("colors,opacity", motion.instant) }}
-        activeStyle={{ opacity: 0.7 }} class="focus-visible:ring-2 focus-visible:ring-primary">
-        <Icon name={item().icon} size={18} color={selected() === item().value ? c().accent : c().sub} />
-        <Label size={13} color={selected() === item().value ? c().accent : c().sub} weight={selected() === item().value ? "600" : "400"}>{item().value === "queue" ? "队列" : item().label}</Label>
+        class={`group h-10 min-w-0 flex-1 flex-row items-center justify-center gap-2 rounded-full active:opacity-70 ${focusRing}`}>
+        <Icon name={item().icon} size={16} color={selected() === item().value ? "foreground" : "muted-foreground"} />
+        <Text class={`text-sm ${selected() === item().value ? "font-semibold text-foreground" : "font-normal text-muted-foreground group-hover:text-foreground"}`}>{item().value === "queue" ? "队列" : item().label}</Text>
       </Tab>
     }</Each>
   </Tabs>;
 }
 
+/** Under the lyrics or the queue on a narrow screen: what plays, play and
+ * next, over the position. */
 function CompactTransport() {
-  return <View style={{ flexShrink: 0, minWidth: 0, gap: 2, paddingTop: 6 }}>
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 10, minWidth: 0 }}>
-      <Art track={p.currentTrack()} size={42} />
-      <Press label="回到封面" onPress={() => nav.playerTab.set("cover")} style={{ flex: 1, gap: 4, minWidth: 0 }}><Label size={14} weight="600" lines={1}>{p.currentTrack()?.title}</Label><Label size={11} color={c().sub} lines={1}>{p.currentTrack()?.artist}</Label></Press>
-      <PlayButton small /><Tool icon="next" label="下一首" disabled={p.remoteControlled()} onPress={() => void action(p.next)} />
+  return <View class="min-w-0 shrink-0 gap-1 pt-1.5">
+    <View class="min-w-0 flex-row items-center gap-2">
+      <Button accessibilityLabel="回到封面" onPress={() => nav.playerTab.set("cover")} class={`min-w-0 flex-1 flex-row items-center gap-3 rounded-(--radius) active:opacity-70 ${focusRing}`}>
+        <Art track={p.currentTrack()} size={42} />
+        <View class="min-w-0 flex-1 gap-0.5"><Text class="line-clamp-1 text-sm font-semibold text-foreground">{p.currentTrack()?.title}</Text><Text class="line-clamp-1 text-xs text-muted-foreground">{p.currentTrack()?.artist}</Text></View>
+      </Button>
+      <PlayButton testID="player-play-pause" labels={["播放", "暂停"]} tinted playing={pauses()} size={40} disabled={p.remoteControlled()} onPress={() => void action(p.togglePlay)} />
+      <IconButton name="skipForward" label="下一首" disabled={p.remoteControlled()} onPress={() => void action(p.next)} />
     </View>
-    <If when={!shortLandscape()} else={<MiniProgress />}><SeekRail testID="player-panel-seek" /></If>
+    <SeekBar quiet testID="player-panel-seek" />
   </View>;
 }
 
@@ -309,7 +398,7 @@ function PlaybackDetails() {
       <Label size={11} color={c().faint} lines={1}>{p.streamInfo() ? `${quality()}${p.streamInfo()?.bitrate ? ` · ${Math.round(p.streamInfo()!.bitrate! / 1000)} kbps` : ""}${p.rate() !== 1 ? ` · ${p.rate()}×` : ""}` : playbackLabel()}</Label>
       <Icon name={expanded() ? "up" : "info"} size={14} color={c().faint} />
     </Press>
-    <If when={expanded()}><View testID="playback-details" style={{ gap: 10, padding: 14, borderRadius: 16, backgroundColor: c().card }}>
+    <If when={expanded()}><View testID="playback-details" style={{ gap: 10, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: c().line, backgroundColor: c().card }}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 12 }}><Label size={12} color={c().sub}>播放状态</Label><Label size={12} color={c().accent}>{playbackLabel()}</Label></View>
       <If when={p.bufferedPosition() > 0}><View style={{ flexDirection: "row", justifyContent: "space-between", gap: 12 }}><Label size={12} color={c().sub}>前方已缓冲</Label><Label testID="playback-buffered" size={12}>{Math.max(0, Math.floor(p.bufferedPosition() - p.position()))} 秒</Label></View></If>
       <If when={p.playbackTiming()}>{timing => <>
@@ -327,15 +416,15 @@ function PlaybackDetails() {
 }
 
 function NextTrack() {
-  return <If when={p.repeat() !== "one" ? p.upNext() : undefined}>{track => <Press testID="player-up-next" label="查看接下来的歌曲" onPress={() => nav.playerTab.set("queue")} style={{ flexDirection: "row", alignItems: "center", minWidth: 0, gap: 10, padding: 12, borderRadius: 18, backgroundColor: c().card }}>
-    <Art track={track()} size={38} radius={8} />
-    <View style={{ flex: 1, minWidth: 0, gap: 4 }}><Label size={10} color={c().accent}>下一首 · {nextLabel()}</Label><Label size={12} lines={1}>{track().title}</Label></View>
+  return <If when={p.repeat() !== "one" ? p.upNext() : undefined}>{track => <Press testID="player-up-next" label="查看接下来的歌曲" onPress={() => nav.playerTab.set("queue")} style={{ flexDirection: "row", alignItems: "center", minWidth: 0, gap: 10, padding: 10, borderRadius: 12, borderWidth: 1, borderColor: c().line, backgroundColor: c().card }}>
+    <Art track={track()} size={38} radius={6} />
+    <View style={{ flex: 1, minWidth: 0, gap: 4 }}><Label size={11} weight="600" color={c().sub}>下一首 · {nextLabel()}</Label><Label size={12} lines={1}>{track().title}</Label></View>
     <Icon name="queue" size={20} color={c().sub} />
   </Press>}</If>;
 }
 
 function PlayerCover(props: { size: number; width: number; onHeight: (height: number) => void }) {
-  return <Scroll testID="player-cover-scroll" style={{ flex: 1, minWidth: 0, minHeight: 0 }} scrollbar={false} contentStyle={{ flexDirection: shortLandscape() ? "row" : "column", alignItems: shortLandscape() ? "center" : undefined, gap: shortLandscape() ? 24 : 22, paddingTop: 6, paddingBottom: 12 }}>
+  return <Scroll testID="player-cover-scroll" style={{ flex: 1, minWidth: 0, minHeight: 0 }} scrollbar={false} contentStyle={{ flexDirection: shortLandscape() ? "row" : "column", alignItems: shortLandscape() ? "center" : undefined, justifyContent: "center", flexGrow: 1, gap: shortLandscape() ? 32 : 28, paddingTop: 6, paddingBottom: 12 }}>
     <View style={{ width: shortLandscape() ? props.width : "100%", alignItems: "center", flexShrink: 0 }}><CoverArt size={props.size} /></View>
     <View style={{ flex: shortLandscape() ? 1 : undefined, minWidth: 0, width: shortLandscape() ? undefined : "100%", maxWidth: 600, alignSelf: "center", gap: 8 }}>
       <Transport onHeight={props.onHeight} />
@@ -349,35 +438,41 @@ function PlayerContent() {
   const bodyHeight = signal(windowSize().height - 156);
   const bodyWidth = signal(windowSize().width - 32);
   const controlsHeight = signal(290);
-  const padding = () => splitPlayer() ? 36 : 16;
+  const padding = () => splitPlayer() ? 40 : 16;
   const coverWidth = () => splitPlayer() ? (bodyWidth() - 32) / 2.1 : shortLandscape() ? bodyWidth() * 0.36 : bodyWidth();
-  const coverSize = () => Math.min(420, coverWidth(), Math.max(shortLandscape() ? 136 : 112, bodyHeight() - (shortLandscape() ? 24 : controlsHeight() + (touch() ? 100 : 88) + (p.repeat() !== "one" && p.upNext() ? 72 : 0))));
-  return <View style={{ flex: 1, minWidth: 0, minHeight: 0, paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)", paddingLeft: "env(safe-area-inset-left)", paddingRight: "env(safe-area-inset-right)" }}>
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: padding(), height: shortLandscape() ? 52 : 60, flexShrink: 0, minWidth: 0 }}>
-      <Tool testID="close-player" icon="down" label="收起播放器" onPress={() => nav.fullPlayer.set(false)} />
-      <View style={{ flex: 1, gap: 3, alignItems: "center", minWidth: 0 }}><Label size={10} color={c().faint}>正在播放</Label><Label lines={1} size={13}>{p.queueTitle() || "当前播放"}</Label></View>
+  const coverSize = () => Math.min(360, coverWidth(), Math.max(shortLandscape() ? 136 : 112, bodyHeight() - (shortLandscape() ? 24 : controlsHeight() + (touch() ? 100 : 88) + (p.repeat() !== "one" && p.upNext() ? 72 : 0))));
+  animateLayoutOn(() => `${splitPlayer()}|${shortLandscape()}`);
+  return <View class="min-h-0 min-w-0 flex-1 pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
+    {/* The music's light rises from the bottom of the page. */}
+    <MusicLight effect={lightEffect()} colors={[]} playing={p.playing()} reach={windowSize().height * 0.45} />
+    <View class="z-10 min-w-0 shrink-0 flex-row items-center gap-2" style={{ paddingHorizontal: padding() - 8, height: shortLandscape() ? 52 : 64 }}>
+      <IconButton testID="close-player" name="chevronDown" label="收起播放器" size={24} onPress={() => nav.fullPlayer.set(false)} />
+      <View class="min-w-0 flex-1 items-center gap-0.5"><Text class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">正在播放</Text><Text class="line-clamp-1 text-sm font-semibold text-foreground">{p.queueTitle() || "当前播放"}</Text></View>
+      <If when={!touch()}><VolumeControl quiet /></If>
+      <LightMenu placement="bottom" size={20} />
       <If when={p.currentTrack()}>{track => <SongMenu track={track()} />}</If>
     </View>
-    <View testID="player-body" onLayout={({ bounds }) => { bodyHeight.set(bounds.size.height - 8); bodyWidth.set(bounds.size.width - padding() * 2); }} style={{ flex: 1, minHeight: 0, minWidth: 0, flexDirection: "row", gap: 32, paddingHorizontal: padding(), paddingBottom: 8, maxWidth: 1400, width: "100%", alignSelf: "center" }}>
+    <View testID="player-body" onLayout={({ bounds }) => { bodyHeight.set(bounds.size.height - 8); bodyWidth.set(bounds.size.width - padding() * 2); }} class="min-h-0 min-w-0 w-full max-w-[1400px] flex-1 flex-row gap-12 self-center pb-2" style={{ paddingHorizontal: padding() }}>
       <If when={splitPlayer()} else={
-        <View style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+        <View class="min-h-0 min-w-0 flex-1">
           <PanelFade><If when={nav.playerTab() === "cover"} else={<If when={nav.playerTab() === "lyrics"} else={<QueueView />}><LyricsView /></If>}><PlayerCover size={coverSize()} width={coverWidth()} onHeight={controlsHeight.set} /></If></PanelFade>
           <If when={nav.playerTab() !== "cover"}><CompactTransport /></If>
         </View>
       }>
-        <View style={{ flex: 1, minWidth: 0, minHeight: 0 }}><PlayerCover size={coverSize()} width={coverWidth()} onHeight={controlsHeight.set} /></View>
-        <View style={{ flex: 1.1, minWidth: 0, minHeight: 0, paddingTop: 8 }}><PanelFade><If when={nav.playerTab() === "lyrics"} else={<QueueView />}><LyricsView /></If></PanelFade></View>
+        <View class="min-h-0 min-w-0 flex-1"><PlayerCover size={coverSize()} width={coverWidth()} onHeight={controlsHeight.set} /></View>
+        <View class="min-h-0 min-w-0 pt-2" style={{ flex: 1.1, ...enter("fadeInUp", 120) }}><PanelFade><If when={nav.playerTab() === "lyrics"} else={<QueueView />}><LyricsView /></If></PanelFade></View>
       </If>
     </View>
-    <View style={{ flexShrink: 0, paddingHorizontal: padding(), paddingTop: 4, paddingBottom: shortLandscape() ? 4 : 10, maxWidth: splitPlayer() ? 600 : undefined, width: "100%", alignSelf: "center" }}><PlayerTabs /></View>
+    <View class="z-10 w-full shrink-0 self-center pt-1" style={{ paddingHorizontal: padding(), paddingBottom: shortLandscape() ? 4 : 12, maxWidth: splitPlayer() ? 560 : undefined }}><PlayerTabs /></View>
   </View>;
 }
 
+/** Now Playing: the whole window, on the page's ground (spotish's sheet). */
 export function FullPlayer() {
-  return <Dialog testID="full-player" open={nav.fullPlayer()} presentation="fullScreen" animation={reduceMotion() ? "none" : "slide"} onOpenChange={({ open }) => nav.fullPlayer.set(open)} statusBar={{ foreground: s.settings().theme === "light" || s.settings().theme === "system" && colorScheme() === "light" ? "dark" : "light" }} style={{ flex: 1, minWidth: 0, minHeight: 0, backgroundColor: c().bg }}>
-    <If when={p.currentTrack()} else={<View style={{ flex: 1, minWidth: 0, paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)", paddingHorizontal: 16 }}>
-      <View style={{ alignItems: "flex-start" }}><Tool testID="close-player" icon="down" label="收起播放器" onPress={() => nav.fullPlayer.set(false)} /></View>
-      <Scroll style={{ flex: 1, minHeight: 0 }}><Empty icon="queue" title="队列已清空" description="挑选一首音乐，开始下一段聆听。"><Pill primary label="搜索音乐" icon="search" onPress={() => { nav.fullPlayer.set(false); nav.navigate("search"); }} /></Empty></Scroll>
+  return <Dialog testID="full-player" open={nav.fullPlayer()} presentation="fullScreen" animation={reduceMotion() ? "none" : "slide"} onOpenChange={({ open }) => nav.fullPlayer.set(open)} statusBar={{ foreground: s.settings().theme === "light" || s.settings().theme === "system" && colorScheme() === "light" ? "dark" : "light" }} class="min-h-0 min-w-0 flex-1 bg-sidebar">
+    <If when={p.currentTrack()} else={<View class="min-w-0 flex-1 px-4 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+      <View class="items-start pt-2"><IconButton testID="close-player" name="chevronDown" label="收起播放器" size={24} onPress={() => nav.fullPlayer.set(false)} /></View>
+      <Scroll class="min-h-0 flex-1"><Empty icon="queue" title="队列已清空" description="挑选一首音乐，开始下一段聆听。"><Pill primary label="搜索音乐" icon="search" onPress={() => { nav.fullPlayer.set(false); nav.navigate("search"); }} /></Empty></Scroll>
     </View>}><PlayerContent /></If>
   </Dialog>;
 }

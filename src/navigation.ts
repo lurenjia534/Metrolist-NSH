@@ -22,8 +22,16 @@ type RouteSnapshot =
   | { page: "browse"; state: ReturnType<typeof store.captureExploreState> };
 const snapshots = new Map<number, RouteSnapshot>();
 export const page = computed(() => current().page);
+/** The shown route's key: a page's lists ask whether they are on top. */
+export const currentKey = computed(() => current().key);
+/** Goes up each time a root is chosen from the sidebar or a tab, even while
+ * shown: its lists come in again (spotish's `rootOpens`). */
+export const rootOpens = signal(0);
 export const activeTab = computed(() => stack.routes().slice().reverse().find(route => route.page === "home" || route.page === "search" || route.page === "library")?.page);
 export const canGoBack = computed(() => stack.routes().length > 1 || page() !== "home" || !!store.selectedHomeChip());
+/** Routes Back took off the stack, the next Forward last; any other move clears them. */
+const ahead = signal<Route[]>([]);
+export const canGoForward = computed(() => ahead().length > 0);
 export const libraryTab = signal("all");
 export const searchText = signal("");
 export const searchType = signal<SearchType>("all");
@@ -69,6 +77,7 @@ function activate(route: Route, restore = false) {
 function push(route: Omit<Route, "key">, root = false) {
   const next = { ...route, key: nextKey++ };
   batch(() => {
+    ahead.set([]);
     activate(next);
     if (root) stack.setRoutes([next]); else stack.push(next);
   });
@@ -80,8 +89,9 @@ export function onRoutesChanged(routes: readonly Route[]) {
 }
 export function navigate(next: Page, root = false) {
   if (root) {
+    rootOpens.set(rootOpens() + 1);
     const existing = stack.routes().slice().reverse().find(route => route.page === next);
-    if (existing) batch(() => { activate(existing, true); stack.setRoutes([existing]); });
+    if (existing) batch(() => { ahead.set([]); activate(existing, true); stack.setRoutes([existing]); });
     else push({ page: next }, true);
   } else if (page() !== next) push({ page: next });
 }
@@ -91,8 +101,13 @@ export function handlesBack(route: Route) {
 }
 export function goBack() {
   if (page() === "home" && store.selectedHomeChip()) { store.clearHomeFilter(); return; }
-  if (stack.routes().length > 1) batch(() => { stack.pop(); activate(stack.routes().at(-1)!, true); });
+  if (stack.routes().length > 1) batch(() => { const leaving = stack.routes().at(-1)!; stack.pop(); activate(stack.routes().at(-1)!, true); ahead.update(routes => [...routes, leaving]); });
   else navigate("home", true);
+}
+export function goForward() {
+  const next = ahead().at(-1);
+  if (!next) return;
+  batch(() => { ahead.update(routes => routes.slice(0, -1)); activate(next, true); stack.push(next); });
 }
 export function openExplore(tab: ExploreTab = "all", title = exploreTitles[tab]) {
   if (page() === "browse" && !current().endpoint) {

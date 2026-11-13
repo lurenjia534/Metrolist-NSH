@@ -191,6 +191,8 @@ test("home shelves retain their fifteenth card and grouped mood buttons open rea
     [`GET ${moodUrl}`]: { body: { id: mood.browseId, title: mood.title, subtitle: "", artwork: "", tracks: [], sections: [{ title: "阅读时的音乐", items: [album] }] } },
   } });
   await app.waitFor("id:home-section-0");
+  // The sixteenth card sits past the row's visible width: scroll the row to it, as a user does.
+  await app.scroll("id:home-section-0-cards", 4000); await app.waitFor(`id:home-section-0 >> label:${albums[15].title}`);
   await app.press(`id:home-section-0 >> label:${albums[15].title}`); await app.waitFor("id:page-collection");
   expect(requestsTo(app, `${origin}/api/browse?id=${albums[15].id}`)).toHaveLength(1);
   await app.back(); await app.waitFor("id:page-home");

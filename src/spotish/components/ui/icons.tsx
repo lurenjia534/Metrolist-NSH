@@ -1,3 +1,4 @@
+// Adapted for Metrolist NSH; see third-party/spotish/README.md.
 // The app's icons: one family of glyphs (Tabler Icons), drawn
 // as an SVG data-URI through `Image`, in a theme token's color. TSX has no
 // inline-SVG element, so the token's value is put into the SVG and read
@@ -14,7 +15,9 @@ export type IconName =
   | "volumeMute" | "chevronLeft" | "chevronRight" | "chevronDown" | "music" | "user"
   | "logIn" | "logOut" | "disc" | "clock" | "alert" | "close"
   | "sparkles" | "externalLink" | "info" | "github" | "code" | "check"
-  | "sidebarCollapse" | "sidebarExpand" | "power" | "crown" | "activity" | "compass" | "microphone";
+  | "sidebarCollapse" | "sidebarExpand" | "power" | "crown" | "activity" | "compass" | "microphone"
+  // Metrolist adaptation: the YouTube Music workspace's glyphs, from the same family.
+  | "users" | "chartBar" | "layoutGrid" | "list" | "sort" | "share" | "refresh" | "circleCheck" | "circle" | "database" | "bookmark" | "pencil" | "settings" | "plus" | "playlist" | "chevronUp" | "dots" | "download" | "upload" | "link" | "sun" | "moon" | "arrowRight" | "broadcast" | "trash" | "maximize" | "headphones" | "sidebarRight" | "clockPlay";
 
 // Tabler Icons 3.19.0 (MIT, tabler.io/icons): Outline at a 1.5pt stroke,
 // and Filled for the transport and the liked heart. Each is the inside of a
@@ -59,6 +62,35 @@ const BODY: Record<IconName, string> = {
   crown: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6l4 6l5 -4l-2 10h-14l-2 -10l5 4z" /></g>`,
   activity: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8l4 -16l3 8h4" /></g>`,
   microphone: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2m0 3a3 3 0 0 1 3 -3h0a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3h0a3 3 0 0 1 -3 -3z" /> <path d="M5 10a7 7 0 0 0 14 0" /> <path d="M8 21l8 0" /> <path d="M12 17l0 4" /></g>`,
+  users: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7a4 4 0 1 0 8 0a4 4 0 1 0 -8 0" /> <path d="M3 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2" /> <path d="M16 3.13a4 4 0 0 1 0 7.75" /> <path d="M21 21v-2a4 4 0 0 0 -3 -3.85" /></g>`,
+  chartBar: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v6a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z" /> <path d="M15 9a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v10a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z" /> <path d="M9 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z" /> <path d="M4 20h14" /></g>`,
+  layoutGrid: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z" /> <path d="M14 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z" /> <path d="M4 15a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z" /> <path d="M14 15a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z" /></g>`,
+  list: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l11 0" /> <path d="M9 12l11 0" /> <path d="M9 18l11 0" /> <path d="M5 6l0 .01" /> <path d="M5 12l0 .01" /> <path d="M5 18l0 .01" /></g>`,
+  sort: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l4 -4l4 4m-4 -4v14" /> <path d="M21 15l-4 4l-4 -4m4 4v-14" /></g>`,
+  share: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a3 3 0 1 0 6 0a3 3 0 1 0 -6 0" /> <path d="M15 6a3 3 0 1 0 6 0a3 3 0 1 0 -6 0" /> <path d="M15 18a3 3 0 1 0 6 0a3 3 0 1 0 -6 0" /> <path d="M8.7 10.7l6.6 -3.4" /> <path d="M8.7 13.3l6.6 3.4" /></g>`,
+  refresh: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" /> <path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" /></g>`,
+  circleCheck: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" /> <path d="M9 12l2 2l4 -4" /></g>`,
+  circle: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" /></g>`,
+  database: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" /> <path d="M4 6v6a8 3 0 0 0 16 0v-6" /> <path d="M4 12v6a8 3 0 0 0 16 0v-6" /></g>`,
+  bookmark: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 7v14l-6 -4l-6 4v-14a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4z" /></g>`,
+  pencil: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" /> <path d="M13.5 6.5l4 4" /></g>`,
+  settings: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" /> <path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" /></g>`,
+  plus: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5l0 14" /> <path d="M5 12l14 0" /></g>`,
+  playlist: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 17a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" /> <path d="M17 17v-13h4" /> <path d="M13 5h-10" /> <path d="M3 9l10 0" /> <path d="M9 13h-6" /></g>`,
+  chevronUp: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6 -6l6 6" /></g>`,
+  dots: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /> <path d="M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /> <path d="M18 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /></g>`,
+  download: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2" /> <path d="M7 11l5 5l5 -5" /> <path d="M12 4l0 12" /></g>`,
+  upload: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2" /> <path d="M7 9l5 -5l5 5" /> <path d="M12 4l0 12" /></g>`,
+  link: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15l6 -6" /> <path d="M11 6l.463 -.536a5 5 0 0 1 7.071 7.072l-.534 .464" /> <path d="M13 18l-.397 .534a5.068 5.068 0 0 1 -7.127 0a4.972 4.972 0 0 1 0 -7.071l.524 -.463" /></g>`,
+  sun: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12a4 4 0 1 0 8 0a4 4 0 1 0 -8 0" /> <path d="M3 12h1m8 -9v1m8 8h1m-9 8v1m-6.4 -15.4l.7 .7m12.1 -.7l-.7 .7m0 11.4l.7 .7m-12.1 -.7l-.7 .7" /></g>`,
+  moon: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" /></g>`,
+  arrowRight: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l14 0" /> <path d="M13 18l6 -6" /> <path d="M13 6l6 6" /></g>`,
+  broadcast: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18.364 19.364a9 9 0 1 0 -12.728 0" /> <path d="M15.536 16.536a5 5 0 1 0 -7.072 0" /> <path d="M11 13a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /></g>`,
+  trash: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7l16 0" /> <path d="M10 11l0 6" /> <path d="M14 11l0 6" /> <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" /> <path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" /></g>`,
+  maximize: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4l4 0l0 4" /> <path d="M14 10l6 -6" /> <path d="M8 20l-4 0l0 -4" /> <path d="M4 20l6 -6" /> <path d="M16 20l4 0l0 -4" /> <path d="M14 14l6 6" /> <path d="M8 4l-4 0l0 4" /> <path d="M4 4l6 6" /></g>`,
+  headphones: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15a2 2 0 0 1 2 -2h1a2 2 0 0 1 2 2v3a2 2 0 0 1 -2 2h-1a2 2 0 0 1 -2 -2z" /> <path d="M15 15a2 2 0 0 1 2 -2h1a2 2 0 0 1 2 2v3a2 2 0 0 1 -2 2h-1a2 2 0 0 1 -2 -2z" /> <path d="M4 15v-3a8 8 0 0 1 16 0v3" /></g>`,
+  sidebarRight: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z" /> <path d="M15 4v16" /></g>`,
+  clockPlay: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v5l2 2" /> <path d="M17 22l5 -3l-5 -3z" /> <path d="M13.017 20.943a9 9 0 1 1 7.831 -7.292" /></g>`,
 };
 
 /** The speaker alone: the first frame of the volume icons' morph. */

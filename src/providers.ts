@@ -4,6 +4,21 @@ import { settings } from "./store";
 import * as together from "./together";
 import { pauseSpotify } from "./spotish/App";
 import spotifyTheme from "./spotish/theme.json";
+import youtubeTheme from "../theme.json";
+
+/** Pure black: the workspace's dark roles with every surface darker. */
+const blackTheme = {
+  ...youtubeTheme, name: "metrolist-black",
+  cssVars: { ...youtubeTheme.cssVars, dark: { ...youtubeTheme.cssVars.dark,
+    background: "#000000", sidebar: "#000000", shell: "#000000", card: "#0a0b0c", popover: "#0d0e0f", player: "#0b0c0d",
+    secondary: "#141617", muted: "#1c1f21", border: "#1a1d1f", "sidebar-border": "#141617", "row-hover": "#0f1112", input: "#1f2224" } },
+};
+
+/** The YouTube Music workspace's theme for the user's choice. */
+export function applyWorkspaceTheme(choice: string) {
+  if (activeProvider() !== "youtube") return;
+  setTheme(choice === "black" ? blackTheme : null);
+}
 
 export type MusicProvider = "youtube" | "spotify";
 
@@ -16,7 +31,7 @@ function applyProvider(provider: MusicProvider) {
   batch(() => {
     activeProvider.set(provider);
     playback.workspaceActive.set(provider === "youtube");
-    setTheme(provider === "spotify" ? spotifyTheme : null);
+    setTheme(provider === "spotify" ? spotifyTheme : settings().theme === "black" ? blackTheme : null);
     const theme = settings().theme;
     setColorScheme(provider === "spotify" ? "system" : theme === "black" ? "dark" : theme);
   });

@@ -1,3 +1,4 @@
+// Adapted for Metrolist NSH; see third-party/spotish/README.md.
 // The app's styled controls, each wrapping a base component once. Pages and
 // app components compose these; they do not restyle base controls.
 //
@@ -30,6 +31,7 @@ export const keyRing = platform.idiom === "terminal" ? "bg-muted" : "outline out
  * states, left to the pointer and to its list's arrow keys
  * (`createListKeys`). `Button` has no `focusable` of its own. Read once. */
 export function Pressable(props: {
+  testID?: string;
   focusable?: boolean;
   accessibilityLabel?: string;
   selected?: boolean;
@@ -44,6 +46,7 @@ export function Pressable(props: {
   if (untracked(() => props.focusable) === false) {
     return (
       <View
+        testID={props.testID}
         role="button"
         focusable={false}
         accessibilityLabel={props.accessibilityLabel}
@@ -62,6 +65,7 @@ export function Pressable(props: {
   return (
     <Button
       ref={regionItem()}
+      testID={props.testID}
       accessibilityLabel={props.accessibilityLabel}
       selected={props.selected ?? false}
       disabled={props.disabled ?? false}
@@ -117,6 +121,7 @@ export function Hint(props: { label: string }) {
 }
 
 export interface IconButtonProps {
+  testID?: string;
   name: IconName;
   /** What it does: screen readers say it, a terminal shows it. */
   label: string;
@@ -166,6 +171,7 @@ export function IconButton(props: IconButtonProps) {
     <View onMouseEnter={() => !props.disabled && hover.play(props.name)}>
     <Button
       ref={item}
+      testID={props.testID}
       accessibilityLabel={props.label}
       disabled={props.disabled ?? false}
       selected={props.selected ?? false}
@@ -203,6 +209,9 @@ export function IconButton(props: IconButtonProps) {
 /** `quiet`: no border or shadow, a faint disc (Now Playing, where the music
  * light leads). */
 export function PlayButton(props: {
+  testID?: string;
+  /** What it says for play and for pause (default Play, Pause). */
+  labels?: [string, string];
   playing: boolean;
   size?: number;
   disabled?: boolean;
@@ -214,7 +223,7 @@ export function PlayButton(props: {
   onPress: () => void;
 }) {
   const size = () => props.size ?? 36;
-  const label = () => (props.playing ? "Pause" : "Play");
+  const label = () => (props.playing ? props.labels?.[1] ?? "Pause" : props.labels?.[0] ?? "Play");
   if (terminal) {
     return (
       <Button accessibilityLabel={label()} disabled={props.disabled ?? false} onPress={props.onPress} class="px-1 focus:bg-muted disabled:opacity-50">
@@ -226,6 +235,7 @@ export function PlayButton(props: {
   return (
     <View onMouseEnter={() => !props.disabled && hover.play(props.playing ? "pause" : "play")}>
     <Pressable
+      testID={props.testID}
       focusable={props.focusable}
       accessibilityLabel={label()}
       disabled={props.disabled ?? false}
@@ -345,6 +355,7 @@ export function Cover(props: {
 /** A slider (position, volume): a track with a filled range and a thumb
  * that shows on hover, focus and drag. */
 export function BarSlider(props: {
+  testID?: string;
   label: string;
   value: number;
   max: number;
@@ -369,6 +380,7 @@ export function BarSlider(props: {
   const drawn = !!fill && !terminal;
   return (
     <Slider
+      testID={props.testID}
       accessibilityLabel={props.label}
       value={props.value}
       min={0}
@@ -383,7 +395,9 @@ export function BarSlider(props: {
       rangeClass={`h-full rounded-full ${props.quiet ? "bg-foreground/35" : "bg-foreground/55"} disabled:bg-muted-foreground ${drawn ? "opacity-0" : ""}`}
       // No thumb dot: the bar itself is the control (it still takes the
       // keyboard focus and screen readers through the slider).
-      thumbClass="size-0 opacity-0"
+      // Metrolist: an invisible thumb with a size, so tests and touch can find
+      // the labelled control (a zero-size view is skipped).
+      thumbClass="size-3 opacity-0"
       rangeStyle={
         props.tinted && !props.disabled && !drawn
           ? { backgroundImage: `linear-gradient(90deg, ${alpha(tint(), props.quiet ? 0.2 : 0.3)}, ${alpha(tint(), props.quiet ? 0.4 : 0.6)})` }

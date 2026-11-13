@@ -21,7 +21,10 @@ their respective owners' rights.
   upstream UI behavior and opt-in performance scenarios adapted to the
   Metrolist fixture and storage namespace.
 
-Metrolist adaptations introduce a mountable workspace, independently
+Metrolist adaptations introduce a mountable workspace, the YouTube Music
+workspace's reuse of the UI layer (`src/spotish/components/ui`: extra Tabler
+glyphs in `icons.tsx`; `testID` and label props and a sized, invisible slider
+thumb in `controls.tsx`), independently
 namespaced storage and browser profile, shared application switching,
 workspace-scoped platform integrations and platform-specific build
 configuration. Modified files carry an adaptation notice. Original
