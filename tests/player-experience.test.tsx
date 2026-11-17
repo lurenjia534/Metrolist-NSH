@@ -108,3 +108,19 @@ test("340-point queue moves existing occurrences next while preserving the activ
   await app.waitFor("id:queue-next-1");
   expect(app.enabled("id:queue-next-1")).toBe(false);
 });
+
+test("relative seek uses the saved interval and custom sleep settings survive reopening", async () => {
+  const app = await open("../App.tsx", { width: 390, height: 844, platform: "android", network, host: { handlers }, storage: {
+    ...storage, "metrolist.settings": JSON.stringify({ ...JSON.parse(storage["metrolist.settings"]), seekSeconds: 25 }),
+  } });
+  await app.press("id:open-player");
+  await app.press("id:player-seek-forward"); await app.press("id:player-seek-back");
+  expect(calls(app, "app.audio.seek").map(call => call.data)).toEqual([{ position: 68 }, { position: 43 }]);
+  await app.press("id:player-sleep");
+  await app.clear("id:sleep-custom-minutes"); await app.type("id:sleep-custom-minutes", "17");
+  await app.press("id:sleep-finish-song"); await app.press("id:sleep-custom-start");
+  await app.waitFor("id:app-dialog", { state: "gone" });
+  expect(settings(app)).toMatchObject({ sleepMinutes: 17, sleepFinishSong: true });
+  await app.press("id:player-sleep"); await app.waitFor("id:sleep-status");
+  expect(app.value("id:sleep-custom-minutes")).toBe("17");
+});

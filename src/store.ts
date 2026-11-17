@@ -33,7 +33,7 @@ export const settings = signal<Settings>({
   audioQuality: "auto", autoRadio: true, pauseHistory: false, libraryView: "grid", playlistSorting: {},
   lyricFontSize: "medium", lyricAlignment: "center", lyricsOffset: 0,
   volume: 0.7, rate: 1, shuffle: false, repeat: "off",
-  skipSilence: false,
+  skipSilence: false, seekSeconds: 10, sleepMinutes: 15, sleepFinishSong: false,
 });
 export const home = signal<HomeResponse>({ sections: [], chips: [] });
 export const selectedHomeChip = signal<HomeChip | null>(null);

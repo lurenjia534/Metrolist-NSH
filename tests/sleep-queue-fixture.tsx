@@ -26,6 +26,7 @@ function Fixture() {
     { name: "Shuffle", action: p.toggleShuffle },
     { name: "Repeat one", action: () => { p.cycleRepeat(); p.cycleRepeat(); } },
     { name: "Auto radio", action: () => autoRadio.set(true) },
+    { name: "Finish song after minute", action: () => p.setSleepTimer(1, true) },
     { name: "Sleep one minute", action: () => p.setSleepTimer(1) },
     { name: "Sleep after song", action: p.setSleepAfterTrack },
     { name: "Cancel sleep", action: p.cancelSleepTimer },
