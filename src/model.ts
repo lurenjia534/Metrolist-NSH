@@ -135,15 +135,18 @@ export interface ListenEvent {
   startedAt: number;
   seconds: number;
 }
-export type StatsPeriod = "week" | "month" | "year" | "all";
+export type StatsPeriod = "week" | "month" | "quarter" | "halfYear" | "year" | "all";
 export interface TrackStats { track: Track; playCount: number; seconds: number }
 export interface ArtistStats { id: string; name: string; artwork: string; playCount: number; seconds: number }
+export interface AlbumStats { albumId?: string; title: string; artist: string; artwork: string; playCount: number; seconds: number }
 export interface ListeningStatistics {
   plays: number;
   totalSeconds: number;
   uniqueTracks: number;
   topTracks: TrackStats[];
   topArtists: ArtistStats[];
+  topAlbums: AlbumStats[];
+  hourlyPlays: number[];
   daily: { date: string; seconds: number; plays: number }[];
 }
 export type RepeatMode = "off" | "all" | "one";

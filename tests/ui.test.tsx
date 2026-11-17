@@ -155,3 +155,38 @@ test("desktop settings, offline downloads, statistics and together screens expos
   expect(app.enabled("label:加入房间")).toBe(true);
   expect(app.value("id:together-code")).toBe("ABC123");
 });
+
+test("statistics opens an album and plays the ranked queue for the selected period", async () => {
+  const album = { id: "album-live", browseId: "album-live", title: alpha.album, subtitle: alpha.artist, artwork: "", type: "album" };
+  const songs = [{ ...alpha, albumId: album.id }, { ...beta, album: "Unlisted" }];
+  const ago = (days: number) => Date.now() - days * 86400000;
+  const app = await open("../App.tsx", { width: 1440, height: 940, platform: "linux", storage: {
+    ...preferences,
+    "metrolist.library": JSON.stringify({ version: 2, tracks: songs, likedIds: [], history: [], playlists: [], listenEvents: [
+      { id: "first", trackId: alpha.id, startedAt: ago(45), seconds: 60 },
+      { id: "second", trackId: beta.id, startedAt: ago(1), seconds: 120 },
+    ] }),
+  }, network: { ...network,
+    "GET https://gateway.test/api/browse?id=album-live": { body: { ...album, tracks: [songs[0]], sections: [] } },
+    "GET https://gateway.test/api/search?q=*&type=albums": { body: { items: [] } },
+  } });
+  await app.press("id:nav-stats");
+  await app.waitFor("id:play-track-ui-beta");
+  expect(app.shows("id:play-track-ui-alpha")).toBe(false);
+  await app.press("label:近 90 天");
+  await app.waitFor("id:play-track-ui-alpha");
+  await app.press("id:stats-hour-0");
+  expect(app.texts().join(" ")).toContain("00:00–00:59");
+  await app.press("label:播放全部");
+  await app.waitUntil(() => !!app.storage()["metrolist.player"]);
+  const player = JSON.parse(app.storage()["metrolist.player"]);
+  expect(player.queue.map((track: { id: string }) => track.id)).toEqual([beta.id, alpha.id]);
+  expect(player.title).toBe("最常听的歌曲");
+  await app.press("label:Test album · Test artist");
+  await app.waitFor("id:page-collection");
+  await app.waitFor("id:play-track-ui-alpha");
+  await app.press("id:navigate-back");
+  await app.press("label:Unlisted · Test artist");
+  await app.waitFor("id:page-search");
+  expect(app.value("id:search-input")).toBe("Unlisted Test artist");
+});

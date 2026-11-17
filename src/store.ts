@@ -7,8 +7,9 @@ import seed from "../assets/catalog-seed.json";
 import * as api from "./api";
 import * as account from "./account";
 import * as player from "./playback";
+import { calculateStatistics } from "./statistics";
 import { isTrack } from "./model";
-import type { AudioQuality, BrowseEndpoint, BrowseResponse, CatalogItem, Collection, DownloadJob, ExploreResponse, ExploreTab, HomeChip, HomeResponse, LibrarySnapshot, LibrarySort, ListenEvent, ListeningStatistics, Lyrics, PlayEndpoint, Playlist, PlaylistEntry, PlaylistSort, SavedCollection, SearchType, Settings, StatsPeriod, StreamInfo, Track } from "./model";
+import type { AudioQuality, BrowseEndpoint, BrowseResponse, CatalogItem, Collection, DownloadJob, ExploreResponse, ExploreTab, HomeChip, HomeResponse, LibrarySnapshot, LibrarySort, ListenEvent, Lyrics, PlayEndpoint, Playlist, PlaylistEntry, PlaylistSort, SavedCollection, SearchType, Settings, StatsPeriod, StreamInfo, Track } from "./model";
 
 const seedCatalog = seed as { tracks: Track[]; collections?: Collection[]; sections?: HomeResponse["sections"] };
 
@@ -64,7 +65,7 @@ export const filteredTracks = computed(() => sortTracks(libraryTracks().filter((
 export const filteredPlaylists = computed(() => sortPlaylists(playlists().filter((item) => matches(libraryQuery(), item.name))));
 export const filteredAlbums = computed(() => sortCollections(savedAlbums().filter((item) => matches(libraryQuery(), item.title, item.subtitle))));
 export const filteredArtists = computed(() => sortCollections(savedArtists().filter((item) => matches(libraryQuery(), item.title, item.subtitle))));
-export const statistics = computed<ListeningStatistics>(() => calculateStatistics());
+export const statistics = computed(() => calculateStatistics(listenEvents(), tracks(), statsPeriod(), Date.now()));
 
 let initialized = false;
 let searchRequest = 0;
@@ -118,31 +119,6 @@ function sortCollections(items: SavedCollection[]) {
     : a.title.localeCompare(b.title));
   return libraryDescending() ? result.reverse() : result;
 }
-function calculateStatistics(): ListeningStatistics {
-  const days = { week: 7, month: 30, year: 365, all: Infinity }[statsPeriod()];
-  const events = listenEvents().filter((event) => event.startedAt >= Date.now() - days * 86400000);
-  const byTrack = new Map<string, { playCount: number; seconds: number }>();
-  const byDay = new Map<string, { date: string; seconds: number; plays: number }>();
-  for (const event of events) {
-    const entry = byTrack.get(event.trackId) || { playCount: 0, seconds: 0 };
-    entry.playCount++; entry.seconds += event.seconds; byTrack.set(event.trackId, entry);
-    const date = new Date(event.startedAt).toISOString().slice(0, 10);
-    const day = byDay.get(date) || { date, seconds: 0, plays: 0 };
-    day.seconds += event.seconds; day.plays++; byDay.set(date, day);
-  }
-  const topTracks = tracks().filter((track) => byTrack.has(track.id)).map((track) => ({ track, ...byTrack.get(track.id)! })).sort((a, b) => b.seconds - a.seconds);
-  const byArtist = new Map<string, ListeningStatistics["topArtists"][number]>();
-  for (const item of topTracks) {
-    const id = item.track.artistId || item.track.artist;
-    const artist = byArtist.get(id) || { id, name: item.track.artist, artwork: item.track.artwork, playCount: 0, seconds: 0 };
-    artist.playCount += item.playCount; artist.seconds += item.seconds; byArtist.set(id, artist);
-  }
-  return {
-    plays: events.length, totalSeconds: events.reduce((sum, event) => sum + event.seconds, 0), uniqueTracks: byTrack.size,
-    topTracks, topArtists: [...byArtist.values()].sort((a, b) => b.seconds - a.seconds), daily: [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date)),
-  };
-}
-
 function librarySnapshot(): LibrarySnapshot {
   return {
     version: 2, exportedAt: new Date().toISOString(), tracks: tracks(), likedIds: likedIds(), history: history(), playlists: playlists(),
