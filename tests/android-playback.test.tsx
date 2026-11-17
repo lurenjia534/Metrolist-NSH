@@ -143,3 +143,41 @@ test("a system stop detaches the released native source so the saved queue can p
   await app.host.send("audio.state", state(opened(app)[1].requestId));
   expect(read(app).playing).toBe(true);
 });
+
+test("skipping silence advances the playhead without adding the skipped time to listening history", async () => {
+  const app = await open("./runtime-fixture.tsx", { width: 390, height: 844, platform: "android", network, host: { handlers }, storage: {
+    "metrolist.settings": JSON.stringify({ ...JSON.parse(storage["metrolist.settings"]), skipSilence: true }),
+  } });
+  await app.press("Start video");
+  const id = opened(app)[0].requestId;
+  expect(calls(app, "app.audio.open")[0].data).toMatchObject({ skipSilence: true });
+  const progress = (position: number, elapsedRealtimeMs: number) => app.host.send("audio.state", state(id, {
+    position, elapsedRealtimeMs, skipSilence: true,
+  }));
+  await progress(0, 1000);
+  await progress(40, 2000);
+  await progress(58, 20000);
+  expect(read(app).position).toBe(58);
+  expect(JSON.parse(app.storage()["metrolist.library"] || "{}").listenEvents || []).toEqual([]);
+  await app.host.send("audio.state", state(id, { position: 10, discontinuity: true, skipSilence: true, elapsedRealtimeMs: 20000 }));
+  await progress(22, 32000);
+  expect(JSON.parse(app.storage()["metrolist.library"]).listenEvents[0].seconds).toBe(31);
+});
+
+test("Android playback settings switch silence skipping on a running service without reopening it", async () => {
+  const app = await open("../App.tsx", { width: 390, height: 844, platform: "android", storage, network,
+    host: { handlers: { ...handlers, "auth.available": { available: true, method: "webview" },
+      "app.audio.snapshot": { ...state(73), track: video, source: stream } } },
+  });
+  await app.waitFor("id:mini-player");
+  await app.press("id:header-settings");
+  await app.waitFor("id:page-settings");
+  await app.press("label:播放");
+  await app.waitFor("id:skip-silence");
+  for (const enabled of [true, false]) {
+    await app.press("id:skip-silence");
+    await app.waitUntil(() => JSON.parse(app.storage()["metrolist.settings"]).skipSilence === enabled);
+    expect(calls(app, "app.audio.settings").at(-1)!.data).toMatchObject({ skipSilence: enabled });
+  }
+  expect(opened(app)).toHaveLength(0);
+});

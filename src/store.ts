@@ -33,6 +33,7 @@ export const settings = signal<Settings>({
   audioQuality: "auto", autoRadio: true, pauseHistory: false, libraryView: "grid", playlistSorting: {},
   lyricFontSize: "medium", lyricAlignment: "center", lyricsOffset: 0,
   volume: 0.7, rate: 1, shuffle: false, repeat: "off",
+  skipSilence: false,
 });
 export const home = signal<HomeResponse>({ sections: [], chips: [] });
 export const selectedHomeChip = signal<HomeChip | null>(null);
@@ -175,6 +176,7 @@ export async function initialize() {
     },
     sourceContext: () => JSON.stringify([settings().apiBase, settings().audioQuality, account.currentCredentials()]),
     autoRadio: () => settings().autoRadio,
+    skipSilence: () => settings().skipSilence,
     fetchRadio: async (track) => { const result = await api.fetchNext(track.id); addTracks(result.tracks, false); return result.tracks; },
     onTrack: remember, onListen: recordListen, onError: showError,
     onQueueChange: () => { void savePlayer(); },
@@ -237,6 +239,7 @@ export async function initialize() {
       player.restoreQueue(saved.queue, saved.index, saved.position, saved.title);
     }
     await player.reconnectNativePlayback();
+    if (platform.os === "android") player.applySkipSilence(settings().skipSilence);
   } catch (reason) { showError(reason); }
   void loadHome();
 }
@@ -248,6 +251,7 @@ export function updateSettings(patch: Partial<Settings>) {
   setColorScheme(value.theme === "black" ? "dark" : value.theme);
   if (patch.volume !== undefined) player.setVolume(patch.volume);
   if (patch.rate !== undefined) player.setRate(patch.rate);
+  if (patch.skipSilence !== undefined && platform.os === "android") player.applySkipSilence(patch.skipSilence);
   if (patch.shuffle !== undefined && patch.shuffle !== player.shuffle()) player.toggleShuffle();
   if (patch.repeat !== undefined) player.repeat.set(patch.repeat);
   void saveSettings();
