@@ -143,3 +143,72 @@ test("cloud batch likes and unlikes complete sequentially without duplicate requ
   expect(requests.slice(6)).toEqual([gamma.id, beta.id, alpha.id].flatMap(id => [`POST:${id}:false`, "GET:liked"]));
   expect(saved(app).libraryIds).toEqual(snapshot.libraryIds);
 });
+
+test("each playlist remembers its album sort across restarts and manual edits", async () => {
+  const tracks = [
+    { ...alpha, album: "B" }, { ...beta, album: "" },
+    { ...gamma, album: "A" }, { ...alpha, id: "guest", title: "Guest song", album: "B" },
+  ];
+  const device = { "metrolist.settings": storage["metrolist.settings"], "metrolist.library": JSON.stringify({ ...snapshot, tracks, playlists: [{ ...playlist, tracks }, target] }) };
+  const launch = (savedStorage: Record<string, string>) => open("../App.tsx", { width: 1440, height: 1100, platform: "linux", storage: savedStorage, network });
+  const visit = async (app: App, name: string) => {
+    const row = `id:desktop-sidebar >> label:${name}`;
+    await app.waitFor(row);
+    await app.press(row);
+    await app.waitFor("id:page-playlist");
+  };
+  const choose = async (app: App, id: string) => {
+    await app.press("id:collection-sort");
+    await app.waitFor(`id:collection-sort-${id}`);
+    await app.press(`id:collection-sort-${id}`);
+    await app.waitFor(`id:collection-sort-${id}`, { state: "gone" });
+  };
+  const titles = (app: App) => app.texts().filter(text => tracks.some(track => track.title === text));
+  const app = await launch(device);
+  await visit(app, playlist.name);
+  await choose(app, "album");
+  await app.waitFor("text:专辑名称 ↑");
+  expect(titles(app)).toEqual([gamma.title, alpha.title, "Guest song", beta.title]);
+  await choose(app, "direction");
+  await app.waitFor("text:专辑名称 ↓");
+  expect(titles(app)).toEqual([alpha.title, "Guest song", gamma.title, beta.title]);
+  expect(playlistIds(app)).toEqual(tracks.map(track => track.id));
+
+  await visit(app, target.name);
+  await app.waitFor("text:自定义顺序");
+  await choose(app, "duration");
+  await app.waitFor("text:歌曲时长 ↑");
+  const restarted = await launch(app.storage());
+  await visit(restarted, playlist.name);
+  await restarted.waitFor("text:专辑名称 ↓");
+  await restarted.press("label:歌单操作");
+  await restarted.waitFor("id:playlist-edit");
+  await restarted.press("id:playlist-edit");
+  await restarted.waitFor("id:playlist-down-0");
+  await restarted.press("id:playlist-down-0");
+  await restarted.waitUntil(() => playlistIds(restarted)[0] === beta.id);
+  await restarted.press("label:歌单操作");
+  await restarted.waitFor("id:playlist-edit");
+  await restarted.press("id:playlist-edit");
+  await restarted.waitFor("text:专辑名称 ↓");
+  expect(titles(restarted)).toEqual([alpha.title, "Guest song", gamma.title, beta.title]);
+  await visit(restarted, target.name);
+  await restarted.waitFor("text:歌曲时长 ↑");
+});
+
+test("liked songs and history restore independent album sort directions", async () => {
+  const songs = [{ ...alpha, album: "A" }, { ...beta, album: "Z" }, { ...gamma, album: "" }];
+  const app = await open("../App.tsx", { width: 1440, height: 1100, platform: "linux", network, storage: {
+    "metrolist.settings": JSON.stringify({ ...JSON.parse(storage["metrolist.settings"]), playlistSorting: {
+      liked: { sort: "album", descending: true }, history: { sort: "album", descending: false },
+    } }),
+    "metrolist.library": JSON.stringify({ ...snapshot, tracks: songs, likedIds: songs.map(track => track.id), history: songs }),
+  } });
+  const titles = () => app.texts().filter(text => songs.some(track => track.title === text));
+  await app.press("id:nav-liked");
+  await app.waitFor("text:专辑名称 ↓");
+  expect(titles()).toEqual([beta.title, alpha.title, gamma.title]);
+  await app.press("id:nav-history");
+  await app.waitFor("text:专辑名称 ↑");
+  expect(titles()).toEqual([alpha.title, beta.title, gamma.title]);
+});

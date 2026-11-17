@@ -16,7 +16,7 @@ import { CollectionSkeleton, Spinner } from "../spotish/components/ui/feedback";
 import { enter } from "../spotish/components/ui/motion";
 import { Label, Tool, Pill, Chip, Field, SectionTitle, Empty, Press, CommandMenu, Art, palette as c, narrow, action, say, type CommandItem } from "../ui";
 const sortNames = { recent: "最近添加", title: "名称", artist: "歌手", playTime: "聆听时长", songCount: "歌曲数量" };
-const playlistSortNames = { custom: "自定义顺序", recent: "最近添加", title: "歌曲名称", artist: "歌手", playTime: "聆听时长", duration: "歌曲时长" };
+const playlistSortNames = { custom: "自定义顺序", recent: "最近添加", title: "歌曲名称", artist: "歌手", album: "专辑名称", playTime: "聆听时长", duration: "歌曲时长" };
 
 function createSelection(visibleKeys: () => string[]) {
   const active = signal(false);
@@ -171,9 +171,15 @@ function CollectionHeader(props: { cover: JSX.Element; kind: string; title: stri
 
 export function SongCollectionPage(props: { kind: "liked" | "history" | "playlist"; route: nav.Route }) {
   const filter = signal("");
-  const sort = signal<PlaylistSort>("custom");
-  const descending = signal(false);
   const editing = signal(false);
+  const sortingKey = () => props.kind === "playlist" ? `playlist:${nav.selectedPlaylist()}` : props.kind;
+  const savedSorting = computed(() => s.settings().playlistSorting[sortingKey()] ?? { sort: "custom", descending: false });
+  const sort = () => editing() ? "custom" : savedSorting().sort;
+  const descending = () => !editing() && savedSorting().descending;
+  const setSorting = (sort: PlaylistSort, descending: boolean) => {
+    editing.set(false);
+    s.setPlaylistSorting(sortingKey(), sort, descending);
+  };
   const playlist = nav.currentPlaylist;
   const title = () => props.kind === "liked" ? "喜欢的音乐" : props.kind === "history" ? "最近播放" : playlist()?.name || "歌单";
   const totalTracks = computed(() => props.kind === "playlist" ? playlist()?.tracks || []
@@ -220,7 +226,7 @@ export function SongCollectionPage(props: { kind: "liked" | "history" | "playlis
     ...(account.signedIn() ? [{ label: "加入 YouTube Music 歌单", icon: "plus", disabled: !tracks().length, run: () => cloud.addToCloudPlaylist(tracks()) }] : []),
     ...(props.kind === "playlist" ? [
       { label: "重命名", icon: "edit", separator: true, run: () => { nav.draft.set(title()); nav.dialog.set("rename"); } },
-      { testID: "playlist-edit", label: editing() ? "完成编辑" : "调整歌曲顺序", icon: "sort", run: () => { selection.finish(); editing.update(value => !value); sort.set("custom"); filter.set(""); } },
+      { testID: "playlist-edit", label: editing() ? "完成编辑" : "调整歌曲顺序", icon: "sort", run: () => { selection.finish(); editing.update(value => !value); filter.set(""); } },
       { label: "导出歌单", icon: "share", run: () => void action(() => s.exportPlaylist(nav.selectedPlaylist()), "歌单已导出") },
       { label: "删除歌单", icon: "trash", danger: true, run: () => { s.deletePlaylist(nav.selectedPlaylist()); nav.navigate("library", true); } },
     ] : props.kind === "history" ? [{ label: "清空播放历史", icon: "trash", danger: true, separator: true, run: () => { s.clearHistory(); selection.clear(); } }] : []),
@@ -241,8 +247,8 @@ export function SongCollectionPage(props: { kind: "liked" | "history" | "playlis
         <Field testID="song-collection-filter" value={filter()} onChange={filter.set} placeholder="查找歌曲、歌手、专辑" />
         <Tool testID="collection-select" icon="checkCircle" label={selection.active() ? "完成选择" : "选择歌曲"} active={selection.active()} onPress={() => selection.active() ? selection.finish() : beginSelection()} />
         <CommandMenu testID="collection-sort" label="歌曲排序" icon="sort" items={[
-          ...Object.entries(sortingNames()).map(([value, label]) => ({ label, active: sort() === value, run: () => { sort.set(value as PlaylistSort); descending.set(value === "recent"); editing.set(false); } })),
-          { testID: "collection-sort-direction", label: descending() ? "切换为升序" : "切换为降序", icon: descending() ? "up" : "down", disabled: sort() === "custom", separator: true, run: () => descending.update(value => !value) },
+          ...Object.entries(sortingNames()).map(([value, label]) => ({ testID: `collection-sort-${value}`, label, active: sort() === value, run: () => setSorting(value as PlaylistSort, value === "recent") })),
+          { testID: "collection-sort-direction", label: descending() ? "切换为升序" : "切换为降序", icon: descending() ? "up" : "down", disabled: sort() === "custom", separator: true, run: () => setSorting(sort(), !descending()) },
         ]} />
       </View>
       <View class="flex-row flex-wrap items-center gap-2 px-1">
