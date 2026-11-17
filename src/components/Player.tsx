@@ -6,6 +6,7 @@ import * as nav from "../navigation";
 import * as together from "../together";
 import { Icon } from "../icons";
 import { SongMenu, TrackRow, shareTrack, songCommands } from "./Music";
+import { createSelection, SelectionActions } from "./SongSelection";
 import { LyricsEditor } from "./LyricsEditor";
 import { SleepTimerButton } from "./SleepTimer";
 import { Label, Tool, Pill, Art, Press, CommandMenu, Empty, palette as c, narrow, touch, spacious, action, say, time } from "../ui";
@@ -276,16 +277,30 @@ export function LyricsView() {
 
 export function QueueView() {
   const editing = signal(false);
+  const selection = createSelection(() => p.queue().map((_, index) => String(index)));
+  const selected = computed(() => {
+    const keys = new Set(selection.keys());
+    return p.queue().map((track, index) => ({ track, index })).filter(row => keys.has(String(row.index)));
+  });
+  let previousOrder: string[] = [];
+  effect(() => {
+    if (!selection.active()) { previousOrder = []; return; }
+    const order = p.queue().map(track => track.id);
+    if (previousOrder.some((id, index) => order[index] !== id)) selection.finish();
+    previousOrder = order;
+  });
+  const selectRange = (index: number) => { editing.set(false); selection.extend(String(index)); };
   const ref = signal<ListRef | undefined>();
   const upcoming = computed(() => p.queue().slice(p.currentIndex() + 1));
   const minutes = computed(() => Math.ceil(upcoming().reduce((sum, track) => sum + track.duration, 0) / 60));
   const revealCurrent = () => ref()?.scrollToIndex({ index: p.currentIndex(), viewPosition: 0.15, animated: !reduceMotion() });
-  effect(() => { const index = p.currentIndex(); if (index >= 0 && !editing()) revealCurrent(); });
+  effect(() => { const index = p.currentIndex(); if (index >= 0 && !editing() && !selection.active()) revealCurrent(); });
   return <View testID="queue-panel" style={{ flex: 1, gap: 12, minWidth: 0, minHeight: 0 }}>
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 0, minWidth: 0 }}>
       <View style={{ flex: 1, gap: 4, minWidth: 0 }}><Label size={shortLandscape() ? 20 : 24} weight="600">播放队列</Label><Label testID="queue-summary" size={12} color={c().sub} lines={1}>{p.shuffle() ? `随机播放 · ${p.queue().length} 首` : `第 ${p.currentIndex() + 1} / ${p.queue().length} 首 · 后续 ${upcoming().length} 首${minutes() ? `，约 ${minutes()} 分钟` : ""}`}</Label></View>
       <If when={editing()} else={<Tool testID="queue-current" icon="headphones" label="回到当前歌曲" onPress={revealCurrent} />}><Tool testID="queue-edit-done" icon="check" label="完成排序" active onPress={() => editing.set(false)} /></If>
-      <CommandMenu testID="queue-actions" label="队列操作" items={[
+      <If when={!selection.active()}><CommandMenu testID="queue-actions" label="队列操作" items={[
+        { testID: "queue-select", label: "选择歌曲", icon: "checkCircle", run: () => { editing.set(false); selection.begin(); } },
         { label: editing() ? "完成排序" : "调整顺序", icon: "sort", disabled: p.remoteControlled(), run: () => editing.update(value => !value) },
         { label: "保存为歌单", icon: "plus", run: () => nav.addToPlaylist(p.queue()) },
         { label: "下载队列", icon: "download", run: () => { for (const track of p.queue()) void s.downloadTrack(track).catch(s.showError); say("已加入下载"); } },
@@ -293,20 +308,28 @@ export function QueueView() {
         { testID: "queue-sleep", label: "睡眠定时器", icon: "moon", active: p.sleepActive(), run: () => nav.dialog.set("sleep") },
         { testID: "queue-clear-upcoming", label: p.shuffle() ? "移除当前之后的歌曲" : "清空待播", icon: "queue", disabled: p.remoteControlled() || !upcoming().length, separator: true, run: () => { p.clearUpcoming(); say("已移除当前之后的歌曲，保留当前歌曲"); } },
         { label: "清空队列", icon: "trash", danger: true, disabled: p.remoteControlled(), run: p.clearQueue },
-      ]} />
+      ]} /></If>
     </View>
+    <If when={selection.active()}><SelectionActions queueMode title="播放队列" tracks={selected().map(row => row.track)}
+      visibleCount={p.queue().length} selectedVisibleCount={selected().length} onAll={selection.all} onClear={selection.clear}
+      onDone={selection.finish} removeLabel="从队列移除" onRemove={() => {
+        const indices = selected().map(row => row.index);
+        selection.finish();
+        p.removeQueueEntries(indices);
+      }} /></If>
     <List testID="queue-list" ref={ref.set} each={p.queue()} style={{ flex: 1, minHeight: 0, minWidth: 0 }} estimatedItemSize={76} keyExtractor={(track, index) => `${track.id}-${index}`} contentStyle={{ paddingBottom: 16 }}>
       {(track, index) => <View testID={`queue-row-${index()}`} style={{ gap: 1, minWidth: 0 }}>
         <If when={index() === p.currentIndex()}><Label testID="queue-current-status" color={c().accent} size={11} style={{ marginTop: 12, marginBottom: 5 }}>{playbackLabel()}</Label></If>
         <If when={!p.shuffle() && index() === p.currentIndex() + 1}><Label color={c().faint} size={11} style={{ marginTop: 12, marginBottom: 5 }}>{nextLabel()}</Label></If>
-        <TrackRow compact menu={false} active={index() === p.currentIndex()} track={track()} playLabel={`${index() === p.currentIndex() && (p.playing() || waitingToPlay()) ? "暂停" : "播放"} ${track().title}`} onPlay={() => { if (!p.remoteControlled()) void action(() => index() === p.currentIndex() ? p.togglePlay() : p.playAt(index())); }} trailing={
-              <CommandMenu testID={`queue-song-menu-${index()}`} label={editing() ? "调整这首歌" : `队列操作 ${track().title}`} icon={editing() ? "sort" : "more"} items={[
+        <TrackRow compact menu={false} selecting={selection.active()} selected={selection.keys().includes(String(index()))}
+          onSelect={() => selection.toggle(String(index()))} onLongPress={() => selectRange(index())} active={index() === p.currentIndex()} track={track()} playLabel={`${index() === p.currentIndex() && (p.playing() || waitingToPlay()) ? "暂停" : "播放"} ${track().title}`} onPlay={() => { if (!p.remoteControlled()) void action(() => index() === p.currentIndex() ? p.togglePlay() : p.playAt(index())); }} trailing={
+              <If when={!selection.active()}><CommandMenu testID={`queue-song-menu-${index()}`} label={editing() ? "调整这首歌" : `队列操作 ${track().title}`} icon={editing() ? "sort" : "more"} items={[
                 { testID: `queue-next-${index()}`, label: "移到下一首", icon: "next", disabled: p.remoteControlled() || index() === p.currentIndex(), run: () => { p.moveQueueNext(index()); say("已移到下一首"); } },
                 { label: "上移", icon: "up", disabled: p.remoteControlled() || index() === 0, run: () => p.moveQueue(index(), index() - 1) },
                 { label: "下移", icon: "down", disabled: p.remoteControlled() || index() === p.queue().length - 1, run: () => p.moveQueue(index(), index() + 1) },
                 { label: "从队列移除", icon: "close", disabled: p.remoteControlled(), run: () => p.removeFromQueue(index()) },
                 ...(!editing() ? songCommands(track()).map((item, at) => at === 0 ? { ...item, separator: true } : item) : []),
-              ]} />
+              ]} /></If>
         } />
       </View>}
     </List>

@@ -652,15 +652,31 @@ export function playNextTracks(tracks: Track[]) {
 export function addToQueue(track: Track) { addTracksToQueue([track]); }
 export function playNext(track: Track) { playNextTracks([track]); }
 export function removeFromQueue(index: number) {
+  removeQueueEntries([index]);
+}
+export function removeQueueEntries(indices: number[]) {
+  const removed = new Set(indices);
   const selected = currentIndex();
   const resume = playRequested || playing();
-  const items = queue().filter((_, i) => i !== index);
+  const items: Track[] = [];
+  const retained = new Map<number, number>();
+  let beforeCurrent = 0;
+  queue().forEach((track, index) => {
+    if (!removed.has(index)) {
+      if (index < selected) beforeCurrent++;
+      retained.set(index, items.length);
+      items.push(track);
+    }
+  });
+  if (items.length === queue().length) return;
   if (!items.length) { clearQueue(); return; }
-  batch(() => { queue.set(items); currentIndex.set(index < selected ? selected - 1 : Math.min(selected, items.length - 1)); });
-  const remap = (list: number[]) => list.filter((item) => item !== index).map((item) => item > index ? item - 1 : item);
-  shuffleBag = remap(shuffleBag).filter((item) => item !== currentIndex());
+  // On removal, the next surviving occurrence takes over, or the last if there is no successor.
+  const next = selected < 0 ? -1 : retained.get(selected) ?? Math.min(beforeCurrent, items.length - 1);
+  const remap = (list: number[]) => list.filter(index => retained.has(index)).map(index => retained.get(index)!);
+  shuffleBag = remap(shuffleBag).filter(index => index !== next);
   visited = remap(visited);
-  if (index === selected) {
+  batch(() => { queue.set(items); currentIndex.set(next); });
+  if (removed.has(selected)) {
     if (resume) void loadCurrent();
     else {
       releaseSource(true);
