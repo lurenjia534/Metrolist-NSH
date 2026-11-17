@@ -27,7 +27,8 @@ const playlistIds = (app: App, id = playlist.id) => saved(app).playlists.find((i
 
 async function openPlaylist() {
   const app = await open("../App.tsx", { width: 1440, height: 1100, platform: "linux", storage, network });
-  await app.press("id:nav-library"); await app.press("id:library-playlists");
+  await app.waitFor("id:mini-player"); await app.press("id:nav-library");
+  await app.waitFor("id:library-playlists"); await app.press("id:library-playlists");
   await app.press("id:page-library >> label:Selection playlist"); await app.waitFor("id:page-playlist");
   return app;
 }
@@ -63,6 +64,7 @@ test("batch play-next and add-to-playlist preserve displayed order and repeated 
   await app.press("id:selection-playlist");
   await app.waitFor("id:app-dialog >> label:Saved selection");
   await app.press("id:app-dialog >> label:Saved selection");
+  await app.waitUntil(() => playlistIds(app, target.id).length === 4);
   expect(playlistIds(app, target.id)).toEqual([alpha.id, alpha.id, beta.id, gamma.id]);
   await app.press("id:selection-actions"); await app.press("id:selection-clear");
   await app.waitFor("text:已选择 0 首");
@@ -126,7 +128,8 @@ test("cloud batch likes and unlikes complete sequentially without duplicate requ
     },
   } });
   const savedCloud = () => JSON.parse(app.storage()["metrolist.accounts"]).accounts[0].library.liked;
-  await app.press("id:nav-library"); await app.press("id:library-playlists");
+  await app.waitFor("id:mini-player"); await app.press("id:nav-library");
+  await app.waitFor("id:library-playlists"); await app.press("id:library-playlists");
   await app.press("id:page-library >> label:Selection playlist"); await app.waitFor("id:page-playlist");
   await app.press("id:collection-select"); await app.press("id:selection-all");
   await app.press("id:selection-actions"); await app.press("id:selection-like");

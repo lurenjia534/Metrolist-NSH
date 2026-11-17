@@ -31,6 +31,7 @@ function Fixture() {
     { name: "Sleep after song", action: p.setSleepAfterTrack },
     { name: "Cancel sleep", action: p.cancelSleepTimer },
     { name: "Cancel with zero", action: () => p.setSleepTimer(0) },
+    { name: "Remove second and fourth", action: () => p.removeQueueEntries([1, 3]) },
     { name: "Clear queue", action: p.clearQueue },
     { name: "Append batch", action: () => p.addTracksToQueue([gamma, delta, gamma]) },
     { name: "Play batch next", action: () => p.playNextTracks([gamma, delta, gamma]) },

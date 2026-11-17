@@ -139,3 +139,53 @@ test("lyric reading controls persist independently and the tap setting governs n
   await app.waitFor("text:逐行同步 · 点按歌词跳转"); await app.press("id:lyric-line-0");
   expect(calls(app, "app.audio.seek").at(-1)?.data).toEqual({ position: 0.5 });
 });
+
+test("queue range selection saves repeated songs in order and removes only the selected occurrences", async () => {
+  const app = await open("../App.tsx", { width: 420, height: 940, platform: "android", host: { handlers }, network, storage: {
+    ...storage, "metrolist.library": JSON.stringify({ version: 2, tracks, history: [], likedIds: [], playlists: [{ id: "saved", name: "Queue picks", tracks: [], createdAt: 1, updatedAt: 1 }] }),
+  } });
+  await app.waitFor("id:mini-player"); await app.press("id:mini-queue"); await app.waitFor("id:queue-panel");
+  await app.longPress("id:queue-row-0 >> id:play-track-experience-alpha");
+  await app.longPress("id:queue-row-2 >> id:play-track-experience-alpha");
+  await app.waitFor("text:已选择 3 首");
+  await app.press("id:selection-playlist"); await app.press("id:app-dialog >> label:Queue picks");
+  const saved = () => JSON.parse(app.storage()["metrolist.library"]);
+  await app.waitUntil(() => saved().playlists[0].tracks.length === 3);
+  expect(saved().playlists[0].tracks.map((track: { id: string }) => track.id)).toEqual([alpha.id, beta.id, alpha.id]);
+  await app.press("id:queue-row-2 >> id:play-track-experience-alpha");
+  await app.waitFor("text:已选择 2 首");
+  const opens = calls(app, "app.audio.open").length;
+  await app.press("id:selection-actions"); await app.press("id:selection-remove");
+  await app.waitUntil(() => player(app).queue.length === 2);
+  expect(player(app).queue.map((track: { id: string }) => track.id)).toEqual([alpha.id, gamma.id]);
+  expect(player(app)).toMatchObject({ index: 0, position: 43 });
+  expect(calls(app, "app.audio.open")).toHaveLength(opens);
+});
+
+test("removing a range containing the active song opens its surviving successor exactly once", async () => {
+  const app = await open("../App.tsx", { width: 420, height: 940, platform: "android", host: { handlers }, network, storage });
+  await app.waitFor("id:mini-player"); await app.press("id:mini-queue"); await app.waitFor("id:queue-panel");
+  await app.press("id:queue-actions"); await app.waitFor("id:queue-select"); await app.press("id:queue-select");
+  await app.press("id:queue-row-1 >> id:play-track-experience-beta");
+  await app.press("id:queue-row-2 >> id:play-track-experience-alpha");
+  const opens = calls(app, "app.audio.open").length;
+  await app.press("id:selection-actions"); await app.press("id:selection-remove");
+  await app.waitUntil(() => calls(app, "app.audio.open").length > opens);
+  expect(calls(app, "app.audio.open")).toHaveLength(opens + 1);
+  expect(player(app)).toMatchObject({ queue: [{ id: alpha.id }, { id: gamma.id }], index: 1, position: 0 });
+});
+
+test("queue select-all downloads and likes each distinct song once", async () => {
+  const app = await open("../App.tsx", { width: 420, height: 940, platform: "android", storage, network, host: { handlers: {
+    ...handlers, "files.download": { destination: "fixture", url: "file:///fixture", bytes: 300 },
+  } } });
+  await app.waitFor("id:mini-player"); await app.press("id:mini-queue"); await app.waitFor("id:queue-panel");
+  await app.press("id:queue-actions"); await app.waitFor("id:queue-select"); await app.press("id:queue-select");
+  await app.press("id:selection-all"); await app.waitFor("text:已选择 4 首");
+  await app.press("id:selection-download");
+  await app.waitUntil(() => calls(app, "files.download").length === 3);
+  expect(calls(app, "files.download").map(call => (call.data as { id: string }).id).sort()).toEqual([alpha.id, beta.id, gamma.id].sort());
+  await app.press("id:selection-actions"); await app.press("id:selection-like");
+  await app.waitFor("text:已选择 0 首");
+  expect(JSON.parse(app.storage()["metrolist.library"]).likedIds.sort()).toEqual([alpha.id, beta.id, gamma.id].sort());
+});

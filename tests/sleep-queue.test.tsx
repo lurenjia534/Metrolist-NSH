@@ -145,3 +145,17 @@ test("a timed finish waits for the song playing at the deadline before repeat or
   await app.endAudio();
   expect(read(app)).toMatchObject({ playing: false, index: 1, sleepActive: false });
 });
+
+test("bulk removal remaps forced shuffle choices and keeps the previous occurrence reachable", async () => {
+  const app = await open(fixture, { platform: "linux" });
+  await app.press("Start"); await app.press("Shuffle"); await app.press("Play batch next");
+  expect(read(app).ids).toEqual(["alpha", "gamma", "delta", "gamma", "beta", "alpha"]);
+  await app.press("Reset changes"); await app.press("Remove second and fourth");
+  expect(read(app)).toMatchObject({ ids: ["alpha", "delta", "beta", "alpha"], index: 0, changes: 1 });
+  const opens = app.audio().filter(call => call.command === "open").length;
+  await app.press("Next");
+  expect(read(app).index).toBe(1);
+  expect(app.audio().filter(call => call.command === "open")).toHaveLength(opens + 1);
+  await app.press("Previous");
+  expect(read(app).index).toBe(0);
+});
