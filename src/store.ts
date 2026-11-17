@@ -30,7 +30,7 @@ export const libraryDescending = signal(true);
 export const statsPeriod = signal<StatsPeriod>("month");
 export const settings = signal<Settings>({
   theme: "dark", apiBase: "", nativeFirst: true,
-  audioQuality: "auto", autoRadio: true, pauseHistory: false, libraryView: "grid", playlistSorting: {},
+  audioQuality: "auto", queueLocked: false, autoRadio: true, pauseHistory: false, libraryView: "grid", playlistSorting: {},
   historySeconds: 30, pauseSearchHistory: false, hideRecentSearches: false,
   activeLyricAlignment: "inherit", lyricLineSpacing: 1.4, lyricTapToSeek: true, lyricAutoScroll: true,
   lyricFontSize: "medium", lyricAlignment: "center", lyricsOffset: 0,

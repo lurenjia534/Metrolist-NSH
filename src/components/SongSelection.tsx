@@ -44,7 +44,7 @@ export function downloadTracks(tracks: Track[]) {
 export function SelectionActions(props: {
   tracks: Track[]; title: string; visibleCount: number; selectedVisibleCount: number;
   onAll: () => void; onClear: () => void; onDone: () => void;
-  queueMode?: boolean; removeLabel: string; onRemove: () => void;
+  queueMode?: boolean; onPlaySelection?: () => void; onMoveSelection?: (edge: "start" | "end") => void; removeLabel: string; onRemove: () => void;
 }) {
   const empty = () => props.tracks.length === 0;
   const allLiked = () => props.tracks.every(track => s.isLiked(track.id));
@@ -71,8 +71,8 @@ export function SelectionActions(props: {
     </View>
     <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
       <Scroll horizontal scrollbar={false} class="h-11 min-w-0 flex-1 shrink-0" contentClass="flex-row items-center gap-2">
+        <Pill testID="selection-play" label="播放" icon="play" primary disabled={empty() || p.remoteControlled()} onPress={() => props.onPlaySelection ? props.onPlaySelection() : void action(() => p.playList(props.tracks, 0, props.title))} />
         <If when={!props.queueMode}>
-          <Pill testID="selection-play" label="播放" icon="play" primary disabled={empty() || p.remoteControlled()} onPress={() => void action(() => p.playList(props.tracks, 0, props.title))} />
           <Pill testID="selection-next" label="下一首播放" icon="next" disabled={empty() || p.remoteControlled()} onPress={() => { p.playNextTracks(props.tracks); say(`已将 ${props.tracks.length} 首歌曲放到下一首`); }} />
           <Pill testID="selection-queue" label="加入队列" icon="queue" disabled={empty() || p.remoteControlled()} onPress={() => { p.addTracksToQueue(props.tracks); say(`已将 ${props.tracks.length} 首歌曲加入队列`); }} />
         </If>
@@ -83,6 +83,10 @@ export function SelectionActions(props: {
         { testID: "selection-clear", label: "取消全选", icon: "checkCircle", disabled: empty(), run: props.onClear },
         { testID: "selection-like", label: allLiked() && !empty() ? "取消喜欢" : "喜欢所选歌曲", icon: "heart", disabled: empty(), run: setLikes },
         ...(account.signedIn() ? [{ label: "加入 YouTube Music 歌单", icon: "plus", disabled: !props.tracks.some(track => track.source === "youtube"), run: () => cloud.addToCloudPlaylist(props.tracks) }] : []),
+        ...(props.onMoveSelection ? [
+          { testID: "selection-move-start", label: "移到队首", icon: "up", disabled: empty() || p.remoteControlled(), run: () => props.onMoveSelection!("start") },
+          { testID: "selection-move-end", label: "移到队尾", icon: "down", disabled: empty() || p.remoteControlled(), run: () => props.onMoveSelection!("end") },
+        ] : []),
         { testID: "selection-remove", label: props.removeLabel, icon: "trash", danger: true, separator: true, disabled: empty() || (!!props.queueMode && p.remoteControlled()), run: props.onRemove },
       ]} />
     </View>
