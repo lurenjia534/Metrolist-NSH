@@ -131,3 +131,19 @@ test('transient failures retry with backoff, a 429 only with a short Retry-After
   assert.equal((await sendRequest(shortWait, 'https://music.youtube.com/youtubei/v1/browse', {}, { initialDelay: 1 })).status, 200);
   assert.equal(waited, 2);
 });
+
+test('playlist playback keeps repeated rows and follows the track shelf continuation independently of recommendations', () => {
+  const other = structuredClone(song);
+  other.musicResponsiveListItemRenderer.playlistItemData.videoId = 'suggestion';
+  const next = token => [{ nextContinuationData: { continuation: token } }];
+  const page = parseBrowse({ contents: [
+    { musicCarouselShelfRenderer: { contents: [other], continuations: next('recommendations') } },
+    { musicPlaylistShelfRenderer: { contents: [song, song], continuations: next('more-tracks') } },
+  ] }, 'VLPLfixture');
+  assert.deepEqual(page.tracks.map(track => track.id), ['Q0PzQGV7LEE', 'Q0PzQGV7LEE']);
+  assert.equal(JSON.parse(atob(page.continuation.slice(4))).token, 'more-tracks');
+  assert.equal(page.sections[0].items[0].id, 'suggestion');
+  const tail = parseBrowse({ onResponseReceivedActions: [{ appendContinuationItemsAction: { continuationItems: [song, song] } }] }, 'VLPLfixture');
+  assert.equal(tail.tracks.length, 2);
+  assert.equal(tail.continuation, undefined);
+});

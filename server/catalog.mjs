@@ -528,7 +528,7 @@ export async function search(query, type = 'all', params = {}) {
   return { query, type, items: items(data), continuation: continuation(data) };
 }
 
-export function parseBrowse(data, id) {
+export function parseBrowse(data, id, previous) {
   const header = find(data, 'musicResponsiveHeaderRenderer') || find(data, 'musicDetailHeaderRenderer') ||
     find(data, 'musicImmersiveHeaderRenderer') || find(data, 'musicVisualHeaderRenderer') || find(data, 'musicHeaderRenderer') || {};
   const title = text(header.title);
@@ -536,7 +536,13 @@ export function parseBrowse(data, id) {
   const content = sections(data);
   if (!content.length && items(data).length) content.push({ title: '歌曲', items: items(data) });
   const tracks = content.flatMap(section => section.items.filter(item => item.source === 'youtube'));
-  const unique = [...new Map(tracks.map(track => [track.setVideoId || track.id, track])).values()];
+  const collectionPage = id.startsWith('VL') || id.startsWith('MPRE');
+  const trackShelf = collectionPage && (find(data, 'musicPlaylistShelfRenderer') ||
+    find(data, 'musicPlaylistShelfContinuation') || find(data, 'musicShelfContinuation') ||
+    find(data, 'appendContinuationItemsAction') || find(data, 'musicShelfRenderer'));
+  const rows = trackShelf?.contents || trackShelf?.continuationItems;
+  const trackList = rows ? rows.flatMap(row => items(row)).filter(item => item.source === 'youtube') :
+    [...new Map(tracks.map(track => [track.setVideoId || track.id, track])).values()];
   const artist = text(header.straplineTextOne);
   const subtitle = [artist, text(header.subtitle), text(header.secondSubtitle)].filter(Boolean).join(' · ');
   const year = subtitle.match(/(?:19|20)\d{2}/)?.[0];
@@ -554,20 +560,20 @@ export function parseBrowse(data, id) {
     description: text(header.description) || text(find(data, 'musicDescriptionShelfRenderer')?.description),
     subscriberCount: text(find(header, 'longSubscriberCountText')) || text(find(header, 'subscriberCountText')),
     ...(year ? { year: Number(year) } : {}),
-    tracks: unique.map(track => ({ ...track,
+    tracks: trackList.map(track => ({ ...track,
       artwork: id.startsWith('MPRE') ? image || track.artwork : track.artwork,
       artist: track.artist || artist,
       album: track.album || (id.startsWith('MPRE') ? title : ''),
     })),
     sections: content,
-    continuation: continuation(data),
+    continuation: continuation(data, trackShelf || data, previous),
   };
 }
 
 export async function browse(id, params = {}) {
   const data = await innertube('browse', params.continuation ?
     { continuation: params.continuation } : { browseId: id, ...(params.params ? { params: params.params } : {}) }, params);
-  return { ...parseBrowse(data, id), ...(params.params ? { params: params.params } : {}) };
+  return { ...parseBrowse(data, id, params.continuation), ...(params.params ? { params: params.params } : {}) };
 }
 
 export async function suggestions(query, params = {}) {

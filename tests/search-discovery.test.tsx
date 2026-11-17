@@ -128,3 +128,52 @@ test("recent searches can be hidden while recording, or shown while recording is
     expect(JSON.parse(app.storage()["metrolist.library"]).searchHistory).toEqual(hide ? ["Later", "Earlier"] : ["Earlier"]);
   }
 });
+
+test("online playlist actions use all pages, keep duplicates, and reuse pages for the second action", async () => {
+  const tail = { ...song, id: "catalog-tail", title: "Tail" };
+  const existing = { ...song, id: "existing" };
+  const app = await open("../App.tsx", { width: 1440, height: 1300, platform: "linux", storage: {
+    ...storage, "metrolist.player": JSON.stringify({ queue: [existing], index: 0, position: 19, title: "Existing" }),
+  }, network: { ...network,
+    [`GET https://gateway.test/api/browse?id=${playlist.id}`]: { body: { ...playlist, tracks: [song], sections: [], continuation: "two" } },
+    [`GET https://gateway.test/api/browse?id=${playlist.id}&continuation=two`]: { body: { ...playlist, tracks: [tail, song], sections: [] } },
+  } });
+  const player = () => JSON.parse(app.storage()["metrolist.player"]);
+  await app.waitFor("id:mini-player"); await app.press("id:nav-search"); await app.waitFor("id:search-input");
+  await app.type("id:search-input", "https://music.youtube.com/playlist?list=PLlinked_list"); await app.submit("id:search-input");
+  await app.waitFor(`id:play-track-${videoId}`); await app.press("id:catalog-actions"); await app.press("id:catalog-enqueue");
+  await app.waitUntil(() => player().queue.length === 4);
+  expect(player()).toMatchObject({ index: 0, position: 19, queue: [existing, song, tail, song] });
+  await app.press("id:catalog-actions"); await app.press("id:catalog-next");
+  await app.waitUntil(() => player().queue.length === 7);
+  expect(player().queue).toEqual([existing, song, tail, song, song, tail, song]);
+  await app.press("id:catalog-actions"); await app.press("id:catalog-save");
+  await app.waitFor("id:app-dialog >> text:3 首歌曲");
+  expect(app.requests().filter(request => request.url.includes("continuation=two"))).toHaveLength(1);
+});
+
+test("online album row playback, shuffle and downloads include the continuation without duplicating download jobs", async () => {
+  const second = { ...song, id: "album-second", title: "Second album song" };
+  const third = { ...song, id: "album-third", title: "Third album song" };
+  const app = await open("../App.tsx", { width: 1440, height: 1200, platform: "android", storage, network: {
+    ...network,
+    [`GET https://gateway.test/api/browse?id=${album.id}`]: { body: { ...album, tracks: [song, second], sections: [], continuation: "tail" } },
+    [`GET https://gateway.test/api/browse?id=${album.id}&continuation=tail`]: { body: { ...album, tracks: [third, song], sections: [] } },
+    "GET https://gateway.test/api/stream?id=*": { body: { url: "https://audio.test/album.m4a", duration: 180 } },
+  }, host: { handlers: { "app.audio.snapshot": null, "app.audio.settings": null, "app.audio.open": null,
+    "app.audio.preload": null, "app.audio.cancelPreload": null, "files.download": { destination: "fixture", url: "file:///fixture", bytes: 300 } } } });
+  await app.waitFor("id:nav-search"); await app.press("id:nav-search"); await app.waitFor("id:search-input");
+  await app.type("id:search-input", `https://music.youtube.com/browse/${album.id}`); await app.submit("id:search-input");
+  await app.waitFor("id:play-track-album-second"); await app.press("id:play-track-album-second");
+  const player = () => JSON.parse(app.storage()["metrolist.player"] || "{}");
+  const expected = [song.id, second.id, third.id, song.id];
+  await app.waitUntil(() => player().queue?.length === 4);
+  expect(player().index).toBe(1);
+  expect(player().queue.map((track: { id: string }) => track.id)).toEqual(expected);
+  await app.press("id:catalog-actions"); await app.press("id:catalog-shuffle");
+  await app.waitUntil(() => player().index === 0);
+  expect(player().queue.map((track: { id: string }) => track.id).sort()).toEqual(expected.sort());
+  await app.press("id:catalog-actions"); await app.press("id:catalog-download");
+  await app.waitUntil(() => app.host.calls().filter(call => call.name === "files.download").length === 3);
+  expect(app.requests().filter(request => request.url.includes("continuation=tail"))).toHaveLength(1);
+});

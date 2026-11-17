@@ -415,11 +415,24 @@ export async function playEndpoint(endpoint: PlayEndpoint, title: string) {
   addTracks(result.tracks, false);
   await player.playList(result.tracks, result.currentIndex ?? 0, title);
 }
+export async function completeCollectionTracks(id: string, first: BrowseResponse, params?: string) {
+  const tracks = [...first.tracks];
+  let continuation = first.continuation;
+  while (continuation) {
+    const page = await api.fetchBrowse(id, continuation, params);
+    tracks.push(...page.tracks);
+    continuation = page.continuation;
+  }
+  return tracks;
+}
+
 /** Plays an album or playlist from its card without opening its page. */
 export async function playCollection(collection: Collection) {
   const result = await api.fetchBrowse(collection.browseId || collection.id, undefined, collection.params);
-  addTracks(result.tracks, false);
-  await player.playList(result.tracks, 0, result.title || collection.title);
+  const tracks = collection.type === "artist" ? result.tracks :
+    await completeCollectionTracks(collection.browseId || collection.id, result, collection.params);
+  addTracks(tracks, false);
+  await player.playList(tracks, 0, result.title || collection.title);
 }
 export function saveSearchHistory(text: string) {
   const value = text.trim();
@@ -689,13 +702,7 @@ export async function importUrl(value: string): Promise<Track | Playlist> {
       const id = url.searchParams.get("list")!;
       const browseId = id.startsWith("VL") ? id : `VL${id}`;
       const result = await api.fetchBrowse(browseId);
-      const imported = [...result.tracks];
-      let continuation = result.continuation;
-      while (continuation) {
-        const page = await api.fetchBrowse(browseId, continuation);
-        imported.push(...page.tracks);
-        continuation = page.continuation;
-      }
+      const imported = await completeCollectionTracks(browseId, result);
       const playlist = makePlaylist(result.title || "导入的歌单", imported);
       playlist.browseId = browseId;
       batch(() => {
