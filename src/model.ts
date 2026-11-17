@@ -172,10 +172,17 @@ export interface Settings {
   sleepFinishSong: boolean;
   autoRadio: boolean;
   pauseHistory: boolean;
+  historySeconds: number;
+  pauseSearchHistory: boolean;
+  hideRecentSearches: boolean;
   libraryView: "grid" | "list";
   playlistSorting: Record<string, PlaylistSorting>;
   lyricFontSize: "small" | "medium" | "large";
-  lyricAlignment: "left" | "center";
+  lyricAlignment: "left" | "center" | "right";
+  activeLyricAlignment: "inherit" | "left" | "center" | "right";
+  lyricLineSpacing: number;
+  lyricTapToSeek: boolean;
+  lyricAutoScroll: boolean;
   lyricsOffset: number;
   volume: number;
   rate: number;

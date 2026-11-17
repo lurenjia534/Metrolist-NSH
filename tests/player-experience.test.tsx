@@ -124,3 +124,18 @@ test("relative seek uses the saved interval and custom sleep settings survive re
   await app.press("id:player-sleep"); await app.waitFor("id:sleep-status");
   expect(app.value("id:sleep-custom-minutes")).toBe("17");
 });
+
+test("lyric reading controls persist independently and the tap setting governs native seeking", async () => {
+  const app = await open("../App.tsx", { width: 1440, height: 1500, platform: "android", network, host: { handlers }, storage });
+  await app.waitFor("id:nav-settings"); await app.press("id:nav-settings"); await app.press("id:page-settings >> label:歌词");
+  await app.press("id:lyric-tap-seek"); await app.press("id:lyric-auto-scroll");
+  await app.press("id:active-lyric-align-left"); await app.press("id:lyric-spacing-2"); await app.press("label:右对齐");
+  expect(settings(app)).toMatchObject({ lyricTapToSeek: false, lyricAutoScroll: false, activeLyricAlignment: "left", lyricLineSpacing: 2, lyricAlignment: "right" });
+  await app.press("id:open-player"); await app.press("id:player-tab-lyrics"); await app.waitFor("id:lyric-line-0");
+  expect(app.enabled("id:lyric-line-0")).toBe(false);
+  expect(app.shows("text:逐行同步 · 点按歌词跳转")).toBe(false);
+  await app.press("id:close-player"); await app.waitFor("id:full-player", { state: "gone" });
+  await app.press("id:lyric-tap-seek"); await app.press("id:open-player"); await app.press("id:player-tab-lyrics");
+  await app.waitFor("text:逐行同步 · 点按歌词跳转"); await app.press("id:lyric-line-0");
+  expect(calls(app, "app.audio.seek").at(-1)?.data).toEqual({ position: 0.5 });
+});

@@ -9,6 +9,33 @@ import { Label, Pill, Chip, Tool, Field, Rail, Toggle, Section, Press, palette a
 import { Icon } from "../icons";
 import type { AudioQuality } from "../model";
 
+function LyricReadingSettings() {
+  return <Section title="逐行歌词">
+    <Toggle testID="lyric-tap-seek" label="点按歌词跳转" value={s.settings().lyricTapToSeek} onChange={lyricTapToSeek => s.updateSettings({ lyricTapToSeek })} />
+    <Toggle testID="lyric-auto-scroll" label="自动滚动到当前行" value={s.settings().lyricAutoScroll} onChange={lyricAutoScroll => s.updateSettings({ lyricAutoScroll })} />
+    <Label>当前行对齐</Label>
+    <View class="flex-row flex-wrap gap-2">
+      <Each of={[["inherit", "跟随全文"], ["left", "左"], ["center", "居中"], ["right", "右"]] as const}>{item =>
+        <Chip testID={`active-lyric-align-${item()[0]}`} label={item()[1]} selected={s.settings().activeLyricAlignment === item()[0]} onPress={() => s.updateSettings({ activeLyricAlignment: item()[0] })} />}
+      </Each>
+    </View>
+    <Label>歌词行距</Label>
+    <View class="flex-row flex-wrap gap-2">
+      <Each of={[1, 1.2, 1.4, 1.6, 2, 2.5]}>{spacing =>
+        <Chip testID={`lyric-spacing-${spacing()}`} label={`${spacing()}×`} selected={s.settings().lyricLineSpacing === spacing()} onPress={() => s.updateSettings({ lyricLineSpacing: spacing() })} />}
+      </Each>
+    </View>
+  </Section>;
+}
+
+function SearchHistorySettings() {
+  return <Section title="搜索记录">
+    <Toggle testID="pause-search-history" label="暂停记录搜索" value={s.settings().pauseSearchHistory} onChange={pauseSearchHistory => s.updateSettings({ pauseSearchHistory })} />
+    <Toggle testID="hide-recent-searches" label="隐藏最近搜索" value={s.settings().hideRecentSearches} onChange={hideRecentSearches => s.updateSettings({ hideRecentSearches })} />
+    <Pill label="清空搜索记录" disabled={!s.searchHistory().length} onPress={s.clearSearchHistory} />
+  </Section>;
+}
+
 export function SettingsPage() {
   const origin = signal(s.settings().apiBase);
   const selected = nav.settingsSection;
@@ -28,8 +55,13 @@ export function SettingsPage() {
       <If when={platform.os === "android"}><Toggle testID="skip-silence" label="跳过静音" description="播放时自动略过音轨中的静音片段。" value={s.settings().skipSilence} onChange={skipSilence => s.updateSettings({ skipSilence })} /></If><View style={{ gap: 12 }}><Label>音量 · {Math.round(p.volume() * 100)}%</Label><Rail value={p.volume() * 100} onChange={value => s.updateSettings({ volume: value / 100 })} label="音量" /></View><View style={{ gap: 12 }}><Label>快进与后退步长</Label><View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
         <Each of={[5, 10, 15, 20, 25, 30]}>{seconds => <Chip testID={`seek-step-${seconds()}`} label={`${seconds()} 秒`} selected={s.settings().seekSeconds === seconds()} onPress={() => s.updateSettings({ seekSeconds: seconds() })} />}</Each>
       </View></View><View style={{ gap: 12 }}><Label>播放速度</Label><View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}><Each of={platform.os === "linux" ? [1] : [0.5, 0.75, 1, 1.25, 1.5, 2]}>{rate => <Chip label={`${rate()}×`} selected={s.settings().rate === rate()} onPress={() => s.updateSettings({ rate: rate() })} />}</Each></View></View><Pill label="睡眠定时器" icon="clock" onPress={() => nav.dialog.set("sleep")} /></Section></View></If>
-    <If when={selected() === "lyrics"}><View style={{ gap: 24 }}><Section title="字号"><View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}><Each of={[{ id: "small", label: "小" }, { id: "medium", label: "标准" }, { id: "large", label: "大" }] as const}>{size => <Pill label={size().label} active={s.settings().lyricFontSize === size().id} onPress={() => s.updateSettings({ lyricFontSize: size().id })} />}</Each></View><Label size={s.settings().lyricFontSize === "small" ? 23 : s.settings().lyricFontSize === "large" ? 36 : 29} color={c().accent} weight="600" style={{ textAlign: s.settings().lyricAlignment, paddingVertical: 24 }}>跟随音乐的每一句</Label></Section><Section title="显示与同步"><View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}><Pill label="左对齐" active={s.settings().lyricAlignment === "left"} onPress={() => s.updateSettings({ lyricAlignment: "left" })} /><Pill label="居中" active={s.settings().lyricAlignment === "center"} onPress={() => s.updateSettings({ lyricAlignment: "center" })} /></View><View style={{ gap: 8 }}><Label>歌词偏移 · {s.settings().lyricsOffset} ms</Label><View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}><Tool testID="lyrics-earlier" icon="left" label="歌词提前 100 毫秒" onPress={() => s.updateSettings({ lyricsOffset: s.settings().lyricsOffset - 100 })} /><Tool testID="lyrics-later" icon="right" label="歌词延后 100 毫秒" onPress={() => s.updateSettings({ lyricsOffset: s.settings().lyricsOffset + 100 })} /><Tool testID="lyrics-reset" icon="refresh" label="重置偏移" onPress={() => s.updateSettings({ lyricsOffset: 0 })} /></View></View></Section></View></If>
-    <If when={selected() === "library"}><View style={{ gap: 24 }}><Section title="导入与导出"><Pill label="导入音频、链接或歌单" icon="upload" onPress={nav.showImport} /><Pill label="导出音乐库备份" icon="download" onPress={() => void action(s.exportLibrary, "备份已导出")} /><Pill label="从备份恢复" icon="upload" onPress={() => void action(() => s.importLibrary(), "音乐库已恢复")} /></Section><Section title="历史与统计"><Toggle testID="pause-history" label="暂停记录历史" description="暂停记录最近播放和聆听统计。" value={s.settings().pauseHistory} onChange={pauseHistory => s.updateSettings({ pauseHistory })} /><View style={{ flexDirection: "row", gap: 12, flexWrap: "wrap" }}><Pill label="清空播放历史" icon="trash" onPress={() => { s.clearHistory(); say("播放历史已清空"); }} /><Pill label="清空聆听统计" icon="trash" onPress={() => { s.clearStatistics(); say("聆听统计已清空"); }} /></View></Section><Section title="离线音乐"><Label size={13} color={c().sub}>{s.downloads().length} 首已下载歌曲</Label><Pill label="管理下载" icon="download" onPress={() => nav.navigate("downloads")} /></Section></View></If>
+    <If when={selected() === "lyrics"}><View style={{ gap: 24 }}><Section title="字号"><View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}><Each of={[{ id: "small", label: "小" }, { id: "medium", label: "标准" }, { id: "large", label: "大" }] as const}>{size => <Pill label={size().label} active={s.settings().lyricFontSize === size().id} onPress={() => s.updateSettings({ lyricFontSize: size().id })} />}</Each></View><Label size={s.settings().lyricFontSize === "small" ? 23 : s.settings().lyricFontSize === "large" ? 36 : 29} color={c().accent} weight="600" style={{ textAlign: s.settings().lyricAlignment, paddingVertical: 24 }}>跟随音乐的每一句</Label></Section><Section title="显示与同步"><View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}><Pill label="左对齐" active={s.settings().lyricAlignment === "left"} onPress={() => s.updateSettings({ lyricAlignment: "left" })} /><Pill label="居中" active={s.settings().lyricAlignment === "center"} onPress={() => s.updateSettings({ lyricAlignment: "center" })} /><Pill label="右对齐" active={s.settings().lyricAlignment === "right"} onPress={() => s.updateSettings({ lyricAlignment: "right" })} /></View><View style={{ gap: 8 }}><Label>歌词偏移 · {s.settings().lyricsOffset} ms</Label><View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}><Tool testID="lyrics-earlier" icon="left" label="歌词提前 100 毫秒" onPress={() => s.updateSettings({ lyricsOffset: s.settings().lyricsOffset - 100 })} /><Tool testID="lyrics-later" icon="right" label="歌词延后 100 毫秒" onPress={() => s.updateSettings({ lyricsOffset: s.settings().lyricsOffset + 100 })} /><Tool testID="lyrics-reset" icon="refresh" label="重置偏移" onPress={() => s.updateSettings({ lyricsOffset: 0 })} /></View></View></Section><LyricReadingSettings /></View></If>
+    <If when={selected() === "library"}><View style={{ gap: 24 }}><Section title="导入与导出"><Pill label="导入音频、链接或歌单" icon="upload" onPress={nav.showImport} /><Pill label="导出音乐库备份" icon="download" onPress={() => void action(s.exportLibrary, "备份已导出")} /><Pill label="从备份恢复" icon="upload" onPress={() => void action(() => s.importLibrary(), "音乐库已恢复")} /></Section><SearchHistorySettings /><Section title="历史与统计"><Toggle testID="pause-history" label="暂停记录历史" description="暂停记录最近播放和聆听统计。" value={s.settings().pauseHistory} onChange={pauseHistory => s.updateSettings({ pauseHistory })} />
+      <If when={!s.settings().pauseHistory}><Label>计入历史所需的聆听时间</Label><View class="flex-row flex-wrap gap-2">
+        <Each of={[5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60]}>{seconds =>
+          <Chip label={`${seconds()} 秒`} selected={s.settings().historySeconds === seconds()} onPress={() => s.updateSettings({ historySeconds: seconds() })} />}
+        </Each>
+      </View></If><View style={{ flexDirection: "row", gap: 12, flexWrap: "wrap" }}><Pill label="清空播放历史" icon="trash" onPress={() => { s.clearHistory(); say("播放历史已清空"); }} /><Pill label="清空聆听统计" icon="trash" onPress={() => { s.clearStatistics(); say("聆听统计已清空"); }} /></View></Section><Section title="离线音乐"><Label size={13} color={c().sub}>{s.downloads().length} 首已下载歌曲</Label><Pill label="管理下载" icon="download" onPress={() => nav.navigate("downloads")} /></Section></View></If>
     <If when={selected() === "network"}><View style={{ gap: 24 }}>
       <View testID="connection-route" style={{ backgroundColor: c().selected, borderRadius: 24, padding: narrow() ? 20 : 24, gap: 16 }}>
         <View style={{ flexDirection: "row", gap: 14, alignItems: "center" }}><Icon name={s.settings().apiBase ? "link" : "music"} size={28} color={c().accent} /><View style={{ flex: 1, minWidth: 0, gap: 5 }}><Label size={12} color={c().sub}>当前连接方式</Label><Label testID="connection-route-name" size={22} weight="600">{s.settings().apiBase ? "自定义音乐服务" : defaultConnection}</Label></View></View>

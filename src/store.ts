@@ -31,6 +31,8 @@ export const statsPeriod = signal<StatsPeriod>("month");
 export const settings = signal<Settings>({
   theme: "dark", apiBase: "", nativeFirst: true,
   audioQuality: "auto", autoRadio: true, pauseHistory: false, libraryView: "grid", playlistSorting: {},
+  historySeconds: 30, pauseSearchHistory: false, hideRecentSearches: false,
+  activeLyricAlignment: "inherit", lyricLineSpacing: 1.4, lyricTapToSeek: true, lyricAutoScroll: true,
   lyricFontSize: "medium", lyricAlignment: "center", lyricsOffset: 0,
   volume: 0.7, rate: 1, shuffle: false, repeat: "off",
   skipSilence: false, seekSeconds: 10, sleepMinutes: 15, sleepFinishSong: false,
@@ -154,7 +156,7 @@ function remember(track: Track) {
   ensureLyrics(track);
 }
 function recordListen(track: Track, event: ListenEvent) {
-  if (settings().pauseHistory || event.seconds < 30) return;
+  if (settings().pauseHistory || event.seconds < settings().historySeconds) return;
   batch(() => {
     addTracks([track], false);
     history.update((items) => [track, ...items.filter((item) => item.id !== track.id)]);
@@ -175,6 +177,7 @@ export async function initialize() {
       return api.resolvePlayback(track, settings().audioQuality, request);
     },
     sourceContext: () => JSON.stringify([settings().apiBase, settings().audioQuality, account.currentCredentials()]),
+    historySeconds: () => settings().historySeconds,
     autoRadio: () => settings().autoRadio,
     skipSilence: () => settings().skipSilence,
     fetchRadio: async (track) => { const result = await api.fetchNext(track.id); addTracks(result.tracks, false); return result.tracks; },
@@ -420,7 +423,7 @@ export async function playCollection(collection: Collection) {
 }
 export function saveSearchHistory(text: string) {
   const value = text.trim();
-  if (!value) return;
+  if (!value || settings().pauseSearchHistory) return;
   searchHistory.update((items) => [value, ...items.filter((item) => item !== value)].slice(0, 30));
   void saveLibrary();
 }

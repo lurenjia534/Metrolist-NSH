@@ -225,17 +225,23 @@ export function LyricsView() {
     for (let index = 0; index < lines.length; index++) if (lines[index].time + offset() <= p.position()) current = index; else break;
     return current;
   });
-  effect(() => { const index = active(); if (follow() && index >= 0) ref()?.scrollToIndex({ index, viewPosition: 0.4, animated: !reduceMotion() }); });
+  effect(() => { const index = active(); if (s.settings().lyricAutoScroll && follow() && index >= 0) ref()?.scrollToIndex({ index, viewPosition: 0.4, animated: !reduceMotion() }); });
+  const canSeekLyrics = () => s.settings().lyricTapToSeek && !p.remoteControlled();
+  const align = (index: number) => {
+    const activeAlign = s.settings().activeLyricAlignment;
+    return active() === index && activeAlign !== "inherit" ? activeAlign : s.settings().lyricAlignment;
+  };
   const size = () => s.settings().lyricFontSize === "small" ? 23 : s.settings().lyricFontSize === "large" ? 36 : 29;
   return <View testID="lyrics-panel" style={{ flex: 1, gap: 8, minWidth: 0, minHeight: 0 }}>
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8, minWidth: 0, flexShrink: 0 }}>
-      <View style={{ flex: 1, minWidth: 0, gap: 4 }}><Label size={shortLandscape() ? 20 : 24} weight="600">歌词</Label><If when={!shortLandscape() && text()}><Label size={12} color={c().sub}>{s.lyrics()?.lines.length ? "逐行同步 · 点按歌词跳转" : "文本歌词"}</Label></If></View>
+      <View style={{ flex: 1, minWidth: 0, gap: 4 }}><Label size={shortLandscape() ? 20 : 24} weight="600">歌词</Label><If when={!shortLandscape() && text()}><Label size={12} color={c().sub}>{s.lyrics()?.lines.length ? (canSeekLyrics() ? "逐行同步 · 点按歌词跳转" : "逐行同步") : "文本歌词"}</Label></If></View>
       <CommandMenu testID="lyrics-options" label="歌词设置" icon="settings" items={[
         { testID: "lyrics-edit", label: "编辑歌词", icon: "edit", run: () => editor.set({ track: p.currentTrack()!, raw: s.lyrics()?.syncedLyrics || text() }) },
         { testID: "lyrics-copy", label: "复制歌词", icon: "share", disabled: !text(), run: () => void action(() => Clipboard.writeText(text()), "歌词已复制") },
         ...([{ value: "small", label: "小号字" }, { value: "medium", label: "标准字号" }, { value: "large", label: "大号字" }] as const).map((item, index) => ({ testID: `lyrics-size-${item.value}`, label: item.label, active: s.settings().lyricFontSize === item.value, separator: index === 0, run: () => s.updateSettings({ lyricFontSize: item.value }) })),
         { label: "居中对齐", active: s.settings().lyricAlignment === "center", separator: true, run: () => s.updateSettings({ lyricAlignment: "center" }) },
         { label: "左侧对齐", active: s.settings().lyricAlignment === "left", run: () => s.updateSettings({ lyricAlignment: "left" }) },
+        { label: "右侧对齐", active: s.settings().lyricAlignment === "right", run: () => s.updateSettings({ lyricAlignment: "right" }) },
         { testID: "lyrics-reset-offset", label: "重置歌词偏移", icon: "refresh", disabled: s.settings().lyricsOffset === 0, separator: true, run: () => s.updateSettings({ lyricsOffset: 0 }) },
         ...(s.lyrics()?.local
           ? [{ testID: "lyrics-restore", label: "恢复在线歌词", icon: "refresh", run: () => void action(() => s.saveLyricsEdit(p.currentTrack()!, null)) }]
@@ -249,16 +255,16 @@ export function LyricsView() {
     <If when={s.lyrics()?.lines.length} else={
       <If when={!s.lyricsLoading() && !s.lyricsError()}>
         <If when={s.lyrics()?.plainLyrics} else={<Scroll style={{ flex: 1, minHeight: 0 }}><Empty icon="lyrics" title={s.lyrics()?.instrumental ? "纯音乐" : "暂无歌词"} description={s.lyrics()?.instrumental ? "这首歌曲没有人声歌词。" : "可以继续欣赏音乐，或稍后重新获取。"} /></Scroll>}>
-          <Scroll style={{ flex: 1, minHeight: 0 }} contentStyle={{ paddingHorizontal: 12, paddingVertical: 24 }}><Label size={size()} color={c().sub} style={{ lineHeight: size() * 1.65, textAlign: s.settings().lyricAlignment }}>{s.lyrics()?.plainLyrics}</Label></Scroll>
+          <Scroll style={{ flex: 1, minHeight: 0 }} contentStyle={{ paddingHorizontal: 12, paddingVertical: 24 }}><Label size={size()} color={c().sub} style={{ lineHeight: size() * (s.settings().lyricLineSpacing + 0.25), textAlign: s.settings().lyricAlignment }}>{s.lyrics()?.plainLyrics}</Label></Scroll>
         </If>
       </If>
     }>
       <List ref={ref.set} each={s.lyrics()!.lines} estimatedItemSize={92} style={{ flex: 1, minHeight: 0 }} contentStyle={{ paddingTop: shortLandscape() ? 28 : 72, paddingBottom: shortLandscape() ? 60 : 120, paddingHorizontal: 4 }} scrollbar={false} onScrollDragStart={() => follow.set(false)} keyExtractor={(line, index) => `${line.time}-${index}`}>
-        {(line, index) => <Press label={`${time(line().time)} ${line().text}`} disabled={p.remoteControlled()} onPress={() => { void action(() => p.seek(line().time + offset())); follow.set(true); }} style={{ paddingVertical: 14, minHeight: 68, paddingHorizontal: 8, alignItems: s.settings().lyricAlignment === "center" ? "center" : "flex-start" }}>
-          <Label size={size()} weight="600" color={index() === active() ? c().text : c().faint} style={{ lineHeight: size() * 1.4, textAlign: s.settings().lyricAlignment, ...transition("color", motion.instant) }}>{line().text || "♪"}</Label>
-        </Press>}
+        {(line, index) => <View testID={`lyric-line-${index()}`} role={canSeekLyrics() ? "button" : undefined} disabled={!canSeekLyrics()} accessibilityLabel={`${time(line().time)} ${line().text}`} onPress={canSeekLyrics() ? () => { void action(() => p.seek(line().time + offset())); follow.set(true); } : undefined} style={{ paddingVertical: 14, minHeight: 68, paddingHorizontal: 8, alignItems: align(index()) === "center" ? "center" : align(index()) === "right" ? "flex-end" : "flex-start" }}>
+          <Label size={size()} weight="600" color={index() === active() ? c().text : c().faint} style={{ lineHeight: size() * s.settings().lyricLineSpacing, textAlign: align(index()), ...transition("color", motion.instant) }}>{line().text || "♪"}</Label>
+        </View>}
       </List>
-      <If when={!follow()}><View style={{ flexDirection: "row", justifyContent: "center", flexShrink: 0 }}><Pill label="回到当前歌词" icon="lyrics" onPress={() => follow.set(true)} /></View></If>
+      <If when={s.settings().lyricAutoScroll && !follow()}><View style={{ flexDirection: "row", justifyContent: "center", flexShrink: 0 }}><Pill label="回到当前歌词" icon="lyrics" onPress={() => follow.set(true)} /></View></If>
     </If>
     <If when={s.lyrics()?.lines.length}><View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, flexShrink: 0 }}>
       <Tool icon="left" label="歌词提前 100 毫秒" onPress={() => s.updateSettings({ lyricsOffset: s.settings().lyricsOffset - 100 })} />

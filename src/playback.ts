@@ -36,6 +36,7 @@ export const nextPreparation = signal<{ trackId: string; title: string; state: "
 interface PlaybackOptions {
   resolveStream: (track: Track, request?: { refresh?: boolean }) => Promise<StreamInfo>;
   sourceContext?: () => string;
+  historySeconds?: () => number;
   autoRadio?: () => boolean;
   skipSilence?: () => boolean;
   fetchRadio?: (track: Track) => Promise<Track[]>;
@@ -291,7 +292,11 @@ function receiveProgress(seconds: number, total: number, maxListeningSeconds = I
     position.set(seconds);
     if (Number.isFinite(total) && total > 0) duration.set(total);
   });
-  if (listening && listening.event.seconds - listening.reported >= 10) flushListening();
+  if (listening) {
+    const threshold = options?.historySeconds?.() ?? 30;
+    const qualifies = listening.reported < threshold && listening.event.seconds >= threshold;
+    if (qualifies || listening.event.seconds - listening.reported >= 10) flushListening();
+  }
   if (Math.abs(position() - savedPosition) >= 10) { savedPosition = position(); changed(); }
 }
 
