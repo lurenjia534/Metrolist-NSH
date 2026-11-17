@@ -94,3 +94,67 @@ test("phone home shortcuts open likes, downloads, history and the listening room
     await app.press("id:nav-mobile-home"); await app.waitFor("id:page-home");
   }
 });
+
+test("edit a paused track, stamp a lyric, reopen offline and restore the provider", async () => {
+  const launch = (data: Record<string, string>) => open("../App.tsx", {
+    width: 390, height: 844, platform: "android", network, storage: data, host: { handlers },
+  });
+  const showLyrics = async (app: App) => {
+    await app.waitFor("id:mini-queue");
+    await app.press("id:mini-queue");
+    await app.press("id:player-tab-lyrics");
+    await app.waitFor("id:lyrics-options");
+  };
+  const command = async (app: App, name: string) => {
+    await app.press("id:lyrics-options");
+    await app.waitFor(`id:lyrics-${name}`);
+    await app.press(`id:lyrics-${name}`);
+  };
+  const app = await launch(storage);
+  await showLyrics(app);
+  await app.waitFor("text:Lyrics");
+  await command(app, "edit");
+  expect(app.value("id:lyrics-editor-text")).toBe("Lyrics");
+  await app.clear("id:lyrics-editor-text");
+  await app.type("id:lyrics-editor-text", "[00:01.00]First line\n[00:12.00]My line");
+  await app.press("id:lyrics-stamp");
+  expect(app.value("id:lyrics-editor-text")).toBe("[00:01.00]First line\n[00:43.00]My line");
+  await app.press("id:lyrics-save");
+  await app.waitFor("label:0:43 My line");
+  const restarted = await launch(app.storage());
+  await showLyrics(restarted);
+  await restarted.waitFor("label:0:43 My line");
+  expect(restarted.requests().filter(req => req.url.includes("/api/lyrics"))).toHaveLength(0);
+  await command(restarted, "edit");
+  expect(restarted.value("id:lyrics-editor-text")).toBe("[00:01.00]First line\n[00:43.00]My line");
+  await restarted.clear("id:lyrics-editor-text");
+  await restarted.type("id:lyrics-editor-text", "Unsaved");
+  await restarted.press("id:app-dialog >> label:关闭");
+  await restarted.waitFor("label:0:43 My line");
+  await command(restarted, "restore");
+  await restarted.waitFor("text:Lyrics");
+  expect(restarted.requests().filter(req => req.url.includes("/api/lyrics"))).toHaveLength(1);
+});
+
+test("a system track change keeps a plain lyric edit attached to its original song", async () => {
+  const app = await open("../App.tsx", { width: 390, height: 844, platform: "android", storage,
+    host: { handlers: { ...handlers, "app.audio.snapshot": state } }, network: {
+      ...network, "GET https://gateway.test/api/lyrics?*": { body: { plainLyrics: "", syncedLyrics: "", lines: [], instrumental: false } },
+    } });
+  await app.press("id:mini-queue");
+  await app.press("id:player-tab-lyrics");
+  await app.waitFor("text:暂无歌词");
+  await app.press("id:lyrics-options");
+  await app.press("id:lyrics-edit");
+  await app.type("id:lyrics-editor-text", "Original song only");
+  await app.host.send("media.command", { action: "next" });
+  await app.waitUntil(() => !app.enabled("id:lyrics-stamp"));
+  await app.press("id:lyrics-save");
+  await app.waitFor("id:lyrics-editor-text", { state: "gone" });
+  await app.waitFor("text:暂无歌词");
+  expect(app.shows("text:Original song only")).toBe(false);
+  await app.press("id:player-tab-queue");
+  await app.press("id:queue-row-2 >> id:play-track-controls-alpha");
+  await app.press("id:player-tab-lyrics");
+  await app.waitFor("text:Original song only");
+});
