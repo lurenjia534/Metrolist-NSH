@@ -181,3 +181,16 @@ test("Android playback settings switch silence skipping on a running service wit
   }
   expect(opened(app)).toHaveLength(0);
 });
+
+test("a five-second listening threshold records at the crossing without waiting for the next save", async () => {
+  const app = await open("./runtime-fixture.tsx", { platform: "android", storage: {
+    "metrolist.settings": JSON.stringify({ ...JSON.parse(storage["metrolist.settings"]), historySeconds: 5 }),
+  }, network, host: { handlers } });
+  await app.press("Start video");
+  const id = opened(app)[0].requestId;
+  await app.host.send("audio.state", state(id));
+  await app.host.send("audio.state", state(id, { position: 4 }));
+  expect(JSON.parse(app.storage()["metrolist.library"] || "{}").listenEvents || []).toHaveLength(0);
+  await app.host.send("audio.state", state(id, { position: 5 }));
+  expect(JSON.parse(app.storage()["metrolist.library"]).listenEvents[0].seconds).toBe(5);
+});

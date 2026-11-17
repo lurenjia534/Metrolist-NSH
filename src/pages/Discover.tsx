@@ -61,7 +61,7 @@ function SuggestionRow(props: { value: string; icon: string; testID: string; onR
 export function SearchPage(props: { route: nav.Route }) {
   const link = computed(() => parseMusicLink(nav.searchText()));
   const suggesting = () => nav.searchText().trim() !== s.query() || !s.query();
-  const recent = computed(() => s.searchHistory().filter(value => value.toLocaleLowerCase().includes(nav.searchText().trim().toLocaleLowerCase())));
+  const recent = computed(() => s.settings().hideRecentSearches ? [] : s.searchHistory().filter(value => value.toLocaleLowerCase().includes(nav.searchText().trim().toLocaleLowerCase())));
   const suggestions = computed(() => s.searchSuggestions().filter(value => !recent().includes(value)));
   const songs = computed(() => s.searchResults().filter(isTrack));
   const groups = computed(() => ([

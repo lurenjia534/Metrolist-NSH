@@ -114,3 +114,17 @@ test("phone search discovery opens a real mood catalog", async () => {
   await app.waitFor("id:page-browse"); await app.waitFor("label:Focus");
   expect(app.requests().some(request => request.url.endsWith("/api/explore?tab=moods"))).toBe(true);
 });
+
+test("recent searches can be hidden while recording, or shown while recording is paused", async () => {
+  for (const hide of [true, false]) {
+    const app = await open("../App.tsx", { width: 1280, height: 900, platform: "linux", storage: {
+      "metrolist.settings": JSON.stringify({ apiBase: "https://gateway.test", hideRecentSearches: hide, pauseSearchHistory: !hide }),
+      "metrolist.library": JSON.stringify({ version: 2, tracks: [], likedIds: [], history: [], playlists: [], searchHistory: ["Earlier"] }),
+    }, network: { ...network, "GET https://gateway.test/api/search?q=Later&type=all": { body: { query: "Later", type: "all", items: [song] } } } });
+    await app.press("id:nav-search"); await app.waitFor("id:search-input");
+    expect(app.shows("id:search-history")).toBe(!hide);
+    await app.type("id:search-input", "Later"); await app.submit("id:search-input");
+    await app.waitFor("id:search-group-songs");
+    expect(JSON.parse(app.storage()["metrolist.library"]).searchHistory).toEqual(hide ? ["Later", "Earlier"] : ["Earlier"]);
+  }
+});
