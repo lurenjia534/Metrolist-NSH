@@ -215,3 +215,20 @@ test("liked songs and history restore independent album sort directions", async 
   await app.waitFor("text:专辑名称 ↑");
   expect(titles()).toEqual([alpha.title, beta.title, gamma.title]);
 });
+
+test("playlist chooser filters destinations, keeps selections across searches and skips duplicates per destination", async () => {
+  const app = await openPlaylist();
+  await app.press("id:collection-select"); await app.press("id:selection-all"); await app.press("id:selection-playlist");
+  await app.waitFor("id:playlist-multiple"); await app.press("id:playlist-multiple"); await app.press("id:playlist-skip-duplicates");
+  expect(app.shows("text:4 首 · 已有 3/3 首所选歌曲")).toBe(true);
+  await app.press("id:app-dialog >> label:Selection playlist");
+  await app.type("id:playlist-destination-search", "SAVED");
+  expect(app.shows("id:app-dialog >> label:Selection playlist")).toBe(false);
+  await app.press("id:app-dialog >> label:Saved selection"); await app.press("id:playlist-save-targets");
+  await app.waitFor("id:app-dialog", { state: "gone" });
+  expect(playlistIds(app)).toEqual([alpha.id, beta.id, alpha.id, gamma.id]);
+  expect(playlistIds(app, target.id)).toEqual([alpha.id, beta.id, gamma.id]);
+  await app.press("id:selection-playlist"); await app.waitFor("id:playlist-destination-search");
+  expect(app.value("id:playlist-destination-search")).toBe("");
+  expect(app.shows("id:playlist-save-targets")).toBe(false);
+});

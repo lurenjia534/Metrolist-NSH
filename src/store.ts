@@ -634,12 +634,35 @@ export function deletePlaylist(id: string) {
 }
 export function addToPlaylist(id: string, track: Track) { addTracksToPlaylist(id, [track]); }
 export function addTracksToPlaylist(id: string, incoming: Track[]) {
-  addLibraryTracks(incoming, false);
-  playlists.update((items) => items.map((item) => {
-    if (item.id !== id) return item;
-    return { ...item, tracks: [...item.tracks, ...incoming], updatedAt: Date.now() };
-  }));
-  void saveLibrary();
+  addTracksToPlaylists([id], incoming, false);
+}
+
+export function addTracksToPlaylists(ids: string[], incoming: Track[], skipDuplicates: boolean) {
+  const targets = new Set(ids);
+  const libraryAdditions = new Map<string, Track>();
+  const updatedAt = Date.now();
+  let added = 0;
+  const updated = playlists().map(playlist => {
+    if (!targets.has(playlist.id)) return playlist;
+    let additions = incoming;
+    if (skipDuplicates) {
+      const seen = new Set(playlist.tracks.map(track => track.id));
+      additions = incoming.filter(track => {
+        if (seen.has(track.id)) return false;
+        seen.add(track.id);
+        return true;
+      });
+    }
+    if (!additions.length) return playlist;
+    added += additions.length;
+    for (const track of additions) libraryAdditions.set(track.id, track);
+    return { ...playlist, updatedAt, tracks: [...playlist.tracks, ...additions] };
+  });
+  if (added) {
+    batch(() => { addLibraryTracks([...libraryAdditions.values()], false); playlists.set(updated); });
+    void saveLibrary();
+  }
+  return added;
 }
 export function removeFromPlaylist(id: string, trackId: string, rowIndex?: number) {
   playlists.update((items) => items.map((item) => item.id === id ? {
