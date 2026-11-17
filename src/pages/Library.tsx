@@ -5,7 +5,7 @@ import * as nav from "../navigation";
 import * as account from "../account";
 import * as cloud from "../cloudActions";
 import { CloudLibrary, CloudCollectionActions, CloudTrackControls } from "../components/CloudLibrary";
-import { isTrack, type Track, type PlaylistSort, type LibrarySort, type Collection } from "../model";
+import { isTrack, type BrowseResponse, type Track, type PlaylistSort, type LibrarySort, type Collection } from "../model";
 import { Icon } from "../icons";
 import { CatalogShelf } from "../components/Discovery";
 import { createSelection, downloadTracks, SelectionActions } from "../components/SongSelection";
@@ -202,6 +202,36 @@ export function CollectionPage(props: { route: nav.Route }) {
   const mainTracks = computed(() => artist() && primaryShelf()
     ? primaryShelf()!.items.filter(isTrack).map(track => s.collectionTracks().find(item => item.id === track.id) || track)
     : s.collectionTracks());
+  const resolving = signal(false);
+  let complete: { first: BrowseResponse; tracks: Track[] } | undefined;
+  const withSongs = (run: (tracks: Track[]) => unknown, playback = false) => action(async () => {
+    const collection = item()!;
+    const first = details();
+    if (!first || resolving()) return;
+    resolving.set(true);
+    try {
+      let tracks = mainTracks();
+      if (!artist() && first.continuation) {
+        if (complete?.first !== first) {
+          complete = { first, tracks: await s.completeCollectionTracks(collection.browseId || collection.id, first, collection.params) };
+        }
+        tracks = complete.tracks;
+      }
+      if (item() === collection && (!playback || !p.remoteControlled())) await run(tracks);
+    } finally { resolving.set(false); }
+  });
+  const songActions = (): CommandItem[] => {
+    const empty = resolving() || !mainTracks().length;
+    return [
+      { testID: "catalog-shuffle", label: "随机播放", icon: "shuffle", disabled: empty || p.remoteControlled(), run: () => withSongs(rows => p.playList(shuffled(rows), 0, title()), true) },
+      { testID: "catalog-next", label: "下一首播放全部", icon: "next", disabled: empty || p.remoteControlled(), run: () => withSongs(rows => { p.playNextTracks(rows); say(`已将 ${rows.length} 首歌曲放到下一首`); }, true) },
+      { testID: "catalog-enqueue", label: "全部加入队列", icon: "queue", disabled: empty || p.remoteControlled(), run: () => withSongs(rows => { p.addTracksToQueue(rows); say(`已加入队列，共 ${rows.length} 首`); }, true) },
+      ...(account.signedIn() ? [{ label: "加入 YouTube Music 歌单", icon: "plus", disabled: empty, run: () => withSongs(cloud.addToCloudPlaylist) }] : []),
+      { testID: "catalog-save", label: "加入本地歌单", icon: "plus", disabled: empty, run: () => withSongs(nav.addToPlaylist) },
+      { testID: "catalog-download", label: "下载全部", icon: "download", disabled: empty, run: () => withSongs(downloadTracks) },
+      { label: "分享链接", icon: "share", run: share },
+    ];
+  };
   const shelves = computed(() => {
     const displayed = new Set(mainTracks().map(track => track.id));
     return (details()?.sections || []).map(section => ({ ...section, items: section.items.filter(item => !isTrack(item) || !displayed.has(item.id)) })).filter(section => section.items.length > 0 || section.moods?.length);
@@ -212,10 +242,10 @@ export function CollectionPage(props: { route: nav.Route }) {
   return <View testID="page-collection" class="min-h-0 min-w-0 flex-1"><If when={item()}>{collection => 
     <List testID="content-collection" each={cloudEditing() ? [] : mainTracks()} keyExtractor={(track, index) => `${track.id}-${index}`} estimatedItemSize={60} class="min-h-0 flex-1" contentClass="px-3 pt-1"
       header={() => <View class="gap-4 pb-1">
-        <CollectionHeader kind={{ album: "专辑", artist: "歌手", playlist: "歌单" }[collection().type]} title={title()} description={`${details()?.subtitle || collection().subtitle}${details()?.year ? ` · ${details()!.year}` : ""}`} meta={artist() ? details()?.subscriberCount : `${s.collectionTracks().length} 首 · ${Math.floor(s.collectionTracks().reduce((sum, track) => sum + track.duration, 0) / 60)} 分钟`} loading={s.collectionLoading()}
+        <CollectionHeader kind={{ album: "专辑", artist: "歌手", playlist: "歌单" }[collection().type]} title={title()} description={`${details()?.subtitle || collection().subtitle}${details()?.year ? ` · ${details()!.year}` : ""}`} meta={artist() ? details()?.subscriberCount : `${s.collectionTracks().length} 首 · ${Math.floor(s.collectionTracks().reduce((sum, track) => sum + track.duration, 0) / 60)} 分钟`} loading={s.collectionLoading() || resolving()}
           cover={<Cover src={details()?.artwork || collection().artwork} round={artist()} fallback={artist() ? "user" : "disc"} class="shadow-xl" />}
-          playing={playingHere()} canPlay={!p.remoteControlled() && mainTracks().length > 0} onPlay={() => action(() => playingHere() ? p.togglePlay() : p.playList(artist() ? shuffled(mainTracks()) : mainTracks(), 0, title()))}>
-          <Pill label={s.isCollectionSaved(collection().id) ? "已存到本机" : "存到本机"} icon={s.isCollectionSaved(collection().id) ? "check" : "plus"} active={s.isCollectionSaved(collection().id)} onPress={() => s.toggleCollectionSaved({ ...collection(), ...details(), type: collection().type, id: collection().id, browseId: collection().browseId })} /><CloudCollectionActions item={currentCollection()} /><If when={account.signedIn() && currentCollection().editable}><Pill label={cloudEditing() ? "完成编辑" : "编辑云端歌曲"} icon="edit" active={cloudEditing()} onPress={() => cloudEditing.update(value => !value)} /></If><Tool icon="radio" label="歌曲电台" disabled={p.remoteControlled() || !mainTracks().length} onPress={() => void s.startRadio(mainTracks()[0])} /><CommandMenu label="更多操作" items={[...(account.signedIn() ? [{ label: "加入 YouTube Music 歌单", icon: "plus", run: () => cloud.addToCloudPlaylist(mainTracks()) }] : []), { label: "加入本地歌单", icon: "plus", run: () => nav.addToPlaylist(mainTracks()) }, { label: "下载全部", icon: "download", run: () => { for (const track of mainTracks()) void s.downloadTrack(track).catch(s.showError); say("已加入下载"); } }, { label: "分享链接", icon: "share", run: share }]} />
+          playing={playingHere()} canPlay={!resolving() && !p.remoteControlled() && mainTracks().length > 0} onPlay={() => playingHere() ? action(p.togglePlay) : withSongs(rows => p.playList(artist() ? shuffled(rows) : rows, 0, title()), true)}>
+          <Pill label={s.isCollectionSaved(collection().id) ? "已存到本机" : "存到本机"} icon={s.isCollectionSaved(collection().id) ? "check" : "plus"} active={s.isCollectionSaved(collection().id)} onPress={() => s.toggleCollectionSaved({ ...collection(), ...details(), type: collection().type, id: collection().id, browseId: collection().browseId })} /><CloudCollectionActions item={currentCollection()} /><If when={account.signedIn() && currentCollection().editable}><Pill label={cloudEditing() ? "完成编辑" : "编辑云端歌曲"} icon="edit" active={cloudEditing()} onPress={() => cloudEditing.update(value => !value)} /></If><Tool icon="radio" label="歌曲电台" disabled={p.remoteControlled() || !mainTracks().length} onPress={() => void s.startRadio(mainTracks()[0])} /><CommandMenu testID="catalog-actions" label="更多操作" items={songActions()} />
         </CollectionHeader>
         <If when={details()?.description}><Press label={expanded() ? "收起简介" : "展开简介"} onPress={() => expanded.update(value => !value)} style={{ padding: 16, gap: 8, marginHorizontal: 12 }}><Label size={16} weight="700">{artist() ? "关于" : "简介"}</Label><Label size={14} color={c().sub} lines={expanded() ? undefined : 3} style={{ lineHeight: 22 }}>{details()!.description}</Label><Label size={13} weight="700">{expanded() ? "收起" : "展开"}</Label></Press></If>
         <If when={s.collectionLoading() && !mainTracks().length}><CollectionSkeleton phone={layout() === "phone"} /></If>
@@ -226,7 +256,7 @@ export function CollectionPage(props: { route: nav.Route }) {
         <If when={details()?.continuation}><View class="items-center"><Pill label="加载更多歌曲" disabled={s.collectionLoading()} onPress={() => void s.loadMoreCollection()} /></View></If>
         <Each of={shelves()}>{(section, index) => <CatalogShelf section={section()} testID={`collection-section-${index()}`} index={index()} wave={wave} />}</Each>
       </View>}>
-      {(track, index) => <View class="px-3 pb-1"><TrackRow track={track()} list={mainTracks()} index={index()} wave={wave} onPlay={() => action(() => p.playList(mainTracks(), index(), title()))} /></View>}
+      {(track, index) => <View class="px-3 pb-1"><TrackRow track={track()} list={mainTracks()} index={index()} wave={wave} onPlay={() => { const start = index(); return withSongs(rows => p.playList(rows, start, title()), true); }} /></View>}
     </List>
   }</If></View>;
 }
