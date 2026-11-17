@@ -189,3 +189,42 @@ test("queue select-all downloads and likes each distinct song once", async () =>
   await app.waitFor("text:已选择 0 首");
   expect(JSON.parse(app.storage()["metrolist.library"]).likedIds.sort()).toEqual([alpha.id, beta.id, gamma.id].sort());
 });
+
+test("queue edit lock persists, and unlocking allows the current occurrence to move without restarting", async () => {
+  let app = await open("../App.tsx", { width: 420, height: 940, platform: "android", host: { handlers }, network, storage });
+  await app.waitFor("id:mini-player"); await app.press("id:mini-queue"); await app.waitFor("id:queue-panel");
+  expect(app.texts()).toContain("总时长 12:00");
+  await app.press("id:queue-actions"); await app.press("id:queue-lock");
+  await app.waitUntil(() => settings(app).queueLocked === true);
+  await app.press("id:queue-song-menu-2"); await app.waitFor("id:queue-top-2");
+  expect(app.enabled("id:queue-top-2")).toBe(false);
+  app = await open("../App.tsx", { width: 420, height: 940, platform: "android", host: { handlers }, network, storage: app.storage() });
+  await app.waitFor("id:mini-player"); await app.press("id:mini-queue"); await app.waitFor("id:queue-panel");
+  await app.press("id:queue-actions"); await app.press("id:queue-lock");
+  await app.waitUntil(() => !settings(app).queueLocked);
+  const opened = calls(app, "app.audio.open").length;
+  await app.press("id:queue-song-menu-2"); await app.press("id:queue-top-2");
+  await app.waitUntil(() => player(app).index === 0);
+  await app.press("id:queue-song-menu-0"); await app.press("id:queue-bottom-0");
+  await app.waitUntil(() => player(app).index === 3);
+  expect(player(app)).toMatchObject({ position: 43, queue: [alpha, beta, gamma, alpha] });
+  expect(calls(app, "app.audio.open")).toHaveLength(opened);
+});
+
+test("queue block moves preserve display order and playback starts at the first selected occurrence in place", async () => {
+  const app = await open("../App.tsx", { width: 420, height: 940, platform: "android", host: { handlers }, network, storage });
+  await app.waitFor("id:mini-player"); await app.press("id:mini-queue"); await app.waitFor("id:queue-panel");
+  const opened = calls(app, "app.audio.open").length;
+  await app.longPress("id:queue-row-1 >> id:play-track-experience-beta");
+  await app.press("id:queue-row-3 >> id:play-track-experience-gamma");
+  await app.press("id:selection-actions"); await app.press("id:selection-move-start");
+  await app.waitUntil(() => player(app).index === 3);
+  expect(player(app)).toMatchObject({ position: 43, queue: [beta, gamma, alpha, alpha] });
+  expect(calls(app, "app.audio.open")).toHaveLength(opened);
+  await app.longPress("id:queue-row-2 >> id:play-track-experience-alpha");
+  await app.press("id:queue-row-0 >> id:play-track-experience-beta");
+  await app.press("id:selection-play");
+  await app.waitUntil(() => player(app).index === 0);
+  expect(player(app).queue).toHaveLength(4);
+  expect(calls(app, "app.audio.open")).toHaveLength(opened + 1);
+});

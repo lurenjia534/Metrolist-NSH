@@ -170,6 +170,7 @@ export interface Settings {
   seekSeconds: number;
   sleepMinutes: number;
   sleepFinishSong: boolean;
+  queueLocked: boolean;
   autoRadio: boolean;
   pauseHistory: boolean;
   historySeconds: number;

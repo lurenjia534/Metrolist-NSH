@@ -700,6 +700,23 @@ export function moveQueue(from: number, to: number) {
   reorderQueue(from, to);
   changed();
 }
+export function moveQueueEntries(indices: number[], edge: "start" | "end") {
+  const selected = new Set(indices);
+  const items = queue();
+  const moving: number[] = [], staying: number[] = [];
+  items.forEach((_, index) => (selected.has(index) ? moving : staying).push(index));
+  const order = edge === "start" ? moving.concat(staying) : staying.concat(moving);
+  if (order.every((oldIndex, newIndex) => oldIndex === newIndex)) return;
+  const positions: number[] = [];
+  order.forEach((oldIndex, newIndex) => { positions[oldIndex] = newIndex; });
+  shuffleBag = shuffleBag.map(index => positions[index]);
+  visited = visited.map(index => positions[index]);
+  batch(() => {
+    currentIndex.set(positions[currentIndex()] ?? -1);
+    queue.set(order.map(index => items[index]));
+  });
+  changed();
+}
 export function moveQueueNext(index: number) {
   if (index === currentIndex() || index < 0 || index >= queue().length) return;
   const target = currentIndex() + (index < currentIndex() ? 0 : 1);
