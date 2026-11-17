@@ -29,7 +29,7 @@ export const libraryDescending = signal(true);
 export const statsPeriod = signal<StatsPeriod>("month");
 export const settings = signal<Settings>({
   theme: "dark", apiBase: "", nativeFirst: true,
-  audioQuality: "auto", autoRadio: true, pauseHistory: false, libraryView: "grid",
+  audioQuality: "auto", autoRadio: true, pauseHistory: false, libraryView: "grid", playlistSorting: {},
   lyricFontSize: "medium", lyricAlignment: "center", lyricsOffset: 0,
   volume: 0.7, rate: 1, shuffle: false, repeat: "off",
 });
@@ -93,9 +93,15 @@ function matches(query: string, ...fields: string[]) {
   return normalized(query).trim().split(/\s+/).every((word) => text.includes(word));
 }
 function trackSeconds(id: string) { return listenEvents().filter((event) => event.trackId === id).reduce((sum, event) => sum + event.seconds, 0); }
+function compareAlbums(a: Track, b: Track, descending: boolean) {
+  if (!a.album || !b.album) return Number(!a.album) - Number(!b.album);
+  return descending ? b.album.localeCompare(a.album) : a.album.localeCompare(b.album);
+}
+
 export function sortTracks(items: Track[], sort: LibrarySort | PlaylistSort, descending: boolean) {
   if (sort === "custom") return [...items];
   if (sort === "recent") return descending ? [...items] : [...items].reverse();
+  if (sort === "album") return [...items].sort((a, b) => compareAlbums(a, b, descending));
   const result = [...items].sort((a, b) => sort === "artist" ? a.artist.localeCompare(b.artist) || a.title.localeCompare(b.title)
     : sort === "playTime" ? trackSeconds(a.id) - trackSeconds(b.id)
     : sort === "duration" ? a.duration - b.duration : a.title.localeCompare(b.title));
@@ -575,6 +581,11 @@ export function renamePlaylist(id: string, name: string) {
   void saveLibrary();
 }
 export function deletePlaylist(id: string) {
+  const { [`playlist:${id}`]: removed, ...remaining } = settings().playlistSorting;
+  if (removed) {
+    settings.update(value => ({ ...value, playlistSorting: remaining }));
+    void saveSettings();
+  }
   playlists.update((items) => items.filter((item) => item.id !== id));
   void saveLibrary();
 }
@@ -602,10 +613,16 @@ export function removePlaylistEntries(id: string, indices: number[]) {
   } : item));
   void saveLibrary();
 }
+export function setPlaylistSorting(key: string, sort: PlaylistSort, descending: boolean) {
+  settings.update(value => ({ ...value, playlistSorting: { ...value.playlistSorting, [key]: { sort, descending } } }));
+  void saveSettings();
+}
+
 export function playlistEntries(id: string, query = "", sort: PlaylistSort = "custom", descending = false): PlaylistEntry[] {
   const entries = (playlists().find((item) => item.id === id)?.tracks || []).map((track, index) => ({ track, index }))
     .filter(({ track }) => matches(query, track.title, track.artist, track.album));
   if (sort === "custom") return entries;
+  if (sort === "album") return entries.sort((a, b) => compareAlbums(a.track, b.track, descending));
   entries.sort((a, b) => sort === "recent" ? a.index - b.index : sort === "artist" ? a.track.artist.localeCompare(b.track.artist)
     : sort === "playTime" ? trackSeconds(a.track.id) - trackSeconds(b.track.id)
     : sort === "duration" ? a.track.duration - b.track.duration : a.track.title.localeCompare(b.track.title));

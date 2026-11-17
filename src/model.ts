@@ -111,7 +111,8 @@ export interface StreamInfo {
   contentLength?: number;
 }
 export type LibrarySort = "recent" | "title" | "artist" | "playTime" | "songCount";
-export type PlaylistSort = "custom" | "recent" | "title" | "artist" | "playTime" | "duration";
+export type PlaylistSort = "custom" | "recent" | "title" | "artist" | "album" | "playTime" | "duration";
+export interface PlaylistSorting { sort: PlaylistSort; descending: boolean }
 export interface PlaylistEntry { track: Track; index: number }
 export type DownloadStatus = "queued" | "resolving" | "downloading" | "completed" | "failed" | "cancelled";
 export interface DownloadJob {
@@ -167,6 +168,7 @@ export interface Settings {
   autoRadio: boolean;
   pauseHistory: boolean;
   libraryView: "grid" | "list";
+  playlistSorting: Record<string, PlaylistSorting>;
   lyricFontSize: "small" | "medium" | "large";
   lyricAlignment: "left" | "center";
   lyricsOffset: number;
