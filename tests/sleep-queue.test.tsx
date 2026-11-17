@@ -135,3 +135,13 @@ test("moving an already adjacent row to next promotes it ahead of the shuffled c
   expect(app.audio().filter(call => call.command === "open")).toHaveLength(1);
   await app.press("Next"); expect(read(app).index).toBe(1);
 });
+
+test("a timed finish waits for the song playing at the deadline before repeat or radio", async () => {
+  const app = await open(fixture, { platform: "linux", clock: {} });
+  await app.press("Start"); await app.press("Finish song after minute");
+  await app.press("Next"); await app.press("Repeat one");
+  await app.clock!.fastForward(60001);
+  expect(read(app)).toMatchObject({ playing: true, index: 1, sleepUntil: null, sleepAfterTrack: true });
+  await app.endAudio();
+  expect(read(app)).toMatchObject({ playing: false, index: 1, sleepActive: false });
+});

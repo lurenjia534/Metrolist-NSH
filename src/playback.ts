@@ -53,6 +53,7 @@ let loadId = 0;
 let playRequested = false;
 let sourceStarted = false;
 let nativeState = "idle";
+let finishSongAtDeadline = false;
 let sleepTimer: ReturnType<typeof setTimeout> | undefined;
 let shuffleBag: number[] = [];
 let visited: number[] = [];
@@ -760,15 +761,19 @@ function resetSleepTimer() {
 function tickSleepTimer() {
   const remaining = sleepUntil()! - Date.now();
   sleepRemaining.set(Math.max(0, Math.ceil(remaining / 1000)));
-  if (remaining <= 0) { pause(); resetSleepTimer(); }
+  if (remaining <= 0) {
+    if (finishSongAtDeadline && currentTrack() && (playing() || playRequested)) setSleepAfterTrack();
+    else { pause(); resetSleepTimer(); }
+  }
   else sleepTimer = setTimeout(tickSleepTimer, Math.min(1000, remaining));
 }
 export function cancelSleepTimer() {
   resetSleepTimer();
   prepareUpcoming();
 }
-export function setSleepTimer(minutes: number) {
+export function setSleepTimer(minutes: number, finishSong = false) {
   resetSleepTimer();
+  finishSongAtDeadline = finishSong;
   if (minutes > 0) {
     sleepUntil.set(Date.now() + minutes * 60000);
     tickSleepTimer();

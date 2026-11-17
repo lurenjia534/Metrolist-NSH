@@ -167,6 +167,9 @@ export interface Settings {
   nativeFirst: boolean;
   audioQuality: AudioQuality;
   skipSilence: boolean;
+  seekSeconds: number;
+  sleepMinutes: number;
+  sleepFinishSong: boolean;
   autoRadio: boolean;
   pauseHistory: boolean;
   libraryView: "grid" | "list";

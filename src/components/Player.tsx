@@ -334,7 +334,11 @@ function Transport(props: { onHeight: (height: number) => void }) {
     <View style={enter("fadeInUp", 200)}><SeekBar quiet testID="player-seek" status /></View>
     <View class="items-center gap-2" style={enter("fadeInUp", 260)}>
       <TransportControls large quiet playTestID="player-play-pause" />
-      <SleepTimerButton />
+      <View class="flex-row items-center gap-3">
+        <Tool testID="player-seek-back" icon="left" label={`后退 ${s.settings().seekSeconds} 秒`} disabled={p.remoteControlled() || !p.duration()} onPress={() => p.seek(p.position() - s.settings().seekSeconds)} />
+        <SleepTimerButton />
+        <Tool testID="player-seek-forward" icon="right" label={`快进 ${s.settings().seekSeconds} 秒`} disabled={p.remoteControlled() || !p.duration()} onPress={() => p.seek(p.position() + s.settings().seekSeconds)} />
+      </View>
     </View>
     <If when={p.remoteControlled()}><Text class="text-center text-xs text-muted-foreground">由主持人控制 · {together.room()?.roomCode}</Text></If>
     <If when={p.playbackError()}><View role="alert" class="gap-2.5 rounded-(--radius-card) border border-border bg-card p-3"><Text class="line-clamp-4 text-xs text-destructive">{p.playbackError()}</Text><Pill label="重试播放" icon="refresh" onPress={() => void action(p.retryPlayback)} /></View></If>
