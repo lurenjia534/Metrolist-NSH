@@ -161,6 +161,7 @@ export interface Settings {
   apiBase: string;
   nativeFirst: boolean;
   audioQuality: AudioQuality;
+  skipSilence: boolean;
   autoRadio: boolean;
   pauseHistory: boolean;
   libraryView: "grid" | "list";

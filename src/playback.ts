@@ -37,6 +37,7 @@ interface PlaybackOptions {
   resolveStream: (track: Track, request?: { refresh?: boolean }) => Promise<StreamInfo>;
   sourceContext?: () => string;
   autoRadio?: () => boolean;
+  skipSilence?: () => boolean;
   fetchRadio?: (track: Track) => Promise<Track[]>;
   onTrack?: (track: Track) => void;
   onListen?: (track: Track, event: ListenEvent) => void;
@@ -59,6 +60,7 @@ let queueGeneration = 0;
 let radioPromise: Promise<Track[]> | undefined;
 let listening: { track: Track; event: ListenEvent; reported: number } | undefined;
 let lastPosition = 0;
+let previousNativeSample: Pick<NativeAudioState, "elapsedRealtimeMs" | "skipSilence"> | undefined;
 let savedPosition = 0;
 let startup: { requestedAt: number; resolvedAt: number; prepared: boolean } | undefined;
 let prepared: { track: Track; context: string; source?: StreamInfo; cacheRequested: boolean } | undefined;
@@ -143,6 +145,8 @@ export interface NativeAudioState {
   buffering: boolean;
   playWhenReady: boolean;
   discontinuity?: boolean;
+  skipSilence?: boolean;
+  elapsedRealtimeMs?: number;
   volume?: number;
   rate?: number;
   error?: string;
@@ -273,13 +277,14 @@ function releaseSource(stopNative = false) {
   player = undefined;
   sourceStarted = false;
   nativeState = "idle";
+  previousNativeSample = undefined;
   batch(() => { playing.set(false); buffering.set(false); bufferedPosition.set(0); streamInfo.set(null); });
   startup = undefined;
 }
 
-function receiveProgress(seconds: number, total: number) {
+function receiveProgress(seconds: number, total: number, maxListeningSeconds = Infinity) {
   const elapsed = seconds - lastPosition;
-  if (playing() && !buffering() && elapsed > 0 && listening) listening.event.seconds += elapsed / rate();
+  if (playing() && !buffering() && elapsed > 0 && listening) listening.event.seconds += Math.min(elapsed / rate(), maxListeningSeconds);
   lastPosition = seconds;
   batch(() => {
     position.set(seconds);
@@ -301,7 +306,12 @@ function receiveNativeState(event: NativeAudioState) {
   const wasPlaying = playing();
   nativeState = event.state;
   if (event.discontinuity) lastPosition = event.position;
-  receiveProgress(event.position, event.duration);
+  // Media time jumps over silence. Only count time that could have been heard.
+  const previous = previousNativeSample;
+  const maxListening = (previous?.skipSilence || event.skipSilence) && previous?.elapsedRealtimeMs !== undefined && event.elapsedRealtimeMs !== undefined
+    ? Math.max(0, event.elapsedRealtimeMs - previous.elapsedRealtimeMs) / 1000 : Infinity;
+  previousNativeSample = event;
+  receiveProgress(event.position, event.duration, maxListening);
   playRequested = event.playWhenReady;
   batch(() => {
     playing.set(event.playing);
@@ -393,6 +403,7 @@ async function loadCurrent(startAt = 0, continueSession = false, refresh = false
         mimeType: source.mimeType, formatId: source.formatId, expiresAt: source.expiresAt,
         cacheKey: sourceCacheKey(track, source),
         position: startAt, volume: volume(), rate: rate(), playWhenReady: playRequested,
+        skipSilence: options.skipSilence?.() ?? false,
         remoteControlled: remoteControlled() || !workspaceActive(),
       });
       return;
@@ -585,6 +596,10 @@ export function seek(seconds: number) {
   updateMediaSession();
   changed();
 }
+export function applySkipSilence(enabled: boolean) {
+  if (player) void nativeCommand("settings", { skipSilence: enabled }).catch(surfaceError);
+}
+
 export function setVolume(value: number) {
   volume.set(value);
   if (player) player.volume = value;

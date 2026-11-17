@@ -3,6 +3,7 @@ package com.longbridge.nsh;
 import android.content.Context;
 import android.net.Uri;
 import android.os.Handler;
+import android.os.SystemClock;
 import android.os.Looper;
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
@@ -276,6 +277,7 @@ public final class MetrolistAudio {
     private void applySettings(Map<String, Object> args) {
         if (args.containsKey("volume")) player.setVolume((float) number(args, "volume", 1));
         if (args.containsKey("rate")) player.setPlaybackParameters(new PlaybackParameters((float) number(args, "rate", 1)));
+        if (args.containsKey("skipSilence")) player.setSkipSilenceEnabled(Boolean.TRUE.equals(args.get("skipSilence")));
         if (args.containsKey("remoteControlled")) remoteControlled = Boolean.TRUE.equals(args.get("remoteControlled"));
     }
     public boolean remoteControlled() { return remoteControlled; }
@@ -320,6 +322,8 @@ public final class MetrolistAudio {
         result.put("playWhenReady", player.getPlayWhenReady());
         result.put("buffering", buffering);
         result.put("state", state);
+        result.put("skipSilence", player.getSkipSilenceEnabled());
+        result.put("elapsedRealtimeMs", SystemClock.elapsedRealtime());
         result.put("rate", (double) player.getPlaybackParameters().speed);
         result.put("volume", (double) player.getVolume());
         if (!error.isEmpty()) { result.put("error", error); result.put("errorCode", errorCode); }
