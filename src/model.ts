@@ -78,6 +78,7 @@ export interface BrowseResponse {
 }
 export interface LyricLine { time: number; text: string }
 export interface Lyrics {
+  local?: boolean;
   plainLyrics: string;
   syncedLyrics: string;
   lines: LyricLine[];

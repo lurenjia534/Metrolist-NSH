@@ -5,6 +5,7 @@ import { pathToFileURL } from "url";
 import { NativeFiles } from "metrolist/native";
 import seed from "../assets/catalog-seed.json";
 import * as api from "./api";
+import { parseLrc } from "../server/catalog.mjs";
 import * as account from "./account";
 import * as player from "./playback";
 import { calculateStatistics } from "./statistics";
@@ -71,6 +72,7 @@ let initialized = false;
 let searchRequest = 0;
 let browseRequest = 0;
 let lyricRequest = 0;
+let lyricTrackId: string | undefined;
 let suggestionRequest = 0;
 let exploreRequest = 0;
 let homeRequest = 0;
@@ -148,7 +150,7 @@ function savePlayerPreferences() {
 
 function remember(track: Track) {
   addTracks([track], false);
-  void loadLyrics(track);
+  ensureLyrics(track);
 }
 function recordListen(track: Track, event: ListenEvent) {
   if (settings().pauseHistory || event.seconds < 30) return;
@@ -536,10 +538,31 @@ export async function startRadio(track: Track) {
   } catch (reason) { showError(reason); }
 }
 
+export function ensureLyrics(track: Track) {
+  if (lyricTrackId !== track.id) void loadLyrics(track);
+}
+
+const lyricsKey = (id: string) => `metrolist.lyrics.${id}`;
+
+export async function saveLyricsEdit(track: Track, raw: string | null) {
+  if (raw === null) await Storage.removeItem(lyricsKey(track.id));
+  else await Storage.setItem(lyricsKey(track.id), raw);
+  if (player.currentTrack()?.id === track.id) await loadLyrics(track);
+}
+
 export async function loadLyrics(track: Track) {
+  lyricTrackId = track.id;
   const request = ++lyricRequest;
   batch(() => { lyrics.set(null); lyricsLoading.set(true); lyricsError.set(""); });
   try {
+    const raw = await Storage.getItem(lyricsKey(track.id));
+    if (request !== lyricRequest) return;
+    if (raw) {
+      const lines = parseLrc(raw);
+      lyrics.set({ local: true, plainLyrics: lines.length ? lines.map(line => line.text).join("\n") : raw,
+        syncedLyrics: lines.length ? raw : "", lines, instrumental: false });
+      return;
+    }
     const result = await api.fetchLyrics(track);
     if (request === lyricRequest) lyrics.set(result);
   } catch (reason) {

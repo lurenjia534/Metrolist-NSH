@@ -6,6 +6,7 @@ import * as nav from "../navigation";
 import * as together from "../together";
 import { Icon } from "../icons";
 import { SongMenu, TrackRow, shareTrack, songCommands } from "./Music";
+import { LyricsEditor } from "./LyricsEditor";
 import { SleepTimerButton } from "./SleepTimer";
 import { Label, Tool, Pill, Art, Press, CommandMenu, Empty, palette as c, narrow, touch, spacious, action, say, time } from "../ui";
 import { motion, motionDuration, transition } from "../motion";
@@ -210,7 +211,12 @@ export function MiniPlayer() {
 export function LyricsView() {
   const ref = signal<ListRef | undefined>();
   const follow = signal(true);
-  effect(() => { p.currentTrack()?.id; follow.set(true); });
+  const editor = signal<{ track: Track; raw: string } | null>(null);
+  effect(() => {
+    const track = p.currentTrack();
+    follow.set(true);
+    if (track) s.ensureLyrics(track);
+  });
   const text = () => s.lyrics()?.plainLyrics || s.lyrics()?.lines.map(line => line.text).join("\n") || "";
   const offset = () => s.settings().lyricsOffset / 1000;
   const active = computed(() => {
@@ -225,15 +231,19 @@ export function LyricsView() {
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8, minWidth: 0, flexShrink: 0 }}>
       <View style={{ flex: 1, minWidth: 0, gap: 4 }}><Label size={shortLandscape() ? 20 : 24} weight="600">歌词</Label><If when={!shortLandscape() && text()}><Label size={12} color={c().sub}>{s.lyrics()?.lines.length ? "逐行同步 · 点按歌词跳转" : "文本歌词"}</Label></If></View>
       <CommandMenu testID="lyrics-options" label="歌词设置" icon="settings" items={[
+        { testID: "lyrics-edit", label: "编辑歌词", icon: "edit", run: () => editor.set({ track: p.currentTrack()!, raw: s.lyrics()?.syncedLyrics || text() }) },
         { testID: "lyrics-copy", label: "复制歌词", icon: "share", disabled: !text(), run: () => void action(() => Clipboard.writeText(text()), "歌词已复制") },
         ...([{ value: "small", label: "小号字" }, { value: "medium", label: "标准字号" }, { value: "large", label: "大号字" }] as const).map((item, index) => ({ testID: `lyrics-size-${item.value}`, label: item.label, active: s.settings().lyricFontSize === item.value, separator: index === 0, run: () => s.updateSettings({ lyricFontSize: item.value }) })),
         { label: "居中对齐", active: s.settings().lyricAlignment === "center", separator: true, run: () => s.updateSettings({ lyricAlignment: "center" }) },
         { label: "左侧对齐", active: s.settings().lyricAlignment === "left", run: () => s.updateSettings({ lyricAlignment: "left" }) },
         { testID: "lyrics-reset-offset", label: "重置歌词偏移", icon: "refresh", disabled: s.settings().lyricsOffset === 0, separator: true, run: () => s.updateSettings({ lyricsOffset: 0 }) },
-        { label: "重新获取歌词", icon: "refresh", disabled: s.lyricsLoading(), run: () => void s.loadLyrics(p.currentTrack()!) },
+        ...(s.lyrics()?.local
+          ? [{ testID: "lyrics-restore", label: "恢复在线歌词", icon: "refresh", run: () => void action(() => s.saveLyricsEdit(p.currentTrack()!, null)) }]
+          : [{ label: "重新获取歌词", icon: "refresh", disabled: s.lyricsLoading(), run: () => void s.loadLyrics(p.currentTrack()!) }]),
         { label: "睡眠定时器", icon: "moon", active: p.sleepActive(), separator: true, run: () => nav.dialog.set("sleep") },
       ]} />
     </View>
+    <If when={editor()}>{entry => <LyricsEditor track={entry().track} raw={entry().raw} close={() => editor.set(null)} />}</If>
     <If when={s.lyricsLoading()}><Scroll style={{ flex: 1, minHeight: 0 }}><Empty icon="lyrics" title="正在获取歌词" description={p.currentTrack()?.title || ""} /></Scroll></If>
     <If when={s.lyricsError()}><Scroll style={{ flex: 1, minHeight: 0 }}><Empty icon="lyrics" title="歌词暂时无法加载" description={s.lyricsError()}><Pill label="重试" icon="refresh" onPress={() => p.currentTrack() && void s.loadLyrics(p.currentTrack()!)} /></Empty></Scroll></If>
     <If when={s.lyrics()?.lines.length} else={
