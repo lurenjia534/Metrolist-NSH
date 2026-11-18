@@ -1,7 +1,7 @@
 import { host, platform } from "nsh";
 import { api as nativeGateway } from "../server/index.mjs";
 import { currentCredentials, useAccountForBrowse } from "./account";
-import type { AudioQuality, BrowseEndpoint, BrowseResponse, ExploreResponse, ExploreTab, HomeResponse, Lyrics, PlayEndpoint, SearchResponse, SearchType, StreamInfo, Track } from "./model";
+import type { AudioQuality, BrowseEndpoint, BrowseResponse, ExploreResponse, ExploreTab, HomeResponse, LyricMatch, Lyrics, PlayEndpoint, SearchResponse, SearchType, StreamInfo, Track } from "./model";
 
 let origin = "";
 export interface SessionCredentials { cookie: string; visitorData?: string; dataSyncId?: string; authUser?: string }
@@ -75,6 +75,8 @@ export const fetchEndpointQueue = (endpoint: PlayEndpoint) => get<{ tracks: Trac
   ...(endpoint.params ? { params: endpoint.params } : {}),
   ...(endpoint.index !== undefined ? { index: endpoint.index } : {}),
 });
+export const searchLyrics = (title: string, artist: string, duration: number) =>
+  get<LyricMatch[]>("lyrics/search", { title, artist, duration: Math.round(duration) });
 export const fetchLyrics = (track: Track) =>
   get<Lyrics>("lyrics", { title: track.title, artist: track.artist, duration: Math.round(track.duration) });
 export function fetchStream(id: string, quality: AudioQuality = "auto", options: ResolveOptions = {}): Promise<StreamInfo> {

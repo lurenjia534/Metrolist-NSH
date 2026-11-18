@@ -7,6 +7,7 @@ import * as together from "../together";
 import { Icon } from "../icons";
 import { SongMenu, TrackRow, shareTrack, songCommands } from "./Music";
 import { createSelection, SelectionActions } from "./SongSelection";
+import { LyricSearch, LyricExcerpt, SongLyricOffset } from "./LyricTools";
 import { LyricsEditor } from "./LyricsEditor";
 import { SleepTimerButton } from "./SleepTimer";
 import { Label, Tool, Pill, Art, Press, CommandMenu, Empty, palette as c, narrow, touch, spacious, action, say, time } from "../ui";
@@ -212,6 +213,9 @@ export function MiniPlayer() {
 export function LyricsView() {
   const ref = signal<ListRef | undefined>();
   const follow = signal(true);
+  const search = signal<Track | null>(null);
+  const timing = signal<Track | null>(null);
+  const excerpt = signal<{ track: Track; lines: string[] } | null>(null);
   const editor = signal<{ track: Track; raw: string } | null>(null);
   effect(() => {
     const track = p.currentTrack();
@@ -219,7 +223,8 @@ export function LyricsView() {
     if (track) s.ensureLyrics(track);
   });
   const text = () => s.lyrics()?.plainLyrics || s.lyrics()?.lines.map(line => line.text).join("\n") || "";
-  const offset = () => s.settings().lyricsOffset / 1000;
+  const songOffset = () => s.settings().songLyricOffsets[p.currentTrack()?.id || ""] || 0;
+  const offset = () => (s.settings().lyricsOffset + songOffset()) / 1000;
   const active = computed(() => {
     const lines = s.lyrics()?.lines || [];
     let current = -1;
@@ -237,6 +242,10 @@ export function LyricsView() {
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8, minWidth: 0, flexShrink: 0 }}>
       <View style={{ flex: 1, minWidth: 0, gap: 4 }}><Label size={shortLandscape() ? 20 : 24} weight="600">歌词</Label><If when={!shortLandscape() && text()}><Label size={12} color={c().sub}>{s.lyrics()?.lines.length ? (canSeekLyrics() ? "逐行同步 · 点按歌词跳转" : "逐行同步") : "文本歌词"}</Label></If></View>
       <CommandMenu testID="lyrics-options" label="歌词设置" icon="settings" items={[
+        { testID: "lyrics-search", label: "查找歌词版本", icon: "search", run: () => search.set(p.currentTrack()!) },
+        { testID: "lyrics-song-offset", label: "校准这首歌的歌词", icon: "clock", disabled: !s.lyrics()?.lines.length, run: () => timing.set(p.currentTrack()!) },
+        { testID: "lyrics-excerpt", label: "摘录歌词", icon: "share", disabled: !text(), run: () => excerpt.set({ track: p.currentTrack()!, lines: text().split(/\r?\n/).filter(line => line.trim()) }) },
+        { testID: "lyrics-copy-lrc", label: "复制带时间戳的 LRC", icon: "lyrics", disabled: !s.lyrics()?.syncedLyrics, run: () => void action(() => Clipboard.writeText(s.lyrics()!.syncedLyrics), "LRC 已复制") },
         { testID: "lyrics-edit", label: "编辑歌词", icon: "edit", run: () => editor.set({ track: p.currentTrack()!, raw: s.lyrics()?.syncedLyrics || text() }) },
         { testID: "lyrics-copy", label: "复制歌词", icon: "share", disabled: !text(), run: () => void action(() => Clipboard.writeText(text()), "歌词已复制") },
         ...([{ value: "small", label: "小号字" }, { value: "medium", label: "标准字号" }, { value: "large", label: "大号字" }] as const).map((item, index) => ({ testID: `lyrics-size-${item.value}`, label: item.label, active: s.settings().lyricFontSize === item.value, separator: index === 0, run: () => s.updateSettings({ lyricFontSize: item.value }) })),
@@ -250,6 +259,9 @@ export function LyricsView() {
         { label: "睡眠定时器", icon: "moon", active: p.sleepActive(), separator: true, run: () => nav.dialog.set("sleep") },
       ]} />
     </View>
+    <If when={search()}>{track => <LyricSearch track={track()} close={() => search.set(null)} />}</If>
+    <If when={timing()}>{track => <SongLyricOffset track={track()} close={() => timing.set(null)} />}</If>
+    <If when={excerpt()}>{entry => <LyricExcerpt track={entry().track} lines={entry().lines} close={() => excerpt.set(null)} />}</If>
     <If when={editor()}>{entry => <LyricsEditor track={entry().track} raw={entry().raw} close={() => editor.set(null)} />}</If>
     <If when={s.lyricsLoading()}><Scroll style={{ flex: 1, minHeight: 0 }}><Empty icon="lyrics" title="正在获取歌词" description={p.currentTrack()?.title || ""} /></Scroll></If>
     <If when={s.lyricsError()}><Scroll style={{ flex: 1, minHeight: 0 }}><Empty icon="lyrics" title="歌词暂时无法加载" description={s.lyricsError()}><Pill label="重试" icon="refresh" onPress={() => p.currentTrack() && void s.loadLyrics(p.currentTrack()!)} /></Empty></Scroll></If>
@@ -269,7 +281,7 @@ export function LyricsView() {
     </If>
     <If when={s.lyrics()?.lines.length}><View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, flexShrink: 0 }}>
       <Tool icon="left" label="歌词提前 100 毫秒" onPress={() => s.updateSettings({ lyricsOffset: s.settings().lyricsOffset - 100 })} />
-      <Label size={11} color={c().faint}>{s.settings().lyricsOffset === 0 ? "歌词偏移" : `${s.settings().lyricsOffset} ms`}</Label>
+      <Label size={11} color={c().faint}>{songOffset() ? `合计 ${s.settings().lyricsOffset + songOffset()} ms` : s.settings().lyricsOffset === 0 ? "歌词偏移" : `${s.settings().lyricsOffset} ms`}</Label>
       <Tool icon="right" label="歌词延后 100 毫秒" onPress={() => s.updateSettings({ lyricsOffset: s.settings().lyricsOffset + 100 })} />
     </View></If>
   </View>;

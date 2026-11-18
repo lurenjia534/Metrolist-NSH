@@ -76,6 +76,10 @@ export interface BrowseResponse {
   editable?: boolean;
   playlistId?: string;
 }
+export interface LyricMatch {
+  id: number; title: string; artist: string; album: string; duration: number;
+  plainLyrics: string; syncedLyrics: string; instrumental: boolean;
+}
 export interface LyricLine { time: number; text: string }
 export interface Lyrics {
   local?: boolean;
@@ -189,6 +193,7 @@ export interface Settings {
   lyricTapToSeek: boolean;
   lyricAutoScroll: boolean;
   lyricsOffset: number;
+  songLyricOffsets: Record<string, number>;
   volume: number;
   rate: number;
   shuffle: boolean;

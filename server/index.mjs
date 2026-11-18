@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { ApiError, CLIENT_VERSION, home, search, browse, next, lyrics, suggestions, explore } from './catalog.mjs';
+import { ApiError, CLIENT_VERSION, home, search, browse, next, lyrics, lyricMatches, suggestions, explore } from './catalog.mjs';
 import { resolveWorkerAudio, streamMetadata, proxyAudio, audioRequestHeaders } from './streaming.mjs';
 import { accountFromRequest } from './auth.mjs';
 import { loginAccount, accountInfo, accountChannels, accountLibrary, accountLike, accountSubscribe, accountSaveSong, accountPlaylist } from './account.mjs';
@@ -40,7 +40,8 @@ export async function api(request, env = {}) {
         if (!params.id && !params.playlistId) throw new ApiError('A video or playlist id is required', 400);
         return json(await next(params.id, params));
       }
-      case '/api/lyrics': return json(await lyrics(params.title || '', params.artist || '', Number(params.duration || 0)));
+      case '/api/lyrics/search': return json(await lyricMatches(params.title || '', params.artist || '', Number(params.duration || 0), env.fetch));
+      case '/api/lyrics': return json(await lyrics(params.title || '', params.artist || '', Number(params.duration || 0), env.fetch));
       case '/api/account/login': return json(await loginAccount(await input(), params));
       case '/api/account': return json(await accountInfo(params.account, params));
       case '/api/account/channels': return json(await accountChannels(params.account, params));

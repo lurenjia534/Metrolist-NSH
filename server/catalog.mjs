@@ -647,16 +647,23 @@ export function parseLrc(value) {
   return lines.sort((a, b) => a.time - b.time);
 }
 
-export async function lyrics(title, artist, duration = 0) {
+export async function lyricMatches(title, artist, duration = 0, fetcher = fetch) {
   const url = new URL('https://lrclib.net/api/search');
   url.searchParams.set('track_name', title);
   if (artist) url.searchParams.set('artist_name', artist.split(' / ')[0]);
-  const response = await fetch(url, { headers: { 'User-Agent': 'Metrolist-NSH/0.1.0' } });
+  const response = await fetcher(url, { headers: { 'User-Agent': 'Metrolist-NSH/0.1.0' } });
   if (!response.ok) throw new ApiError(`LRCLIB returned HTTP ${response.status}`);
   const matches = await response.json();
   const score = candidate => (candidate.syncedLyrics ? 0 : 1000) +
     (duration ? Math.abs(candidate.duration - duration) : 0);
-  const match = matches.sort((a, b) => score(a) - score(b))[0];
+  return matches.sort((a, b) => score(a) - score(b)).map(row => ({
+    id: row.id, title: row.trackName, artist: row.artistName, album: row.albumName || '', duration: row.duration,
+    plainLyrics: row.plainLyrics || '', syncedLyrics: row.syncedLyrics || '', instrumental: !!row.instrumental,
+  }));
+}
+
+export async function lyrics(title, artist, duration = 0, fetcher = fetch) {
+  const [match] = await lyricMatches(title, artist, duration, fetcher);
   return {
     plainLyrics: match?.plainLyrics || '', syncedLyrics: match?.syncedLyrics || '',
     lines: parseLrc(match?.syncedLyrics), instrumental: !!match?.instrumental,

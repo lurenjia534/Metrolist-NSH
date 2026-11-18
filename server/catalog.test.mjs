@@ -147,3 +147,22 @@ test('playlist playback keeps repeated rows and follows the track shelf continua
   assert.equal(tail.tracks.length, 2);
   assert.equal(tail.continuation, undefined);
 });
+
+test('manual lyric lookup exposes alternate recordings while automatic lookup keeps the nearest synced one', async () => {
+  const recordings = [
+    { id: 1, trackName: 'Live', artistName: 'Miku', albumName: 'Tour', duration: 200, plainLyrics: 'Live' },
+    { id: 2, trackName: 'Studio', artistName: 'Miku', albumName: 'Studio', duration: 190, syncedLyrics: '[00:02.00]Studio' },
+  ];
+  const env = { fetch: async url => {
+    assert.equal(url.searchParams.get('track_name'), 'Song');
+    assert.equal(url.searchParams.get('artist_name'), 'Miku');
+    return Response.json(recordings);
+  } };
+  const endpoint = 'https://gateway.test/api/lyrics';
+  const query = '?title=Song&artist=Miku&duration=200';
+  const results = await (await api(new Request(endpoint + '/search' + query), env)).json();
+  assert.deepEqual(results.map(row => row.id), [2, 1]);
+  assert.equal(results[1].plainLyrics, 'Live');
+  const selected = await (await api(new Request(endpoint + query), env)).json();
+  assert.deepEqual(selected.lines, [{ time: 2, text: 'Studio' }]);
+});
