@@ -31,6 +31,7 @@ export const statsPeriod = signal<StatsPeriod>("month");
 export const settings = signal<Settings>({
   theme: "dark", apiBase: "", nativeFirst: true,
   audioQuality: "auto", queueLocked: false, autoRadio: true, pauseHistory: false, libraryView: "grid", playlistSorting: {},
+  downloadSorting: { sort: "date", descending: true },
   persistQueue: true, rememberPlayModes: true, uniqueQueueAdditions: false, downloadOnLike: false,
   historySeconds: 30, pauseSearchHistory: false, hideRecentSearches: false,
   activeLyricAlignment: "inherit", lyricLineSpacing: 1.4, lyricTapToSeek: true, lyricAutoScroll: true,

@@ -5,7 +5,7 @@ import { mediaFile } from "./local-media/files";
 const handlers = {
   "app.metadata": null, "app.playback": null,
   "files.cancelDownload": null, "files.removeDownload": null,
-  "files.download": { destination: "Moonfall.m4a", url: "local:moon-failed", bytes: 1024 },
+  "files.download": (data: { id: string; name: string }) => ({ destination: data.name, url: `local:${data.id}`, bytes: 1024 }),
   "files.resolve": (data: { id: string }) => ({ url: `blob:https://music.test/${data.id}` }),
 };
 const fixture = () => open("./downloads-ui-fixture.tsx", { width: 1000, height: 1600, platform: "web", host: { handlers } });
@@ -103,4 +103,120 @@ test("iOS downloaded audio keeps playback and removal without offering desktop-o
   expect(app.shows("移除下载")).toBe(true);
   expect(app.shows("id:download-export-moon-one")).toBe(false);
   expect(app.shows("id:download-reveal-moon-one")).toBe(false);
+});
+
+async function applyFilters(app: App, ids: string[]) {
+  await app.press("id:download-filters");
+  for (const id of ids) await app.press(`id:${id}`);
+  await app.press("id:download-apply-filters");
+  await app.waitFor("id:app-dialog", { state: "gone" });
+}
+
+async function musicAction(app: App, id: string) {
+  await app.press("id:download-music-actions");
+  await app.waitFor(`id:download-${id}`);
+  await app.press(`id:download-${id}`);
+}
+
+test("download playlist inclusion and exclusion combine with quality and job status", async () => {
+  const app = await fixture();
+  await applyFilters(app, ["download-scope-nights", "download-quality-filter-low"]);
+  await app.press("id:download-filter-completed");
+  expect(app.shows("id:download-sun")).toBe(true);
+  expect(app.shows("id:download-moon-one")).toBe(false);
+  await applyFilters(app, ["download-quality-filter-all", "download-exclude"]);
+  expect(app.shows("id:download-moon-two")).toBe(true);
+  expect(app.shows("id:download-sun")).toBe(false);
+  expect(app.shows("id:download-moon-one")).toBe(false);
+});
+
+test("filling a playlist starts only unique missing files and leaves in-progress jobs alone", async () => {
+  const app = await fixture();
+  await applyFilters(app, ["download-scope-nights"]);
+  expect(app.texts()).toContain("补齐整张歌单 · 1 首");
+  await app.press("id:download-fill"); await app.waitFor("id:download-play-missing");
+  expect(calls(app, "files.download").map(call => (call.data as { id: string }).id)).toEqual(["missing"]);
+  expect(app.enabled("id:download-fill")).toBe(false);
+});
+
+test("artist space breakdown leads to the exact files and selection frees their measured bytes", async () => {
+  const app = await fixture();
+  await app.press("id:download-space");
+  expect(app.texts()).toContain("2 首 · 3.0 MB");
+  await app.press("id:app-dialog >> label:Luna"); await app.waitFor("id:app-dialog", { state: "gone" });
+  expect(app.shows("id:download-sun")).toBe(false);
+  await app.press("id:download-select"); await app.press("id:download-select-all");
+  await app.press("id:download-select-moon-one");
+  expect(app.texts()).toContain("已选 1 首 · 2.0 MB");
+  await app.press("id:download-remove-selected"); await app.waitFor("id:download-moon-two", { state: "gone" });
+  expect(calls(app, "files.removeDownload").map(call => (call.data as { id: string }).id)).toEqual(["moon-two"]);
+  expect(app.texts()).toContain("2.0 MB");
+  expect(app.shows("id:download-moon-one")).toBe(true);
+});
+
+test("sorted offline results shuffle, append and play next using the downloaded audio", async () => {
+  const app = await fixture();
+  await app.type("id:download-search", "Luna");
+  await app.press("id:download-sort"); await app.press("id:download-sort-size");
+  await musicAction(app, "append");
+  expect(app.texts()).toContain('["moon-two","moon-one"]');
+  await app.clear("id:download-search"); await app.type("id:download-search", "Sunrise");
+  await musicAction(app, "next");
+  expect(app.texts()).toContain('["moon-two","sun","moon-one"]');
+  await app.clear("id:download-search"); await app.type("id:download-search", "Luna");
+  await musicAction(app, "shuffle");
+  await app.waitUntil(() => app.audio().some(call => call.command === "open"));
+  const ids = JSON.parse(app.texts().find(text => text.startsWith('["'))!);
+  expect(ids.sort()).toEqual(["moon-one", "moon-two"]);
+  expect(calls(app, "files.resolve").length > 0).toBe(true);
+  expect(JSON.parse(app.storage()["metrolist.settings"]).downloadSorting).toEqual({ sort: "size", descending: true });
+});
+
+test("saving sorted downloads to a playlist retains the catalog tracks after offline removal", async () => {
+  const app = await fixture();
+  await app.press("id:download-filter-completed");
+  await app.press("id:download-sort"); await app.press("id:download-sort-plays");
+  await musicAction(app, "save-playlist");
+  await app.waitFor("id:app-dialog >> label:Saved set"); await app.press("id:app-dialog >> label:Saved set");
+  await app.waitFor("id:app-dialog", { state: "gone" });
+  await app.press("id:download-select"); await app.press("id:download-select-sun"); await app.press("id:download-remove-selected");
+  await app.waitFor("id:download-sun", { state: "gone" });
+  const list = JSON.parse(app.storage()["metrolist.library"]).playlists.find((item: { id: string }) => item.id === "saved");
+  expect(list.tracks.map((track: { id: string }) => track.id)).toEqual(["sun", "moon-two", "moon-one"]);
+  expect(list.tracks[0].source).toBe("youtube");
+  expect(list.tracks[1].url).toBe("https://audio.test/moon-two.m4a");
+});
+
+test("changing a download's quality resolves the original song and persists its replacement", async () => {
+  const app = await open("./downloads-ui-fixture.tsx", { width: 390, height: 900, platform: "web", host: { handlers }, network: {
+    "GET https://gateway.test/api/stream?id=sun&quality=high*": { body: { url: "https://audio.test/high.m4a", mimeType: "audio/mp4" } },
+    "GET https://gateway.test/api/home": { body: { sections: [] } },
+  } });
+  await app.press("Connections"); await app.type("id:api-origin", "https://gateway.test"); await app.press("id:connection-save");
+  await app.press("Downloads"); await app.press("id:download-menu-sun"); await app.press("id:download-quality-sun");
+  await app.waitFor("id:download-replace-high");
+  expect(app.enabled("id:download-replace-low")).toBe(false);
+  await app.press("id:download-replace-high");
+  await app.waitUntil(() => calls(app, "files.download").length === 1);
+  expect(calls(app, "files.download")[0].data).toMatchObject({ id: "sun", url: "https://audio.test/high.m4a" });
+  await app.waitUntil(() => JSON.parse(app.storage()["metrolist.downloads"]).some((row: { id: string; quality: string; status: string }) =>
+    row.id === "sun" && row.quality === "high" && row.status === "completed"));
+});
+
+test("Android opens the offline collection from Home and restores download sorting on relaunch", async () => {
+  const launch = (storage: Record<string, string>) => open("../App.tsx", { width: 360, height: 800, platform: "android",
+    storage, host: { handlers: { "app.start": null, "app.audio.snapshot": null, "app.audio.settings": null } },
+    network: { "GET https://gateway.test/api/home": { body: { sections: [] } } },
+  });
+  const initial = await launch({ "metrolist.settings": JSON.stringify({ apiBase: "https://gateway.test", autoRadio: false }) });
+  await initial.press("id:home-downloads"); await initial.press("id:download-sort");
+  await initial.press("id:download-sort-lastPlayed"); await initial.waitFor("text:最近播放 ↓");
+  await initial.press("id:download-sort"); await initial.press("id:download-sort-direction");
+  await initial.waitFor("text:最近播放 ↑");
+  const restarted = await launch(initial.storage());
+  await restarted.press("id:home-downloads"); await restarted.waitFor("text:最近播放 ↑");
+  await applyFilters(restarted, ["download-quality-filter-high"]);
+  expect(restarted.shows("没有匹配的下载")).toBe(true);
+  await restarted.press("id:download-show-all");
+  expect(restarted.shows("没有下载任务")).toBe(true);
 });
