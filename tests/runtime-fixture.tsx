@@ -36,6 +36,9 @@ function Fixture() {
       };
     } },
     { name: "Start local", action: () => p.playList([alpha, beta, alpha]) },
+    { name: "Insert selection", action: () => p.playNextTracks([video, alpha, video, beta]) },
+    { name: "Forget session", action: () => s.updateSettings({ persistQueue: false, rememberPlayModes: false }) },
+    { name: "Remember session", action: () => s.updateSettings({ persistQueue: true, rememberPlayModes: true }) },
     { name: "Start video", action: () => p.playList([video]) },
     { name: "Pause", action: p.pause }, { name: "Play", action: p.resumePlayback }, { name: "Retry playback", action: p.retryPlayback },
     { name: "Seek 21", action: () => p.seek(21) }, { name: "Seek 50", action: () => p.seek(50) },

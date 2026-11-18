@@ -3,6 +3,7 @@ import { Accordion, AccordionHeader, AccordionItem, AccordionPanel, AccordionTri
 import * as a from "../account";
 import * as nav from "../navigation";
 import * as player from "../playback";
+import { setTrackLiked } from "../store";
 import * as cloud from "../cloudActions";
 import { isTrack, type CatalogItem, type Collection } from "../model";
 import { Label, Pill, Chip, Tool, Field, Art, Section, SectionTitle, CommandMenu, Empty, Modal, Toggle, Press, palette as c, narrow, action, say, type CommandItem } from "../ui";
@@ -91,7 +92,7 @@ export function AccountPage() {
   const menu = (item: CatalogItem): CommandItem[] => {
     const entries: CommandItem[] = [{ label: isTrack(item) ? "立即播放" : "打开详情", icon: isTrack(item) ? "play" : "right", run: () => openItem(item) }];
     if (isTrack(item)) {
-      entries.push({ label: a.isCloudLiked(item.id) ? "从云端喜欢中移除" : "在 YouTube Music 喜欢", icon: "heart", active: a.isCloudLiked(item.id), disabled: !!a.mutation(), run: () => void action(() => a.setLike(item.id, !a.isCloudLiked(item.id))) });
+      entries.push({ label: a.isCloudLiked(item.id) ? "从云端喜欢中移除" : "在 YouTube Music 喜欢", icon: "heart", active: a.isCloudLiked(item.id), disabled: !!a.mutation(), run: () => void action(() => setTrackLiked(item, !a.isCloudLiked(item.id))) });
       if (a.cloudType() === "songs") entries.push({ label: "从云端音乐库移除", icon: "bookmark", disabled: !!a.mutation(), run: () => void action(() => a.setSavedSong(item.id, false)) });
     } else if (item.type === "artist") entries.push({ label: "取消 YouTube Music 订阅", icon: "artist", disabled: !!a.mutation(), run: () => void action(() => a.setSubscription(item.browseId, false, item.params)) });
     else if (item.type === "playlist") {

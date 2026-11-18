@@ -171,6 +171,10 @@ export interface Settings {
   sleepMinutes: number;
   sleepFinishSong: boolean;
   queueLocked: boolean;
+  persistQueue: boolean;
+  rememberPlayModes: boolean;
+  uniqueQueueAdditions: boolean;
+  downloadOnLike: boolean;
   autoRadio: boolean;
   pauseHistory: boolean;
   historySeconds: number;
