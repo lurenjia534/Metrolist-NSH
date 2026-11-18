@@ -103,6 +103,7 @@ export interface StreamInfo {
   cacheKey?: string;
   client?: string;
   mimeType?: string;
+  codecs?: string;
   bitrate?: number;
   quality?: string;
   expiresAt?: number;

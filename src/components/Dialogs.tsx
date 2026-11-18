@@ -1,10 +1,10 @@
 import { View, signal, computed } from "nsh";
 import * as s from "../store";
-import * as p from "../playback";
 import * as nav from "../navigation";
-import { PlaylistCover, shareTrack } from "./Music";
+import { SongDetails } from "./SongDetails";
+import { PlaylistCover } from "./Music";
 import { SleepTimerOptions } from "./SleepTimer";
-import { Modal, Label, Field, Pill, Toggle, Tool, Art, Press, palette as c, action, say, time } from "../ui";
+import { Modal, Label, Field, Pill, Toggle, Press, palette as c, action, say } from "../ui";
 
 function PlaylistDestinations(props: { close: () => void }) {
   const query = signal("");
@@ -71,6 +71,8 @@ export function Dialogs() {
     </Modal>
     <Modal open={nav.dialog() === "import"} title="导入音乐" close={close}><Label size={14} color={c().sub} style={{ lineHeight: 22 }}>粘贴 YouTube Music 歌曲、歌单链接或音频地址。</Label><Field testID="import-url" value={nav.draft()} onChange={nav.draft.set} placeholder="粘贴链接" onSubmit={() => void action(importLink)} /><Pill label={busy() ? "正在导入…" : "导入链接"} icon="link" primary disabled={busy() || !nav.draft().trim()} onPress={() => void action(importLink)} /><View style={{ height: 1, backgroundColor: c().line, marginVertical: 6 }} /><Pill label="选择本地音频" icon="upload" disabled={busy()} onPress={() => void action(async () => { const tracks = await s.importFiles(); close(); nav.libraryTab.set("songs"); nav.navigate("library", true); say(`已导入 ${tracks.length} 首音频`); })} /><Pill label="导入歌单／音乐库备份" icon="library" disabled={busy()} onPress={() => void action(async () => { await s.importLibrary(); close(); nav.navigate("library", true); say("音乐库已导入"); })} /></Modal>
     <Modal open={nav.dialog() === "sleep"} title="睡眠定时器" close={close}><SleepTimerOptions close={close} /></Modal>
-    <Modal open={nav.dialog() === "song-info" && !!nav.selectedTracks()[0]} title="歌曲信息" close={close}><View style={{ flexDirection: "row", gap: 16, alignItems: "center" }}><Art track={nav.selectedTracks()[0]} size={72} /><View style={{ flex: 1, minWidth: 0, gap: 8 }}><Label weight="600" lines={3}>{nav.selectedTracks()[0].title}</Label><Label color={c().sub} size={13}>{nav.selectedTracks()[0].artist}</Label></View></View><Each of={[{ name: "专辑", value: nav.selectedTracks()[0].album || "—" }, { name: "时长", value: time(nav.selectedTracks()[0].duration) }, { name: "来源", value: nav.selectedTracks()[0].source === "youtube" ? "YouTube Music" : "音频文件" }, { name: "歌曲 ID", value: nav.selectedTracks()[0].id }, ...(p.currentTrack()?.id === nav.selectedTracks()[0].id && p.streamInfo() ? [{ name: "格式", value: p.streamInfo()!.mimeType || "—" }, { name: "比特率", value: p.streamInfo()!.bitrate ? `${Math.round(p.streamInfo()!.bitrate! / 1000)} kbps` : "—" }, { name: "采样率", value: p.streamInfo()!.sampleRate ? `${p.streamInfo()!.sampleRate} Hz` : "—" }] : [])]}>{row => <View style={{ gap: 6, paddingVertical: 7 }}><Label size={12} color={c().faint}>{row().name}</Label><Label size={14}>{row().value}</Label></View>}</Each><Pill label="复制链接" icon="share" onPress={() => shareTrack(nav.selectedTracks()[0])} /></Modal>
+    <Modal open={nav.dialog() === "song-info"} title="歌曲信息" close={close}>
+      <If when={nav.dialog() === "song-info" ? nav.selectedTracks()[0] : null}>{track => <SongDetails track={track()} />}</If>
+    </Modal>
   </>;
 }

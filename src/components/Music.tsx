@@ -15,8 +15,8 @@ import { PlayingBars } from "../spotish/components/ui/playing";
 import { listItemEntrance, waveDelay, type ListWave, WAVE } from "../spotish/components/ui/motion";
 import { isTrack, type Track, type Collection, type Playlist, type CatalogItem } from "../model";
 
-export function shareTrack(track: Track) {
-  action(async () => { await Clipboard.writeText(track.source === "youtube" ? `https://music.youtube.com/watch?v=${track.id}` : track.url || track.title); say("歌曲链接已复制"); });
+export function shareTrack(track: Track, seconds?: number) {
+  action(async () => { await Clipboard.writeText(track.source === "youtube" ? `https://music.youtube.com/watch?v=${track.id}${seconds === undefined ? "" : `&t=${Math.floor(seconds)}s`}` : track.url || track.title); say("歌曲链接已复制"); });
 }
 export function songCommands(track: Track): CommandItem[] {
   const saved = s.libraryIds().includes(track.id);
@@ -36,7 +36,7 @@ export function songCommands(track: Track): CommandItem[] {
     ...(track.artistId ? [{ label: "查看歌手", icon: "artist", run: () => { nav.fullPlayer.set(false); nav.browse({ id: track.artistId!, browseId: track.artistId!, title: track.artist, subtitle: "", artwork: "", type: "artist" }); } }] : []),
     ...(track.albumId ? [{ label: "查看专辑", icon: "album", run: () => { nav.fullPlayer.set(false); nav.browse({ id: track.albumId!, browseId: track.albumId!, title: track.album || "专辑", subtitle: track.artist, artwork: track.artwork, type: "album" }); } }] : []),
     { label: "分享链接", icon: "share", run: () => shareTrack(track), separator: true },
-    { label: "歌曲信息…", icon: "info", run: () => { nav.selectedTracks.set([track]); nav.dialog.set("song-info"); } },
+    { testID: "open-song-info", label: "歌曲信息…", icon: "info", run: () => { nav.selectedTracks.set([track]); nav.dialog.set("song-info"); } },
   ];
 }
 export function SongMenu(props: { track: Track }) { return <CommandMenu label={`更多 ${props.track.title}`} testID={`song-menu-${props.track.id}`} items={songCommands(props.track)} />; }
