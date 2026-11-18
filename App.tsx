@@ -40,7 +40,7 @@ function Screen(props: { route: nav.Route }) {
     case "home": return <HomePage route={props.route} />;
     case "search": return <SearchPage route={props.route} />;
     case "library": return <LibraryPage route={props.route} />;
-    case "liked": case "history": case "playlist": return <SongCollectionPage kind={props.route.page} route={props.route} />;
+    case "top100": case "forgotten": case "files": case "liked": case "history": case "playlist": return <SongCollectionPage kind={props.route.page} route={props.route} />;
     case "collection": return <CollectionPage route={props.route} />;
     case "browse": return <PageBody route={props.route} inset={false}><ExplorePage /></PageBody>;
     case "downloads": return <PageBody route={props.route}><DownloadsPage /></PageBody>;

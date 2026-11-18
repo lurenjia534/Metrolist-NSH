@@ -91,6 +91,7 @@ export interface Lyrics {
 export interface Playlist {
   id: string;
   name: string;
+  pinned?: boolean;
   tracks: Track[];
   createdAt: number;
   updatedAt: number;
@@ -117,7 +118,7 @@ export interface StreamInfo {
   contentLength?: number;
 }
 export type LibrarySort = "recent" | "title" | "artist" | "playTime" | "songCount";
-export type PlaylistSort = "custom" | "recent" | "title" | "artist" | "album" | "playTime" | "duration";
+export type PlaylistSort = "custom" | "recent" | "title" | "artist" | "album" | "playTime" | "playCount" | "duration";
 export interface PlaylistSorting { sort: PlaylistSort; descending: boolean }
 export interface PlaylistEntry { track: Track; index: number }
 export type DownloadStatus = "queued" | "resolving" | "downloading" | "completed" | "failed" | "cancelled";

@@ -66,7 +66,8 @@ test("batch play-next and add-to-playlist preserve displayed order and repeated 
   await app.press("id:app-dialog >> label:Saved selection");
   await app.waitUntil(() => playlistIds(app, target.id).length === 4);
   expect(playlistIds(app, target.id)).toEqual([alpha.id, alpha.id, beta.id, gamma.id]);
-  await app.press("id:selection-actions"); await app.press("id:selection-clear");
+  await app.waitFor("id:app-dialog", { state: "gone" });
+  await app.press("id:selection-actions"); await app.waitFor("id:selection-clear"); await app.press("id:selection-clear");
   await app.waitFor("text:已选择 0 首");
   expect(app.enabled("id:selection-next")).toBe(false);
   await app.press("id:selection-done");
@@ -231,4 +232,103 @@ test("playlist chooser filters destinations, keeps selections across searches an
   await app.press("id:selection-playlist"); await app.waitFor("id:playlist-destination-search");
   expect(app.value("id:playlist-destination-search")).toBe("");
   expect(app.shows("id:playlist-save-targets")).toBe(false);
+});
+
+async function playlistCommand(app: App, id: string) {
+  await app.press("label:整理歌单");
+  await app.waitFor(`id:playlist-${id}`);
+  await app.press(`id:playlist-${id}`);
+}
+
+test("playlist copies are independent and deduplication keeps the first occurrence", async () => {
+  const app = await openPlaylist();
+  await playlistCommand(app, "copy");
+  await app.waitFor("text:Selection playlist（副本）");
+  const copy = saved(app).playlists.find((row: { name: string }) => row.name.endsWith("（副本）"));
+  expect(playlistIds(app, copy.id)).toEqual(playlistIds(app));
+  await playlistCommand(app, "deduplicate");
+  await app.waitUntil(() => playlistIds(app, copy.id).length === 3);
+  expect(playlistIds(app, copy.id)).toEqual([alpha.id, beta.id, gamma.id]);
+  expect(playlistIds(app)).toEqual([alpha.id, beta.id, alpha.id, gamma.id]);
+});
+
+test("pinned playlists move to the front after restart and can be unpinned", async () => {
+  const app = await openPlaylist();
+  await app.press("id:desktop-sidebar >> label:Saved selection");
+  await playlistCommand(app, "pin");
+  await app.waitUntil(() => saved(app).playlists.find((row: { id: string }) => row.id === target.id).pinned === true);
+  const restarted = await open("../App.tsx", { width: 1440, height: 1100, platform: "linux", storage: app.storage(), network });
+  await restarted.waitFor("id:desktop-sidebar >> label:Saved selection");
+  const titles = restarted.texts().filter(name => name === target.name || name === playlist.name);
+  expect(titles.slice(0, 2)).toEqual([target.name, playlist.name]);
+  await restarted.press("id:desktop-sidebar >> label:Saved selection");
+  await playlistCommand(restarted, "pin");
+  await restarted.waitUntil(() => !saved(restarted).playlists.find((row: { id: string }) => row.id === target.id).pinned);
+});
+
+test("playlist commits full sorted order under a filter and moves selected occurrences together", async () => {
+  const app = await openPlaylist();
+  await app.press("id:collection-sort"); await app.press("id:collection-sort-duration");
+  await app.type("id:song-collection-filter", "Alpha");
+  await playlistCommand(app, "commit-sort");
+  await app.waitFor("text:找到 2 首 · 自定义顺序");
+  expect(playlistIds(app)).toEqual([beta.id, alpha.id, alpha.id, gamma.id]);
+  await app.press("id:collection-select"); await app.press("id:selection-all");
+  await app.press("id:selection-actions"); await app.press("id:selection-move-end");
+  await app.waitUntil(() => playlistIds(app)[1] === gamma.id);
+  expect(playlistIds(app)).toEqual([beta.id, gamma.id, alpha.id, alpha.id]);
+  await app.press("id:collection-select"); await app.press("id:selection-all");
+  await app.press("id:selection-actions"); await app.press("id:selection-move-start");
+  await app.waitUntil(() => playlistIds(app)[0] === alpha.id);
+  expect(playlistIds(app)).toEqual([alpha.id, alpha.id, beta.id, gamma.id]);
+});
+
+test("local playlists intersect likes with offline files and downloads, and sort by plays", async () => {
+  const file = { ...gamma, source: "audio", url: "file:///music/gamma.mp3" };
+  const now = Date.now();
+  const app = await open("../App.tsx", { width: 1440, height: 1100, platform: "linux", network, storage: {
+    "metrolist.settings": storage["metrolist.settings"],
+    "metrolist.downloads": JSON.stringify([{ id: beta.id, track: beta, status: "completed", url: "file:///beta.mp3" }]),
+    "metrolist.library": JSON.stringify({ ...snapshot, tracks: [alpha, beta, file], playlists: [{ ...playlist, tracks: [alpha, beta, file] }],
+      listenEvents: [gamma.id, alpha.id, gamma.id].map((trackId, id) => ({ id: String(id), trackId, startedAt: now - id, seconds: trackId === alpha.id ? 150 : 10 })) }),
+  } });
+  await app.waitFor("id:desktop-sidebar >> label:Selection playlist"); await app.press("id:desktop-sidebar >> label:Selection playlist");
+  await app.waitFor("id:playlist-filter-offline"); await app.press("id:playlist-filter-offline");
+  await app.waitFor("id:collection-row-0", { state: "gone" });
+  expect(app.shows("id:collection-row-1")).toBe(true);
+  expect(app.shows("id:collection-row-2")).toBe(true);
+  await app.press("id:playlist-filter-liked"); await app.waitFor("id:collection-row-2", { state: "gone" });
+  expect(app.shows("id:collection-row-1")).toBe(true);
+  await app.press("id:collection-clear-filter");
+  await app.press("id:collection-sort"); await app.press("id:collection-sort-playCount");
+  await app.waitFor("text:播放次数 ↓");
+  expect(app.texts().filter(name => [alpha.title, beta.title, gamma.title].includes(name))).toEqual([gamma.title, alpha.title, beta.title]);
+});
+
+test("library opens time-windowed top songs, forgotten favorites and imported files", async () => {
+  const now = Date.now();
+  const day = 86400000;
+  const file = { ...gamma, source: "audio", url: "local:gamma" };
+  const remote = { ...alpha, id: "url:remote", title: "Remote file", source: "audio", url: "https://audio.test/remote.mp3" };
+  const app = await open("../App.tsx", { width: 1440, height: 1100, platform: "linux", network, storage: {
+    ...storage, "metrolist.library": JSON.stringify({ ...snapshot, tracks: [alpha, beta, file, remote], libraryIds: [file.id, remote.id],
+      listenEvents: [
+        { id: "old", trackId: alpha.id, startedAt: now - 50 * day, seconds: 200 },
+        { id: "recent", trackId: alpha.id, startedAt: now - 2 * day, seconds: 10 },
+        { id: "today", trackId: beta.id, startedAt: now - 60000, seconds: 20 },
+      ] }),
+  } });
+  const visit = async (name: string) => {
+    await app.press("id:nav-library"); await app.waitFor(`id:library-auto-${name}`);
+    await app.press(`id:library-auto-${name}`); await app.waitFor(`id:page-${name}`);
+  };
+  await visit("top100");
+  expect(app.texts().filter(name => name === alpha.title || name === beta.title)).toEqual([alpha.title, beta.title]);
+  await app.press("id:top-period-1"); await app.waitFor(`id:collection-row-${alpha.id}`, { state: "gone" });
+  await app.press("id:collection-play"); await app.waitUntil(() => queue(app).title === "最常听的 100 首");
+  expect(queue(app).queue.map((row: { id: string }) => row.id)).toEqual([beta.id]);
+  await visit("forgotten"); expect(app.shows(`id:collection-row-${alpha.id}`)).toBe(true);
+  expect(app.shows(`id:collection-row-${beta.id}`)).toBe(false);
+  await visit("files"); expect(app.shows(`id:collection-row-${gamma.id}`)).toBe(true);
+  expect(app.shows(`id:collection-row-${remote.id}`)).toBe(false);
 });

@@ -44,7 +44,7 @@ export function downloadTracks(tracks: Track[]) {
 export function SelectionActions(props: {
   tracks: Track[]; title: string; visibleCount: number; selectedVisibleCount: number;
   onAll: () => void; onClear: () => void; onDone: () => void;
-  queueMode?: boolean; onPlaySelection?: () => void; onMoveSelection?: (edge: "start" | "end") => void; removeLabel: string; onRemove: () => void;
+  queueMode?: boolean; onPlaySelection?: () => void; onMoveSelection?: (edge: "start" | "end") => void; removeLabel?: string; onRemove?: () => void;
 }) {
   const empty = () => props.tracks.length === 0;
   const allLiked = () => props.tracks.every(track => s.isLiked(track.id));
@@ -83,10 +83,10 @@ export function SelectionActions(props: {
         { testID: "selection-like", label: allLiked() && !empty() ? "取消喜欢" : "喜欢所选歌曲", icon: "heart", disabled: empty(), run: setLikes },
         ...(account.signedIn() ? [{ label: "加入 YouTube Music 歌单", icon: "plus", disabled: !props.tracks.some(track => track.source === "youtube"), run: () => cloud.addToCloudPlaylist(props.tracks) }] : []),
         ...(props.onMoveSelection ? [
-          { testID: "selection-move-start", label: "移到队首", icon: "up", disabled: empty() || p.remoteControlled(), run: () => props.onMoveSelection!("start") },
-          { testID: "selection-move-end", label: "移到队尾", icon: "down", disabled: empty() || p.remoteControlled(), run: () => props.onMoveSelection!("end") },
+          { testID: "selection-move-start", label: props.queueMode ? "移到队首" : "移到歌单开头", icon: "up", disabled: empty() || (!!props.queueMode && p.remoteControlled()), run: () => props.onMoveSelection!("start") },
+          { testID: "selection-move-end", label: props.queueMode ? "移到队尾" : "移到歌单末尾", icon: "down", disabled: empty() || (!!props.queueMode && p.remoteControlled()), run: () => props.onMoveSelection!("end") },
         ] : []),
-        { testID: "selection-remove", label: props.removeLabel, icon: "trash", danger: true, separator: true, disabled: empty() || (!!props.queueMode && p.remoteControlled()), run: props.onRemove },
+        ...(props.onRemove ? [{ testID: "selection-remove", label: props.removeLabel!, icon: "trash", danger: true, separator: true, disabled: empty() || (!!props.queueMode && p.remoteControlled()), run: props.onRemove }] : []),
       ]} />
     </View>
   </View>;

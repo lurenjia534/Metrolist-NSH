@@ -91,3 +91,14 @@ test("Explore tab changes update their title and Back restores all loaded charts
   await app.back(); await app.waitFor("id:page-search");
   expect(app.shows("id:page-browse")).toBe(false);
 });
+
+test("phone library opens an automatic playlist and returns to the playlist tab", async () => {
+  const app = await open("../App.tsx", { width: 340, height: 900, platform: "android", storage, network, host });
+  await app.press("id:nav-mobile-library"); await app.waitFor("id:library-playlists");
+  await app.press("id:library-playlists"); await app.press("id:library-auto-top100");
+  await app.waitFor("id:top-period-7"); await app.press("id:top-period-7");
+  expect(app.shows("id:page-top100")).toBe(true);
+  await app.back(); await app.waitFor("id:page-library");
+  expect(app.shows("id:library-auto-files")).toBe(true);
+  expect(app.spanStyle("id:nav-mobile-library >> text:音乐库").fontWeight).toBe(600);
+});

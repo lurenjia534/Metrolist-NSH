@@ -98,6 +98,12 @@ function matches(query: string, ...fields: string[]) {
   const text = normalized(fields.join(" "));
   return normalized(query).trim().split(/\s+/).every((word) => text.includes(word));
 }
+const playCounts = computed(() => {
+  const counts = new Map<string, number>();
+  for (const event of listenEvents()) counts.set(event.trackId, (counts.get(event.trackId) ?? 0) + 1);
+  return counts;
+});
+function comparePlayCounts(a: Track, b: Track) { return (playCounts().get(a.id) ?? 0) - (playCounts().get(b.id) ?? 0); }
 function trackSeconds(id: string) { return listenEvents().filter((event) => event.trackId === id).reduce((sum, event) => sum + event.seconds, 0); }
 function compareAlbums(a: Track, b: Track, descending: boolean) {
   if (!a.album || !b.album) return Number(!a.album) - Number(!b.album);
@@ -110,7 +116,7 @@ export function sortTracks(items: Track[], sort: LibrarySort | PlaylistSort, des
   if (sort === "album") return [...items].sort((a, b) => compareAlbums(a, b, descending));
   const result = [...items].sort((a, b) => sort === "artist" ? a.artist.localeCompare(b.artist) || a.title.localeCompare(b.title)
     : sort === "playTime" ? trackSeconds(a.id) - trackSeconds(b.id)
-    : sort === "duration" ? a.duration - b.duration : a.title.localeCompare(b.title));
+    : sort === "playCount" ? comparePlayCounts(a, b) : sort === "duration" ? a.duration - b.duration : a.title.localeCompare(b.title));
   return descending ? result.reverse() : result;
 }
 function sortPlaylists(items: Playlist[]) {
@@ -119,7 +125,7 @@ function sortPlaylists(items: Playlist[]) {
     : sort === "songCount" ? a.tracks.length - b.tracks.length
     : sort === "playTime" ? a.tracks.reduce((n, t) => n + trackSeconds(t.id), 0) - b.tracks.reduce((n, t) => n + trackSeconds(t.id), 0)
     : a.name.localeCompare(b.name));
-  return libraryDescending() ? result.reverse() : result;
+  return pinnedFirst(libraryDescending() ? result.reverse() : result);
 }
 function sortCollections(items: SavedCollection[]) {
   const sort = librarySort();
@@ -624,8 +630,17 @@ function makePlaylist(name: string, tracks: Track[] = []): Playlist {
   };
 }
 
-export function createPlaylist(name: string): Playlist {
-  const playlist = makePlaylist(name);
+export function pinnedFirst(items: Playlist[]) {
+  return [...items.filter(item => item.pinned), ...items.filter(item => !item.pinned)];
+}
+
+export function togglePlaylistPin(id: string) {
+  playlists.update(items => items.map(item => item.id === id ? { ...item, pinned: !item.pinned } : item));
+  void saveLibrary();
+}
+
+export function createPlaylist(name: string, tracks: Track[] = []): Playlist {
+  const playlist = makePlaylist(name, tracks);
   playlists.update((items) => [...items, playlist]);
   void saveLibrary();
   return playlist;
@@ -703,9 +718,20 @@ export function playlistEntries(id: string, query = "", sort: PlaylistSort = "cu
   if (sort === "album") return entries.sort((a, b) => compareAlbums(a.track, b.track, descending));
   entries.sort((a, b) => sort === "recent" ? a.index - b.index : sort === "artist" ? a.track.artist.localeCompare(b.track.artist)
     : sort === "playTime" ? trackSeconds(a.track.id) - trackSeconds(b.track.id)
-    : sort === "duration" ? a.track.duration - b.track.duration : a.track.title.localeCompare(b.track.title));
+    : sort === "playCount" ? comparePlayCounts(a.track, b.track) : sort === "duration" ? a.track.duration - b.track.duration : a.track.title.localeCompare(b.track.title));
   return descending ? entries.reverse() : entries;
 }
+export function movePlaylistEntries(id: string, indices: number[], edge: "start" | "end") {
+  const selected = new Set(indices);
+  playlists.update(items => items.map(item => {
+    if (item.id !== id) return item;
+    const moved = item.tracks.filter((_, index) => selected.has(index));
+    const kept = item.tracks.filter((_, index) => !selected.has(index));
+    return { ...item, tracks: edge === "start" ? [...moved, ...kept] : [...kept, ...moved], updatedAt: Date.now() };
+  }));
+  void saveLibrary();
+}
+
 export function movePlaylistTrack(id: string, from: number, to: number) {
   playlists.update((items) => items.map((item) => {
     if (item.id !== id || to < 0 || to >= item.tracks.length || from === to) return item;
