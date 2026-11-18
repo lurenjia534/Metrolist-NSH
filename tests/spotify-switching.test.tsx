@@ -151,16 +151,18 @@ test("Android hands notification and headset controls to the selected workspace"
       },
     },
   });
-  const controlSettings = () => app.host.calls().filter(call => call.name === "app.audio.settings").map(call => call.data);
+  const controlSettings = () => Object.assign({}, ...app.host.calls()
+    .filter(call => call.name === "app.audio.settings")
+    .map(call => call.data));
   const plays = () => app.host.calls().filter(call => call.name === "app.audio.play").length;
   await app.waitFor("id:metrolist-app");
-  expect(controlSettings().at(-1)).toMatchObject({ remoteControlled: false });
+  expect(controlSettings()).toMatchObject({ remoteControlled: false });
 
   await app.press("id:provider-spotify");
   await app.waitFor("id:spotify-connect");
   // Android's media service handles play/pause directly, so the native
   // command gate must change as well as the JS host-event handler.
-  expect(controlSettings().at(-1)).toMatchObject({ remoteControlled: true });
+  expect(controlSettings()).toMatchObject({ remoteControlled: true });
   expect(app.host.calls().some(call => call.name === "app.audio.pause")).toBe(true);
   const before = plays();
   await app.host.send("media.command", { action: "play" });
@@ -168,7 +170,7 @@ test("Android hands notification and headset controls to the selected workspace"
 
   await app.press("id:provider-youtube");
   await app.waitFor("id:metrolist-app");
-  expect(controlSettings().at(-1)).toMatchObject({ remoteControlled: false });
+  expect(controlSettings()).toMatchObject({ remoteControlled: false });
   await app.host.send("media.command", { action: "play" });
   expect(plays()).toBeGreaterThan(before);
 });
