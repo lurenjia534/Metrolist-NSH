@@ -228,3 +228,34 @@ test("queue block moves preserve display order and playback starts at the first 
   expect(player(app).queue).toHaveLength(4);
   expect(calls(app, "app.audio.open")).toHaveLength(opened + 1);
 });
+
+test("manual lyric lookup previews the chosen recording, saves its LRC and combines song and global offsets", async () => {
+  const raw = "[00:10.00]Selected recording";
+  const app = await open("../App.tsx", { width: 1280, height: 1080, platform: "android", host: { handlers }, storage, network: { ...network,
+    "GET https://gateway.test/api/lyrics/search?title=Alternate&artist=Experience%20artist&duration=180": { body: [
+      { id: 99, title: "Alternate", artist: alpha.artist, album: "Edition", duration: 182, plainLyrics: "Selected recording", syncedLyrics: raw, instrumental: false },
+    ] },
+  } });
+  await app.waitFor("id:mini-player"); await app.press("id:open-player"); await app.press("id:player-tab-lyrics"); await app.waitFor("id:lyric-line-1");
+  await app.press("id:lyrics-options"); await app.press("id:lyrics-search");
+  await app.clear("id:lyric-query-title"); await app.type("id:lyric-query-title", "Alternate"); await app.press("id:lyric-query-search");
+  await app.waitFor("id:lyric-match-99"); await app.press("id:lyric-match-99");
+  await app.waitFor("id:app-dialog >> text:Selected recording"); await app.press("id:lyric-use-match");
+  await app.waitFor("id:app-dialog", { state: "gone" }); await app.waitFor("label:0:10 Selected recording");
+  await app.press("id:lyrics-options"); await app.press("id:lyrics-song-offset");
+  await app.clear("id:song-offset-value"); await app.type("id:song-offset-value", "-250"); await app.press("id:song-offset-save");
+  await app.waitFor("id:app-dialog", { state: "gone" }); await app.press("id:lyric-line-0");
+  expect(calls(app, "app.audio.seek").at(-1)?.data).toEqual({ position: 10.25 });
+  expect(settings(app).songLyricOffsets).toEqual({ [alpha.id]: -250 });
+  await app.press("id:lyrics-options"); await app.press("id:lyrics-copy-lrc");
+  await app.waitUntil(() => app.clipboard() === raw);
+});
+
+test("selected lyric lines are copied in song order with the title, artist and song link", async () => {
+  const app = await open("../App.tsx", { width: 1280, height: 1080, platform: "android", host: { handlers }, storage, network });
+  await app.waitFor("id:mini-player"); await app.press("id:open-player"); await app.press("id:player-tab-lyrics"); await app.waitFor("id:lyric-line-1");
+  await app.press("id:lyrics-options"); await app.press("id:lyrics-excerpt");
+  await app.press("id:excerpt-line-1"); await app.press("id:excerpt-line-0"); await app.press("id:lyric-copy-excerpt");
+  await app.waitUntil(() => !!app.clipboard()?.includes(alpha.title));
+  expect(app.clipboard()).toBe(lyrics.plainLyrics + "\n\n" + alpha.title + " · " + alpha.artist + "\nhttps://music.youtube.com/watch?v=" + alpha.id);
+});

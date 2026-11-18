@@ -34,7 +34,7 @@ export const settings = signal<Settings>({
   persistQueue: true, rememberPlayModes: true, uniqueQueueAdditions: false, downloadOnLike: false,
   historySeconds: 30, pauseSearchHistory: false, hideRecentSearches: false,
   activeLyricAlignment: "inherit", lyricLineSpacing: 1.4, lyricTapToSeek: true, lyricAutoScroll: true,
-  lyricFontSize: "medium", lyricAlignment: "center", lyricsOffset: 0,
+  lyricFontSize: "medium", lyricAlignment: "center", lyricsOffset: 0, songLyricOffsets: {},
   volume: 0.7, rate: 1, shuffle: false, repeat: "off",
   skipSilence: false, seekSeconds: 10, sleepMinutes: 15, sleepFinishSong: false,
 });
