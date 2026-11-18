@@ -1,7 +1,7 @@
 # Spotify 独立工作区
 
 Metrolist NSH 0.8 将 [Spotish](https://github.com/huacnlee/spotish/tree/63d320103cf87e3731844b54e71df7f786724a90)
-的原生界面、动画和 Rust 播放核心嵌入应用。顶部工作区切换器选择
+的原生界面、动画和 Rust 播放核心嵌入应用。工作区切换器选择
 YouTube Music 或 Spotify；两边各自拥有账号、曲库、导航和播放器。
 
 ## 平台能力
@@ -102,9 +102,19 @@ SPOTISH_BROWSER=/usr/bin/chromium ./Metrolist
 ## 工作区切换行为
 
 切换先暂停当前播放器，再显示另一套界面。返回时保留曲目、队列与导航页面，
-不会自动恢复播放。顶部选择记入 `metrolist.provider`，下次打开恢复上次选择。
+不会自动恢复播放。选择记入 `metrolist.provider`，下次打开恢复上次选择。
 Spotify 的界面存储使用 `spotify:` 前缀，YouTube Music 使用原有 `metrolist.*`
 记录；两边的收藏、登录、搜索和主题偏好各自使用自己的状态。
+
+切换器的位置随窗口而定（`src/components/ProviderSwitcher.tsx`）：
+
+- 桌面和宽浏览器窗口：窗口顶部的一行，两个服务并排（`ProviderSwitcher`）。
+- 手机（Android / iOS，以及手机宽度的浏览器窗口）：没有常驻的顶栏。根页面
+  （YouTube Music 的首页 / 搜索 / 音乐库标签页，Spotify 的 Home / Search /
+  Liked Songs）页头的标题位置显示当前服务的名称（`ProviderTitle`），点按后
+  以底部面板列出两个服务。打开在其上的页面（设置、歌单、专辑等）显示自己的
+  标题和返回，回到根页面即可切换。Spotify 不可用、没有页面可显示时，错误
+  状态上方保留同一个服务标题。
 
 从 YouTube Music 切换到 Spotify 时，一起听房间会断开，防止房间消息随后在
 后台启动 YouTube 播放。浏览器 / Android 发来的 YouTube 媒体控制命令只在

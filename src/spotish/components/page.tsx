@@ -3,14 +3,19 @@
 // (nsh-platform-linux navigation.rs `window_color`), so the page paints
 // over it. On the desktops the header is drawn inside the page, over an
 // optional `backdrop` that reaches the top; phones and terminals take the
-// stack's header.
+// stack's header, a root's titled with the service, which opens the
+// services (`ProviderTitle`).
 
-import { type JSX, View } from "nsh";
+import { type JSX, platform, View } from "nsh";
 import { NavPage } from "nsh/base";
 import { AccountAction, PageHeader } from "./header";
 import { layout } from "./layout";
 import { terminal } from "./ui/controls";
 import { pageAnimation } from "../nav";
+import { ProviderTitle } from "../../components/ProviderSwitcher";
+
+/** iOS and Android draw the stack's header; elsewhere the page's own. */
+const systemHeader = platform.os === "android" || platform.os === "ios";
 
 export function AppPage(props: {
   title: string;
@@ -18,6 +23,8 @@ export function AppPage(props: {
   /** Whether the page is the one shown, on top of the stack (tracked): its
    * header is the window's header region then (Ctrl+Up). */
   shown: () => boolean;
+  /** The page of a root of the stack (Home, Search, the phone's Liked Songs). */
+  root?: boolean;
   backdrop?: JSX.Element;
   children: JSX.Element;
 }) {
@@ -25,7 +32,8 @@ export function AppPage(props: {
   return (
     <NavPage
       title={props.title}
-      header={inside() ? undefined : <PageHeader title={props.title} shown={props.shown} />}
+      header={inside() ? undefined : <PageHeader title={props.title} shown={props.shown} root={props.root && !systemHeader} />}
+      headerTitle={systemHeader && props.root ? <ProviderTitle /> : undefined}
       headerRight={<AccountAction />}
       testID={props.testID}
       animation={pageAnimation()}

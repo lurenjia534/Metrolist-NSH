@@ -20,7 +20,7 @@ import {
 } from "../components/ui/controls";
 import { AFTER_REVEAL, createListWave, enter } from "../components/ui/motion";
 import { createListGroup, createListKeys, KEYS_VIEWABILITY, type ListGroup } from "../components/ui/list-keys";
-import { currentRoute, rootOpens } from "../nav";
+import { currentRoute, isRoot, rootOpens } from "../nav";
 import {
   EmptyState,
   ErrorState,
@@ -262,6 +262,7 @@ export function CollectionPage(props: { uri: string }) {
     <AppPage
       title={title()}
       testID={`page-${props.uri}`}
+      root={isRoot({ name: "collection", uri: props.uri })}
       shown={() => {
         const route = currentRoute();
         return route.name === "collection" && route.uri === props.uri;

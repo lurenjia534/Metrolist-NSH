@@ -29,7 +29,7 @@ function Greeting(props: { text: string; entrance?: boolean }) {
 export function HomePage() {
   const home = homeQuery();
   return (
-    <AppPage title="Home" testID="page-home" shown={() => currentRoute().name === "home"}>
+    <AppPage title="Home" testID="page-home" root shown={() => currentRoute().name === "home"}>
       {/* Virtualized both ways: the sections down the page are a list, and
           each section's cards a list across, so only what is near the view
           exists. */}

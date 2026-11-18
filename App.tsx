@@ -19,9 +19,9 @@ import { ToastHost } from "./src/components/Toasts";
 import { Dialogs } from "./src/components/Dialogs";
 import { TrackRow } from "./src/components/Music";
 import { Sidebar } from "./src/components/Sidebar";
-import { ErrorBanner, HeaderActions, PageBody, PageHeader, RouteContext, routeTitle } from "./src/components/Page";
+import { ErrorBanner, HeaderActions, PageBody, PageHeader, RouteContext, routeTitle, serviceTitled } from "./src/components/Page";
 import { barSize, layout, railSidebar, sidebarShown, sidebarWidth, systemHeader } from "./src/layout";
-import { ProviderSwitcher, providerRail } from "./src/components/ProviderSwitcher";
+import { ProviderSwitcher, ProviderTitle, providerInHeader } from "./src/components/ProviderSwitcher";
 import { activeProvider, applyWorkspaceTheme, initializeProviders, providerError, providersReady, selectProvider, switchingProvider } from "./src/providers";
 import { SpotifyWorkspace } from "./src/spotish/App";
 import { IconButton, focusRing } from "./src/spotish/components/ui/controls";
@@ -30,7 +30,8 @@ import { animateLayoutOn } from "./src/spotish/components/ui/motion";
 // The YouTube Music workspace in the Spotify workspace's shells
 // (src/spotish/shells): on the desktops the sidebar down the left and the
 // pages on the window's ground, the player floating over their bottom; on
-// phones one column, the mini player and tabs.
+// phones one column, the mini player and tabs, and a tab's page headed by
+// the service's name, which opens the services (`ProviderTitle`).
 const sidePlayer = signal(false);
 const primary = [{ page: "home", label: "首页", icon: "home" }, { page: "search", label: "搜索", icon: "search" }, { page: "library", label: "音乐库", icon: "library" }] as const;
 
@@ -53,7 +54,7 @@ function Screen(props: { route: nav.Route }) {
 /** The stack of pages; each covers the stack's own background. */
 function Pages() {
   return <NavStack state={nav.stack} testID="main-navigation" class="min-h-0 min-w-0 flex-1" onChange={({ routes }) => nav.onRoutesChanged(routes)}>{route => <NavPage title={routeTitle(route)} animation={reduceMotion() ? "none" : primary.some(item => item.page === route.page) ? "fade" : "slide"} popOnBack={!nav.handlesBack(route)} onBackPress={() => { if (nav.handlesBack(route)) nav.goBack(); }}
-    headerVisible={systemHeader} headerLeft={systemHeader && nav.handlesBack(route) ? <IconButton testID="navigate-back" name="chevronLeft" label="返回" size={22} onPress={nav.goBack} /> : undefined} headerRight={systemHeader ? <HeaderActions /> : undefined}
+    headerVisible={systemHeader} headerTitle={systemHeader && serviceTitled(route) ? <ProviderTitle /> : undefined} headerLeft={systemHeader && nav.handlesBack(route) && !serviceTitled(route) ? <IconButton testID="navigate-back" name="chevronLeft" label="返回" size={22} onPress={nav.goBack} /> : undefined} headerRight={systemHeader ? <HeaderActions /> : undefined}
     headerStyle={{ backgroundColor: c().bg, color: c().text, tintColor: c().text }} statusBar={{ foreground: s.settings().theme === "light" || s.settings().theme === "system" && colorScheme() === "light" ? "dark" : "light" }}>
     <RouteContext.Provider value={{ key: route.key, page: route.page }}>
       <View class={systemHeader ? "min-h-0 flex-1 bg-sidebar" : "absolute inset-0 bg-sidebar"}>
@@ -137,11 +138,11 @@ function App() {
   void together.initializeTogether().catch(s.showError);
   keymap.bind("mod+shift+1", () => void selectProvider("youtube"));
   keymap.bind("mod+shift+2", () => void selectProvider("spotify"));
-  return <View testID="metrolist-shell" class="min-h-0 min-w-0 flex-1 bg-sidebar" style={{ flexDirection: providerRail() ? "row" : "column" }}>
-    <ProviderSwitcher />
+  return <View testID="metrolist-shell" class="min-h-0 min-w-0 flex-1 bg-sidebar">
+    <If when={!providerInHeader()}><ProviderSwitcher /></If>
 
     <View class="min-h-0 min-w-0 flex-1" style={{ pointerEvents: switchingProvider() ? "none" : "auto" }}>
-      <If when={providerError()}><View testID="provider-error" class="flex-row items-center gap-3 bg-secondary px-4 py-2"><Text class="flex-1 text-sm text-foreground">{providerError()}</Text><Tool icon="close" label="关闭切换提示" onPress={() => providerError.set("")} /></View></If>
+      <If when={providerError()}><View testID="provider-error" class={`flex-row items-center gap-3 bg-secondary px-4 py-2 ${providerInHeader() ? "pt-[calc(env(safe-area-inset-top)+8px)]" : ""}`}><Text class="flex-1 text-sm text-foreground">{providerError()}</Text><Tool icon="close" label="关闭切换提示" onPress={() => providerError.set("")} /></View></If>
       <If when={providersReady()}>
         <If when={activeProvider() === "youtube"}><YouTubeWorkspace /></If>
         <If when={activeProvider() === "spotify"}><SpotifyWorkspace /></If>

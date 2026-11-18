@@ -31,6 +31,12 @@ const unconfiguredSpotify = {
   capabilities: { volume: false, lyrics: true },
 };
 
+/** A phone has no bar of services: the header's title lists them. */
+async function chooseOnPhone(app: Awaited<ReturnType<typeof open>>, provider: "youtube" | "spotify") {
+  await app.press("id:provider-switcher");
+  await app.press(`id:provider-${provider}`);
+}
+
 test("switching keeps each service's page and queue and pauses the previous player", async () => {
   const app = await open("../App.tsx", { width: 1440, height: 940, platform: "web", storage, network, host });
   await app.waitFor("id:metrolist-app");
@@ -118,10 +124,10 @@ for (const platform of ["web", "android", "ios"] as const) {
     await app.waitFor("id:spotify-client-id");
     expect(app.shows("id:spotify-demo-banner")).toBe(false);
     expect(app.texts()).not.toContain("Good evening, Ada");
-    await app.press("id:provider-youtube");
+    await chooseOnPhone(app, "youtube");
     await app.waitFor("id:metrolist-app");
     await app.waitFor("id:nav-mobile-home");
-    await app.press("id:provider-spotify");
+    await chooseOnPhone(app, "spotify");
     await app.waitFor("id:spotify-connect");
     expect(app.storage()["metrolist.provider"]).toBe("spotify");
   });
@@ -158,7 +164,7 @@ test("Android hands notification and headset controls to the selected workspace"
   await app.waitFor("id:metrolist-app");
   expect(controlSettings()).toMatchObject({ remoteControlled: false });
 
-  await app.press("id:provider-spotify");
+  await chooseOnPhone(app, "spotify");
   await app.waitFor("id:spotify-connect");
   // Android's media service handles play/pause directly, so the native
   // command gate must change as well as the JS host-event handler.
@@ -168,7 +174,7 @@ test("Android hands notification and headset controls to the selected workspace"
   await app.host.send("media.command", { action: "play" });
   expect(plays()).toBe(before);
 
-  await app.press("id:provider-youtube");
+  await chooseOnPhone(app, "youtube");
   await app.waitFor("id:metrolist-app");
   expect(controlSettings()).toMatchObject({ remoteControlled: false });
   await app.host.send("media.command", { action: "play" });

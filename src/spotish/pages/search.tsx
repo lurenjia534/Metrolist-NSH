@@ -43,7 +43,7 @@ export function SearchPage() {
   const shown = () => (term() ? results()?.found : undefined);
 
   return (
-    <AppPage title="Search" testID="page-search" shown={() => currentRoute().name === "search"}>
+    <AppPage title="Search" testID="page-search" root shown={() => currentRoute().name === "search"}>
       {/* A wide desktop keeps the field in the header's top-right corner;
           narrow desktops, phones and terminals give it a row of its own. */}
       <If when={layout() !== "desktop" || narrowDesktopHeader() || terminal}>

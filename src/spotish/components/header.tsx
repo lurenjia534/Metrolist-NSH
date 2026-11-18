@@ -19,6 +19,7 @@ import { closeMainWindow, hasAppWindow } from "../platform/desktop";
 import { sidebarCollapsed, toggleSidebar } from "../state/sidebar";
 import { ActionButton, IconButton, terminal } from "./ui/controls";
 import { controlsInTitleBar } from "./ui/title-bar";
+import { ProviderTitle, providerInHeader } from "../../components/ProviderSwitcher";
 
 /** Log in while signed out; Premium for a free account; nothing
  * while the session is not known yet. */
@@ -153,11 +154,12 @@ export function TrailingControls() {
   );
 }
 
-/** The header of a page: Back (and Forward where there is room), the
+/** The header of a page: Back (and Forward where there is room; on a
+ * phone-sized root, the service, which opens the services), the
  * page's title when `title` shows, and the account's action. Where the
  * title bar holds the controls (`controlsInTitleBar`), only the title, or
  * a little room above the page. */
-export function PageHeader(props: { title: string; showTitle?: boolean; shown?: () => boolean }) {
+export function PageHeader(props: { title: string; showTitle?: boolean; shown?: () => boolean; root?: boolean }) {
   const desktop = () => layout() === "desktop";
   return (
     <If
@@ -185,7 +187,7 @@ export function PageHeader(props: { title: string; showTitle?: boolean; shown?: 
               : "min-h-14 items-center gap-2 px-4 pt-[env(safe-area-inset-top)]"
         }
       >
-        <NavControls />
+        <If when={props.root && providerInHeader()} else={<NavControls />}><ProviderTitle /></If>
         <If when={props.showTitle ?? false}>
           <Text role="header" class="line-clamp-1 flex-1 text-lg font-bold text-foreground">
             {props.title}

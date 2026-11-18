@@ -72,10 +72,17 @@ for (const platform of ["web", "android", "ios"] as const) {
       await app.waitFor("id:player >> role:button[Remove from Liked Songs]");
     }
 
-    await app.press("id:provider-youtube");
+    // A phone lists the services from a root page's title; the desktop
+    // keeps them across the window's top.
+    const choose = async (provider: "youtube" | "spotify") => {
+      if (platform !== "web") await app.press("id:provider-switcher");
+      await app.press(`id:provider-${provider}`);
+    };
+    if (platform !== "web") { await app.back(); await app.waitFor(playlistCard); }
+    await choose("youtube");
     await app.waitFor("id:metrolist-app");
     expect(app.shows("id:spotify-workspace")).toBe(false);
-    await app.press("id:provider-spotify");
+    await choose("spotify");
     await app.waitFor(`${bar} >> role:button[Play]`);
     expect(app.texts()).toContain("Protocol Song One");
     if (platform !== "web") {

@@ -155,6 +155,10 @@ export function openRoot(root: Route): void {
   });
 }
 
+/** Whether the page of `route` is the stack's root (tracked): a phone
+ * heads it with the service. */
+export const isRoot = (route: Route) => same(currentRoot(), route);
+
 /** Whether Back has a page to go to (tracked). */
 export const canBack = () => nav.routes().length > 1;
 

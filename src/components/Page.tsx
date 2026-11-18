@@ -15,6 +15,7 @@ import { Icon } from "../icons";
 import { Art, greeting, palette as c } from "../ui";
 import { layout, narrowDesktopHeader, pageEnd, sidebarCollapsed, sidebarShown, systemHeader, toggleSidebar } from "../layout";
 import { focusRing, IconButton } from "../spotish/components/ui/controls";
+import { ProviderTitle, providerInHeader } from "./ProviderSwitcher";
 import { createListWave, type ListWave } from "../spotish/components/ui/motion";
 import { DISTANCE, DURATION, EASING } from "../spotish/components/ui/tokens";
 
@@ -30,6 +31,11 @@ export function pageWave(options: { afterReveal?: boolean } = {}): ListWave {
 
 const titles: Record<nav.Page, string> = { home: "首页", search: "搜索", library: "音乐库", liked: "喜欢的音乐", history: "最近播放", collection: "", playlist: "歌单", downloads: "下载", stats: "聆听统计", settings: "设置", browse: "探索", together: "一起听", account: "账号" };
 export const routeTitle = (route: nav.Route) => route.title || route.collection?.title || titles[route.page];
+/** On a phone a tab's own page is headed by the service, not its name (the
+ * tabs name it): Home while it shows everything, Search and the library at
+ * the stack's root. */
+export const serviceTitled = (route: nav.Route) => providerInHeader() && nav.stack.routes()[0]?.key === route.key
+  && (route.page === "search" || route.page === "library" || route.page === "home" && !s.selectedHomeChip());
 
 let suggestTimer: ReturnType<typeof setTimeout> | undefined;
 /** Typing in the search field: suggestions follow after a short pause. */
@@ -72,14 +78,15 @@ export function HeaderActions() {
 }
 
 /** The header of a page on the desktops and the web: the sidebar's toggle,
- * Back and Forward; Search (the field itself on the search page); with no
- * sidebar, settings and the account. */
+ * Back and Forward (in a phone-sized window, the service on a tab's own
+ * page); Search (the field itself on the search page); with no sidebar,
+ * settings and the account. */
 export function PageHeader(props: { route: nav.Route }) {
   const desktop = () => layout() === "desktop";
   const searchHere = () => props.route.page === "search";
   return <Toolbar testID="page-toolbar" accessibilityLabel="页眉" class={narrowDesktopHeader() || !desktop() ? "min-h-14 items-center gap-1 px-2" : "min-h-14 items-center gap-2 px-3"}>
     <If when={desktop()}><IconButton name={sidebarCollapsed() ? "sidebarExpand" : "sidebarCollapse"} label={sidebarCollapsed() ? "展开侧边栏" : "收起侧边栏"} hint onPress={toggleSidebar} /></If>
-    <IconButton testID="navigate-back" name="chevronLeft" label="返回" disabled={!nav.canGoBack()} onPress={nav.goBack} />
+    <If when={serviceTitled(props.route)} else={<IconButton testID="navigate-back" name="chevronLeft" label="返回" disabled={!nav.canGoBack()} onPress={nav.goBack} />}><ProviderTitle /></If>
     <If when={desktop()}><IconButton testID="navigate-forward" name="chevronRight" label="前进" disabled={!nav.canGoForward()} onPress={nav.goForward} /></If>
     <View class="flex-1" />
     <If when={searchHere() && desktop() && !narrowDesktopHeader()} else={<If when={!searchHere()}><IconButton testID="header-search" name="search" label="搜索音乐" hint onPress={() => nav.navigate("search")} /></If>}><SearchInput header /></If>

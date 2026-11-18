@@ -2,7 +2,7 @@
 
 使用 [Native Shell（nsh）](https://github.com/longbridge/nsh) 编写的 Metrolist 移植版。共享 TSX 界面、个人曲库、播放队列和纯音频播放器，面向现代浏览器、桌面系统与具备相应运行时的手机平台。
 
-0.7 增加可切换的 **Spotify 独立工作区**，移植 [Spotish](https://github.com/huacnlee/spotish) 的 NSH 原生界面、Rust / CDP 播放引擎与完整音乐灯光动画。YouTube Music 和 Spotify 各自保留页面、账号、音乐库、播放器状态与外观，通过顶部切换器进入。[Spotify 使用与实现](docs/spotify.md) · [0.7 发布说明](docs/releases-0.7.0.md)。
+0.7 增加可切换的 **Spotify 独立工作区**，移植 [Spotish](https://github.com/huacnlee/spotish) 的 NSH 原生界面、Rust / CDP 播放引擎与完整音乐灯光动画。YouTube Music 和 Spotify 各自保留页面、账号、音乐库、播放器状态与外观，通过切换器进入（桌面在窗口顶部，手机在根页面页头的服务名称上）。[Spotify 使用与实现](docs/spotify.md) · [0.7 发布说明](docs/releases-0.7.0.md)。
 
 **网页版：[打开 Metrolist NSH](https://metrolist-nsh-miku.lurenjia534.chatgpt.site)**。当前站点公开访问。托管版本的音乐服务运行在 Worker 上，访问者无需在自己的电脑启动 Node、安装 Python 或配置 yt-dlp。
 

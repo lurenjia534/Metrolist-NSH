@@ -42,6 +42,7 @@ test("a queued YouTube ended event cannot advance playback after switching to Sp
   await app.waitFor("id:metrolist-app");
   await app.waitFor(first.title);
 
+  await app.press("id:provider-switcher");
   await app.press("id:provider-spotify");
   await app.waitFor("id:spotify-demo-banner");
   expect(app.host.calls().some(call => call.name === "app.audio.pause")).toBe(true);
@@ -52,6 +53,7 @@ test("a queued YouTube ended event cannot advance playback after switching to Sp
   expect(plays()).toHaveLength(0);
 
   // Once YouTube owns playback again, a newly observed end still advances.
+  await app.press("id:provider-switcher");
   await app.press("id:provider-youtube");
   await app.waitFor("id:metrolist-app");
   await app.waitFor(first.title);

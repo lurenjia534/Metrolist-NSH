@@ -10,6 +10,7 @@ import { HomePage } from "../pages/home";
 import { SearchPage } from "../pages/search";
 import { health, retry } from "../state/session";
 import { connectedBackend } from "../state/engine";
+import { ProviderTitle, providerInHeader } from "../../components/ProviderSwitcher";
 
 function page(route: Route) {
   switch (route.name) {
@@ -38,7 +39,11 @@ export function MainStack(props: { class?: string }) {
     <View class={`min-h-0 flex-1 ${props.class ?? ""}`}>
       <If
         when={connectedBackend !== null || health().status !== "failed"}
-        else={<ErrorState message="Spotify isn't available" detail={unavailableDetail()} onRetry={retry} />}
+        else={<>
+          {/* No page, so no header: a phone still reaches the services. */}
+          <If when={providerInHeader()}><View class="min-h-14 flex-row items-center px-2 pt-[env(safe-area-inset-top)]"><ProviderTitle /></View></If>
+          <ErrorState message="Spotify isn't available" detail={unavailableDetail()} onRetry={retry} />
+        </>}
       >
         <NavStack state={nav} class="flex-1" testID="main">
           {(route) => page(route)}
