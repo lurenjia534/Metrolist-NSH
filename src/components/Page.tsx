@@ -11,6 +11,7 @@ import * as s from "../store";
 import * as nav from "../navigation";
 import * as account from "../account";
 import { parseMusicLink } from "../musicLinks";
+import { autoPlaylists } from "../autoPlaylists";
 import { Icon } from "../icons";
 import { Art, greeting, palette as c } from "../ui";
 import { layout, narrowDesktopHeader, pageEnd, sidebarCollapsed, sidebarShown, systemHeader, toggleSidebar } from "../layout";
@@ -29,7 +30,7 @@ export function pageWave(options: { afterReveal?: boolean } = {}): ListWave {
   return createListWave({ isTop: () => !route || nav.currentKey() === route.key, reenter: nav.rootOpens, afterReveal: options.afterReveal });
 }
 
-const titles: Record<nav.Page, string> = { home: "首页", search: "搜索", library: "音乐库", liked: "喜欢的音乐", history: "最近播放", collection: "", playlist: "歌单", downloads: "下载", stats: "聆听统计", settings: "设置", browse: "探索", together: "一起听", account: "账号" };
+const titles: Record<nav.Page, string> = { top100: autoPlaylists.top100.title, forgotten: autoPlaylists.forgotten.title, files: autoPlaylists.files.title, home: "首页", search: "搜索", library: "音乐库", liked: "喜欢的音乐", history: "最近播放", collection: "", playlist: "歌单", downloads: "下载", stats: "聆听统计", settings: "设置", browse: "探索", together: "一起听", account: "账号" };
 export const routeTitle = (route: nav.Route) => route.title || route.collection?.title || titles[route.page];
 /** On a phone a tab's own page is headed by the service, not its name (the
  * tabs name it): Home while it shows everything, Search and the library at

@@ -77,7 +77,7 @@ function entries(): Entry[] {
     { key: "history", label: "最近播放", testID: "nav-history", icon: "clock", open: () => nav.navigate("history", true), selected: () => nav.page() === "history" },
     { key: "stats", label: "聆听统计", testID: "nav-stats", icon: "stats", open: () => nav.navigate("stats", true), selected: () => nav.page() === "stats" },
     { key: "together", label: together.room() ? `一起听 · ${together.room()!.roomCode}` : "一起听", testID: "nav-together", icon: "users", open: () => nav.navigate("together", true), selected: () => nav.page() === "together" },
-    ...s.playlists().map((playlist): Entry => ({
+    ...s.pinnedFirst(s.playlists()).map((playlist): Entry => ({
       key: playlist.id, label: playlist.name, image: playlist.tracks[0]?.artwork, icon: "queue",
       open: () => nav.openPlaylist(playlist.id), selected: () => nav.page() === "playlist" && nav.selectedPlaylist() === playlist.id,
       playing: () => p.queueTitle() === playlist.name,

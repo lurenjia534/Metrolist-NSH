@@ -16,8 +16,10 @@ import { Cover, PlayButton } from "../spotish/components/ui/controls";
 import { CollectionSkeleton, Spinner } from "../spotish/components/ui/feedback";
 import { enter } from "../spotish/components/ui/motion";
 import { Label, Tool, Pill, Chip, Field, SectionTitle, Empty, Press, CommandMenu, Art, palette as c, narrow, action, say, type CommandItem } from "../ui";
+import { autoPlaylists, listeningPlaylist, localFile, topPeriods, type AutoPlaylist } from "../autoPlaylists";
+
 const sortNames = { recent: "最近添加", title: "名称", artist: "歌手", playTime: "聆听时长", songCount: "歌曲数量" };
-const playlistSortNames = { custom: "自定义顺序", recent: "最近添加", title: "歌曲名称", artist: "歌手", album: "专辑名称", playTime: "聆听时长", duration: "歌曲时长" };
+const playlistSortNames = { custom: "自定义顺序", recent: "最近添加", title: "歌曲名称", artist: "歌手", album: "专辑名称", playCount: "播放次数", playTime: "聆听时长", duration: "歌曲时长" };
 
 function ScopeChips() {
   return <View class="flex-row gap-2 px-3"><Chip testID="library-device" label="本机" icon="library" selected={cloud.libraryScope() === "device"} onPress={() => cloud.libraryScope.set("device")} /><Chip testID="library-cloud" label="YouTube Music" icon="artist" selected={cloud.libraryScope() === "cloud"} onPress={() => { cloud.libraryScope.set("cloud"); if (account.signedIn()) void action(() => account.loadCloudLibrary()); }} /></View>;
@@ -47,6 +49,7 @@ function DeviceLibrary(props: { route: nav.Route }) {
     <Scroll horizontal scrollbar={false} class="h-11 shrink-0" contentClass="flex-row items-center gap-2 px-3"><Each of={[{ id: "playlists", text: "歌单" }, { id: "songs", text: "歌曲" }, { id: "albums", text: "专辑" }, { id: "artists", text: "歌手" }]}>{item => <Chip testID={`library-${item().id}`} label={item().text} selected={nav.libraryTab() === item().id} onPress={() => { nav.libraryTab.set(nav.libraryTab() === item().id ? "all" : item().id); selection.finish(); }} />}</Each></Scroll>
     <View testID="library-toolbar" class="px-3" style={{ flexDirection: narrow() ? "column" : "row", gap: 8, alignItems: narrow() ? "stretch" : "center" }}><View style={{ flex: narrow() ? undefined : 1, minWidth: 0 }}><Field value={s.libraryQuery()} onChange={s.libraryQuery.set} placeholder="在音乐库中查找" testID="library-filter" /></View><View style={{ flexDirection: "row", alignSelf: narrow() ? "flex-end" : undefined, alignItems: "center", gap: 8 }}><CommandMenu label="排序" icon="sort" items={[...Object.entries(sortNames).map(([key, label]) => ({ label, active: s.librarySort() === key, run: () => s.librarySort.set(key as LibrarySort) })), { label: s.libraryDescending() ? "切换为升序" : "切换为降序", icon: s.libraryDescending() ? "up" : "down", separator: true, run: () => s.libraryDescending.update(value => !value) }]} /><Tool icon={grid() ? "list" : "grid"} label={grid() ? "切换列表" : "切换网格"} onPress={() => s.updateSettings({ libraryView: grid() ? "list" : "grid" })} /><CommandMenu label="音乐库操作" items={[{ label: "新建歌单", icon: "plus", run: nav.newPlaylist }, { label: "导入音乐", icon: "upload", run: nav.showImport }, { testID: "library-select", label: selection.active() ? "完成选择" : "选择歌曲", icon: "checkCircle", run: () => selection.active() ? selection.finish() : beginSelection() }, { label: "导出音乐库", icon: "download", run: () => void action(s.exportLibrary, "音乐库已导出") }]} /></View></View>
     <If when={all() && !s.libraryQuery()}><View class="flex-row flex-wrap gap-3 px-3"><Each of={[{ id: "liked", icon: "heart", name: "喜欢的音乐", count: s.likedTracks().length }, { id: "downloads", icon: "download", name: "已下载", count: s.downloads().length }, { id: "history", icon: "clock", name: "最近播放", count: s.history().length }]}>{item => <Press label={item().name} onPress={() => nav.navigate(item().id as nav.Page)} style={{ flex: 1, minWidth: 180, height: 64, flexDirection: "row", alignItems: "center", gap: 12, paddingRight: 12, overflow: "hidden" }}><View class={`size-16 items-center justify-center ${item().id === "liked" ? "bg-liked" : "bg-muted"}`}><Icon name={item().icon} size={22} color={item().id === "liked" ? "liked-foreground" : "foreground"} filled={item().id === "liked"} /></View><View style={{ flex: 1, minWidth: 0, gap: 2 }}><Label weight="700" lines={1}>{item().name}</Label><Label size={12} color={c().sub}>{item().count} 首歌曲</Label></View></Press>}</Each></View></If>
+    <If when={tab("playlists") && !s.libraryQuery()}><View class="gap-2 px-3"><SectionTitle title="自动歌单" /><View class="flex-row flex-wrap gap-2"><Each of={Object.entries(autoPlaylists)}>{item => <Pill testID={`library-auto-${item()[0]}`} label={item()[1].title} icon={item()[1].icon} onPress={() => nav.navigate(item()[0] as AutoPlaylist)} />}</Each></View></View></If>
     <If when={selection.active()}><SelectionActions tracks={selectedRows()} title="音乐库" visibleCount={s.filteredTracks().length} selectedVisibleCount={selectedVisible()} onAll={selection.all} onClear={selection.clear} onDone={selection.finish} removeLabel="从音乐库移除" onRemove={() => { for (const track of selectedRows()) s.removeFromLibrary(track.id); selection.clear(); say("已从音乐库移除所选歌曲"); }} /></If>
     <If when={tab("playlists")}><View class="px-3"><SectionTitle title="歌单" action="新建" icon="plus" onPress={nav.newPlaylist} />
       <If when={s.filteredPlaylists().length + onlinePlaylists().length > 0} else={<Empty icon="queue" title="创建你的第一张歌单" description="从歌曲菜单中选择“加入歌单”，也可以导入 YouTube Music 歌单。"><Pill label="导入歌单" icon="link" onPress={nav.showImport} /></Empty>}><View class={grid() ? "-mx-3 flex-row flex-wrap" : "gap-1"}><Each of={s.filteredPlaylists()}>{(item, index) => <PlaylistCard playlist={item()} grid={grid()} wave={wave} index={index()} />}</Each><Each of={onlinePlaylists()}>{(item, index) => <If when={grid()} else={<CollectionRow item={item()} wave={wave} index={index()} />}><View><CardGrid items={[item()]} wave={wave} /></View></If>}</Each></View></If>
@@ -90,9 +93,13 @@ function CollectionHeader(props: { cover: JSX.Element; kind: string; title: stri
   </View>;
 }
 
-export function SongCollectionPage(props: { kind: "liked" | "history" | "playlist"; route: nav.Route }) {
+export function SongCollectionPage(props: { kind: "liked" | "history" | "playlist" | AutoPlaylist; route: nav.Route }) {
   const filter = signal("");
   const editing = signal(false);
+  const period = signal(0);
+  const likedOnly = signal(false);
+  const offlineOnly = signal(false);
+  const automatic = () => props.kind === "top100" || props.kind === "forgotten" || props.kind === "files" ? autoPlaylists[props.kind] : undefined;
   const sortingKey = () => props.kind === "playlist" ? `playlist:${nav.selectedPlaylist()}` : props.kind;
   const savedSorting = computed(() => s.settings().playlistSorting[sortingKey()] ?? { sort: "custom", descending: false });
   const sort = () => editing() ? "custom" : savedSorting().sort;
@@ -102,8 +109,10 @@ export function SongCollectionPage(props: { kind: "liked" | "history" | "playlis
     s.setPlaylistSorting(sortingKey(), sort, descending);
   };
   const playlist = nav.currentPlaylist;
-  const title = () => props.kind === "liked" ? "喜欢的音乐" : props.kind === "history" ? "最近播放" : playlist()?.name || "歌单";
+  const title = () => automatic()?.title ?? (props.kind === "liked" ? "喜欢的音乐" : props.kind === "history" ? "最近播放" : playlist()?.name || "歌单");
   const totalTracks = computed(() => props.kind === "playlist" ? playlist()?.tracks || []
+    : props.kind === "files" ? s.libraryTracks().filter(localFile)
+    : props.kind === "top100" || props.kind === "forgotten" ? listeningPlaylist(props.kind, s.tracks(), s.listenEvents(), period(), Date.now())
     : props.kind === "history" ? s.history()
     : account.signedIn() ? [...account.cloudLibrary().liked.filter(isTrack), ...s.likedTracks().filter(track => track.source === "audio")] : s.likedTracks());
   const allEntries = computed(() => props.kind === "playlist" ? s.playlistEntries(nav.selectedPlaylist(), "", sort(), descending())
@@ -111,11 +120,16 @@ export function SongCollectionPage(props: { kind: "liked" | "history" | "playlis
   const entries = computed(() => {
     const normalized = (value: string) => value.normalize("NFKD").replace(/\p{M}/gu, "").toLocaleLowerCase();
     const terms = normalized(filter()).trim().split(/\s+/);
+    const offlineIds = offlineOnly() ? new Set(s.downloads().map(track => track.id)) : undefined;
     return allEntries().filter(({ track }) => {
+      if (likedOnly() && !s.isLiked(track.id)) return false;
+      if (offlineIds && !offlineIds.has(track.id) && !localFile(track)) return false;
       const text = normalized(`${track.title} ${track.artist} ${track.album}`);
       return terms.every(term => text.includes(term));
     });
   });
+  const filtered = () => !!filter().trim() || likedOnly() || offlineOnly();
+  const clearFilters = () => { filter.set(""); likedOnly.set(false); offlineOnly.set(false); };
   const key = (entry: { track: Track; index: number }) => props.kind === "playlist" ? String(entry.index) : entry.track.id;
   const selection = createSelection(() => entries().map(key));
   const tracks = computed(() => entries().map(entry => entry.track));
@@ -124,6 +138,19 @@ export function SongCollectionPage(props: { kind: "liked" | "history" | "playlis
   const selectedVisible = () => { const selected = new Set(selection.keys()); return entries().filter(entry => selected.has(key(entry))).length; };
   const beginSelection = () => { editing.set(false); selection.begin(); };
   const extendSelection = (entry: { track: Track; index: number }) => { editing.set(false); selection.extend(key(entry)); };
+  const duplicateIndices = computed(() => {
+    const seen = new Set<string>();
+    return (playlist()?.tracks ?? []).flatMap((track, index) => {
+      if (seen.has(track.id)) return [index];
+      seen.add(track.id);
+      return [];
+    });
+  });
+  const moveSelected = (edge: "start" | "end") => {
+    s.movePlaylistEntries(nav.selectedPlaylist(), selectedEntries().map(entry => entry.index), edge);
+    selection.finish();
+    setSorting("custom", false);
+  };
   const removeLabel = () => props.kind === "playlist" ? "从歌单移除" : props.kind === "history" ? "从播放历史移除" : "取消喜欢";
   const removeSelected = () => void action(async () => {
     if (props.kind === "playlist") s.removePlaylistEntries(nav.selectedPlaylist(), selectedEntries().map(entry => entry.index));
@@ -138,8 +165,22 @@ export function SongCollectionPage(props: { kind: "liked" | "history" | "playlis
     selection.clear();
   }, props.kind === "liked" ? "已取消喜欢所选歌曲" : "已移除所选歌曲");
   const sortingNames = () => props.kind === "playlist" ? playlistSortNames : {
-    ...playlistSortNames, custom: props.kind === "history" ? "最近播放" : "最近喜欢",
+    ...playlistSortNames, custom: automatic() ? (props.kind === "files" ? "导入顺序" : "榜单顺序") : props.kind === "history" ? "最近播放" : "最近喜欢",
   };
+  const organize = (): CommandItem[] => [
+    { testID: "playlist-pin", label: playlist()?.pinned ? "取消置顶" : "置顶歌单", icon: "up", run: () => s.togglePlaylistPin(nav.selectedPlaylist()) },
+    { testID: "playlist-copy", label: "创建歌单副本", icon: "plus", run: () => nav.openPlaylist(s.createPlaylist(`${title()}（副本）`, [...totalTracks()]).id) },
+    { testID: "playlist-commit-sort", label: "将排序保存为歌单顺序", icon: "sort", disabled: sort() === "custom", run: () => {
+      s.sortPlaylist(nav.selectedPlaylist(), sort(), descending());
+      selection.finish();
+      setSorting("custom", false);
+    } },
+    { testID: "playlist-deduplicate", label: `移除重复项（${duplicateIndices().length}）`, icon: "trash", disabled: !duplicateIndices().length, run: () => {
+      s.removePlaylistEntries(nav.selectedPlaylist(), duplicateIndices());
+      selection.finish();
+      say("已保留每首歌曲首次出现的位置");
+    } },
+  ];
   const options = (): CommandItem[] => [
     { testID: "collection-select-menu", label: selection.active() ? "完成选择" : "选择歌曲", icon: "checkCircle", run: () => selection.active() ? selection.finish() : beginSelection() },
     { label: "加入播放队列", icon: "queue", disabled: p.remoteControlled() || !tracks().length, run: () => { p.addTracksToQueue(tracks()); say(`已将 ${tracks().length} 首歌曲加入队列`); } },
@@ -147,7 +188,7 @@ export function SongCollectionPage(props: { kind: "liked" | "history" | "playlis
     ...(account.signedIn() ? [{ label: "加入 YouTube Music 歌单", icon: "plus", disabled: !tracks().length, run: () => cloud.addToCloudPlaylist(tracks()) }] : []),
     ...(props.kind === "playlist" ? [
       { label: "重命名", icon: "edit", separator: true, run: () => { nav.draft.set(title()); nav.dialog.set("rename"); } },
-      { testID: "playlist-edit", label: editing() ? "完成编辑" : "调整歌曲顺序", icon: "sort", run: () => { selection.finish(); editing.update(value => !value); filter.set(""); } },
+      { testID: "playlist-edit", label: editing() ? "完成编辑" : "调整歌曲顺序", icon: "sort", run: () => { selection.finish(); editing.update(value => !value); clearFilters(); } },
       { label: "导出歌单", icon: "share", run: () => void action(() => s.exportPlaylist(nav.selectedPlaylist()), "歌单已导出") },
       { label: "删除歌单", icon: "trash", danger: true, run: () => { s.deletePlaylist(nav.selectedPlaylist()); nav.navigate("library", true); } },
     ] : props.kind === "history" ? [{ label: "清空播放历史", icon: "trash", danger: true, separator: true, run: () => { s.clearHistory(); selection.clear(); } }] : []),
@@ -157,28 +198,34 @@ export function SongCollectionPage(props: { kind: "liked" | "history" | "playlis
   return <View testID={`page-${props.kind}`} class="min-h-0 min-w-0 flex-1">
     <List testID={`content-${props.kind}`} each={entries()} keyExtractor={entry => `${entry.track.id}-${key(entry)}`} estimatedItemSize={editing() ? 108 : 60} class="min-h-0 flex-1" contentClass="px-3 pt-1"
       header={() => <View class="gap-4 pb-1">
-        <CollectionHeader kind={props.kind === "playlist" ? "歌单" : props.kind === "liked" ? "自动歌单" : "播放记录"} title={title()} meta={`${totalTracks().length} 首歌曲 · ${Math.floor(totalTracks().reduce((total, track) => total + track.duration, 0) / 60)} 分钟`}
-          cover={<If when={props.kind === "playlist" && playlist()} else={<View class={`aspect-square w-full items-center justify-center rounded-md shadow-xl ${props.kind === "liked" ? "bg-liked" : "bg-secondary"}`}><Icon name={props.kind === "liked" ? "heart" : "clock"} size={48} color={props.kind === "liked" ? "liked-foreground" : "foreground"} filled={props.kind === "liked"} /></View>}>{() => <PlaylistCover playlist={playlist()!} class="shadow-xl" />}</If>} playing={playingHere()} canPlay={!p.remoteControlled() && tracks().length > 0} onPlay={() => action(() => playingHere() ? p.togglePlay() : p.playList(tracks(), 0, title()))}>
+        <CollectionHeader kind={props.kind === "playlist" ? "歌单" : props.kind === "history" ? "播放记录" : "自动歌单"} title={title()} description={automatic()?.description} meta={`${totalTracks().length} 首歌曲 · ${Math.floor(totalTracks().reduce((total, track) => total + track.duration, 0) / 60)} 分钟`}
+          cover={<If when={props.kind === "playlist" && playlist()} else={<View class={`aspect-square w-full items-center justify-center rounded-md shadow-xl ${props.kind === "liked" ? "bg-liked" : "bg-secondary"}`}><Icon name={automatic()?.icon ?? (props.kind === "liked" ? "heart" : "clock")} size={48} color={props.kind === "liked" ? "liked-foreground" : "foreground"} filled={props.kind === "liked"} /></View>}>{() => <PlaylistCover playlist={playlist()!} class="shadow-xl" />}</If>} playing={playingHere()} canPlay={!p.remoteControlled() && tracks().length > 0} onPlay={() => action(() => playingHere() ? p.togglePlay() : p.playList(tracks(), 0, title()))}>
           <Tool icon="shuffle" label="随机" disabled={p.remoteControlled() || !tracks().length} onPress={() => action(() => p.playList(shuffled(tracks()), 0, title()))} />
           <Tool icon="download" label="下载全部" disabled={!tracks().length} onPress={() => downloadTracks(tracks())} />
+          <If when={props.kind === "playlist"}><CommandMenu label="整理歌单" icon="sort" items={organize()} /></If>
           <CommandMenu label="歌单操作" items={options()} />
         </CollectionHeader>
     <View class="gap-2 px-3">
+      <If when={props.kind === "top100"}><View class="flex-row flex-wrap gap-2"><Each of={topPeriods}>{item => <Chip testID={`top-period-${item().days}`} label={item().label} selected={period() === item().days} onPress={() => { period.set(item().days); selection.clear(); }} />}</Each></View></If>
+      <If when={props.kind === "playlist" && !editing()}><View class="flex-row flex-wrap gap-2">
+        <Chip testID="playlist-filter-liked" label="已喜欢" selected={likedOnly()} onPress={() => likedOnly.update(value => !value)} />
+        <Chip testID="playlist-filter-offline" label="可离线播放" selected={offlineOnly()} onPress={() => offlineOnly.update(value => !value)} />
+      </View></If>
       <View class="flex-row items-center gap-2">
         <Field testID="song-collection-filter" value={filter()} onChange={filter.set} placeholder="查找歌曲、歌手、专辑" />
         <Tool testID="collection-select" icon="checkCircle" label={selection.active() ? "完成选择" : "选择歌曲"} active={selection.active()} onPress={() => selection.active() ? selection.finish() : beginSelection()} />
         <CommandMenu testID="collection-sort" label="歌曲排序" icon="sort" items={[
-          ...Object.entries(sortingNames()).map(([value, label]) => ({ testID: `collection-sort-${value}`, label, active: sort() === value, run: () => setSorting(value as PlaylistSort, value === "recent") })),
+          ...Object.entries(sortingNames()).map(([value, label]) => ({ testID: `collection-sort-${value}`, label, active: sort() === value, run: () => setSorting(value as PlaylistSort, value === "recent" || value === "playCount") })),
           { testID: "collection-sort-direction", label: descending() ? "切换为升序" : "切换为降序", icon: descending() ? "up" : "down", disabled: sort() === "custom", separator: true, run: () => setSorting(sort(), !descending()) },
         ]} />
       </View>
       <View class="flex-row flex-wrap items-center gap-2 px-1">
-        <Label size={12} color={c().sub}>{filter().trim() ? `找到 ${tracks().length} 首 · ` : ""}{sortingNames()[sort()]}{sort() === "custom" ? "" : descending() ? " ↓" : " ↑"}</Label>
-        <If when={filter()}><Press testID="collection-clear-filter" label="清除筛选" onPress={() => filter.set("")} style={{ minHeight: 32, justifyContent: "center", paddingHorizontal: 8 }}><Label size={12} weight="700">清除筛选</Label></Press></If>
+        <Label size={12} color={c().sub}>{filtered() ? `找到 ${tracks().length} 首 · ` : ""}{sortingNames()[sort()]}{sort() === "custom" ? "" : descending() ? " ↓" : " ↑"}</Label>
+        <If when={filtered()}><Press testID="collection-clear-filter" label="清除筛选" onPress={clearFilters} style={{ minHeight: 32, justifyContent: "center", paddingHorizontal: 8 }}><Label size={12} weight="700">清除筛选</Label></Press></If>
       </View>
     </View>
-    <If when={selection.active()}><SelectionActions tracks={selectedRows()} title={title()} visibleCount={entries().length} selectedVisibleCount={selectedVisible()} onAll={selection.all} onClear={selection.clear} onDone={selection.finish} removeLabel={removeLabel()} onRemove={removeSelected} /></If>
-        <If when={tracks().length > 0} else={<Empty icon="music" title={filter().trim() ? "没有匹配的歌曲" : "这里还没有歌曲"} description={filter().trim() ? "换个关键词，或清除筛选查看全部歌曲。" : props.kind === "history" ? "播放过的音乐会出现在这里。" : "在歌曲菜单中添加喜欢的音乐。"}><Pill label={filter().trim() ? "清除筛选" : "搜索音乐"} onPress={() => filter().trim() ? filter.set("") : nav.navigate("search")} /></Empty>}><If when={!narrow()}><View class="px-3"><TrackHeader /></View></If></If>
+    <If when={selection.active()}><SelectionActions tracks={selectedRows()} title={title()} visibleCount={entries().length} selectedVisibleCount={selectedVisible()} onAll={selection.all} onClear={selection.clear} onDone={selection.finish} onMoveSelection={props.kind === "playlist" ? moveSelected : undefined} removeLabel={removeLabel()} onRemove={automatic() ? undefined : removeSelected} /></If>
+        <If when={tracks().length > 0} else={<Empty icon="music" title={filtered() ? "没有匹配的歌曲" : "这里还没有歌曲"} description={filtered() ? "换个关键词，或清除筛选查看全部歌曲。" : automatic() ? automatic()!.description : props.kind === "history" ? "播放过的音乐会出现在这里。" : "在歌曲菜单中添加喜欢的音乐。"}><Pill label={filtered() ? "清除筛选" : props.kind === "files" ? "导入音频文件" : "搜索音乐"} onPress={() => filtered() ? clearFilters() : props.kind === "files" ? void action(s.importFiles) : nav.navigate("search")} /></Empty>}><If when={!narrow()}><View class="px-3"><TrackHeader /></View></If></If>
       </View>}
       footer={() => <View class={pageEnd()} />}>
       {(entry, index) => <View testID={`collection-row-${key(entry())}`} class="px-3 pb-1"><TrackRow track={entry().track} wave={wave} list={tracks()} index={index()} selected={selection.keys().includes(key(entry()))} selecting={selection.active()} onSelect={() => selection.toggle(key(entry()))} onLongPress={() => extendSelection(entry())} onPlay={() => action(() => p.playList(tracks(), index(), title()))} actionsBelow={editing()} trailing={<If when={editing() && props.kind === "playlist"}>

@@ -7,7 +7,9 @@ import * as together from "./together";
 import { parseMusicLink, type MusicLink } from "./musicLinks";
 import type { BrowseEndpoint, Collection, ExploreTab, Track, SearchType } from "./model";
 
-export type Page = "home" | "search" | "library" | "liked" | "history" | "collection" | "playlist" | "downloads" | "stats" | "settings" | "browse" | "together" | "account";
+import type { AutoPlaylist } from "./autoPlaylists";
+
+export type Page = AutoPlaylist | "home" | "search" | "library" | "liked" | "history" | "collection" | "playlist" | "downloads" | "stats" | "settings" | "browse" | "together" | "account";
 export interface Route {
   page: Page; key: number; collection?: Collection; playlistId?: string; query?: string; searchType?: SearchType;
   endpoint?: BrowseEndpoint; title?: string; exploreTab?: ExploreTab;
