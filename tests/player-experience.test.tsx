@@ -1,5 +1,6 @@
 import { expect, open, test } from "nsh/test";
 import type { App } from "nsh/test";
+import { parseMusicLink } from "../src/musicLinks";
 
 const alpha = { id: "experience-alpha", title: "Alpha experience song", artist: "Experience artist", album: "Experience album", artwork: "", duration: 180, source: "youtube" };
 const beta = { ...alpha, id: "experience-beta", title: "Beta experience song" };
@@ -258,4 +259,31 @@ test("selected lyric lines are copied in song order with the title, artist and s
   await app.press("id:excerpt-line-1"); await app.press("id:excerpt-line-0"); await app.press("id:lyric-copy-excerpt");
   await app.waitUntil(() => !!app.clipboard()?.includes(alpha.title));
   expect(app.clipboard()).toBe(lyrics.plainLyrics + "\n\n" + alpha.title + " · " + alpha.artist + "\nhttps://music.youtube.com/watch?v=" + alpha.id);
+});
+
+test("song details attribute listens and stream properties to the inspected track and share its current timestamp", async () => {
+  const inspected = { ...alpha, id: "dQw4w9WgXcQ" };
+  const queue = [inspected, beta, inspected, gamma];
+  const app = await open("../App.tsx", { width: 1440, height: 1500, platform: "android", storage: { ...storage,
+    "metrolist.player": JSON.stringify({ ...JSON.parse(storage["metrolist.player"]), queue }),
+    "metrolist.library": JSON.stringify({ version: 2, tracks: queue, likedIds: [], history: [], playlists: [], libraryIds: [inspected.id], listenEvents: [
+      { id: "a1", trackId: inspected.id, startedAt: 1000, seconds: 40 }, { id: "b", trackId: beta.id, startedAt: 2000, seconds: 35 },
+      { id: "a2", trackId: inspected.id, startedAt: 3000, seconds: 51 },
+    ] }),
+  }, network, host: { handlers: { ...handlers, "app.audio.snapshot": { ...state, track: inspected, source: { ...source, codecs: "opus", sampleRate: 48000, loudnessDb: 0, formatId: "251" } } } } });
+  await app.waitFor("id:mini-player"); await app.press("id:mini-queue"); await app.waitFor("id:queue-panel");
+  await app.press("id:queue-song-menu-2"); await app.press("id:open-song-info"); await app.waitFor("id:details-listens");
+  await app.press("id:details-listens"); await app.waitFor("id:app-dialog >> text:1:31");
+  await app.press("id:details-audio"); await app.waitFor("id:app-dialog >> text:opus");
+  await app.press("id:details-copy"); await app.waitUntil(() => !!app.clipboard()?.includes("响度：0 dB"));
+  expect(app.clipboard()?.includes("记录次数：2")).toBe(true);
+  expect(app.clipboard()?.includes("48000 Hz")).toBe(true);
+  expect(app.clipboard()?.includes("audio.test")).toBe(false);
+  await app.press("id:details-timestamp"); await app.waitUntil(() => app.clipboard()?.endsWith("&t=43s") === true);
+  expect(parseMusicLink(app.clipboard()!)).toEqual({ type: "song", id: inspected.id, startAt: 43 });
+  await app.press("id:app-dialog >> label:关闭"); await app.waitFor("id:app-dialog", { state: "gone" });
+  await app.press("id:queue-song-menu-1"); await app.press("id:open-song-info"); await app.press("id:details-audio");
+  expect(app.shows("id:details-timestamp")).toBe(false);
+  expect(app.shows("id:app-dialog >> text:opus")).toBe(false);
+  await app.press("id:details-listens"); await app.waitFor("id:app-dialog >> text:0:35");
 });
