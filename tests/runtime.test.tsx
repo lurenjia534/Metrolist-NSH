@@ -227,3 +227,33 @@ test("a failed native replacement preserves the previous offline file until a su
   expect(read(app, "downloads")[0]).toMatchObject({ status: "completed", destination: saved.destination, bytes: saved.bytes });
   expect(app.host.calls().filter(call => call.name === "app.test.files.remove").map(call => call.data)).toEqual([{ destination: old.destination }]);
 });
+
+test("queue deduplication relocates existing songs, keeps the current source and drops repeats from the batch", async () => {
+  const app = await open("./runtime-fixture.tsx", { platform: "linux", network, storage: settings({ uniqueQueueAdditions: true }) });
+  await app.press("Start local"); await app.waitFor("Playing"); await app.press("Seek 21");
+  const opens = relayOpens(app).length;
+  await app.press("Insert selection");
+  expect(read(app, "queue")).toMatchObject({ ids: ["alpha", "video", "beta"], index: 0, position: 21 });
+  expect(relayOpens(app)).toHaveLength(opens);
+});
+
+test("forgetting the session removes the snapshot while the current queue and modes can be saved again", async () => {
+  const app = await open("./runtime-fixture.tsx", { platform: "linux", network, storage });
+  await app.press("Start local"); await app.waitFor("Playing"); await app.press("Repeat one"); await app.press("Forget session");
+  await app.press("Seek 21"); expect(app.storage()["metrolist.player"]).toBe(undefined);
+  expect(JSON.parse(app.storage()["metrolist.settings"]).repeat).toBe("off");
+  const cold = await open("./runtime-fixture.tsx", { platform: "linux", network, storage: app.storage() });
+  expect(read(cold, "queue").ids).toEqual([]);
+  await app.press("Remember session");
+  expect(JSON.parse(app.storage()["metrolist.player"])).toMatchObject({ index: 0, position: 21 });
+  expect(JSON.parse(app.storage()["metrolist.settings"]).repeat).toBe("one");
+});
+
+test("liking a remote audio track downloads it once across unlike and relike", async () => {
+  const app = await open("./runtime-fixture.tsx", { platform: "android", network, storage: settings({ downloadOnLike: true }),
+    host: { handlers: { "app.audio.snapshot": null, "files.download": { url: "file:///alpha", destination: "alpha", bytes: 42 } } } });
+  await app.press("Like alpha"); await app.waitUntil(() => read(app, "downloads")[0]?.status === "completed");
+  await app.press("Like alpha"); await app.press("Like alpha");
+  expect(app.host.calls().filter(call => call.name === "files.download")).toHaveLength(1);
+  expect(read(app, "library").liked).toEqual(["alpha"]);
+});

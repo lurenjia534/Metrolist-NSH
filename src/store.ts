@@ -31,6 +31,7 @@ export const statsPeriod = signal<StatsPeriod>("month");
 export const settings = signal<Settings>({
   theme: "dark", apiBase: "", nativeFirst: true,
   audioQuality: "auto", queueLocked: false, autoRadio: true, pauseHistory: false, libraryView: "grid", playlistSorting: {},
+  persistQueue: true, rememberPlayModes: true, uniqueQueueAdditions: false, downloadOnLike: false,
   historySeconds: 30, pauseSearchHistory: false, hideRecentSearches: false,
   activeLyricAlignment: "inherit", lyricLineSpacing: 1.4, lyricTapToSeek: true, lyricAutoScroll: true,
   lyricFontSize: "medium", lyricAlignment: "center", lyricsOffset: 0,
@@ -143,11 +144,12 @@ function saveSettings() {
   return Storage.setItem("metrolist.settings", JSON.stringify(settings())).catch(showError);
 }
 function savePlayer() {
+  if (!settings().persistQueue) return;
   return Storage.setItem("metrolist.player", JSON.stringify({ queue: player.queue(), index: player.currentIndex(), position: player.position(), title: player.queueTitle() })).catch(showError);
 }
 function saveDownloads() { return Storage.setItem("metrolist.downloads", JSON.stringify(downloadJobs())).catch(showError); }
 function savePlayerPreferences() {
-  settings.update((value) => ({ ...value, volume: player.volume(), rate: player.rate(), shuffle: player.shuffle(), repeat: player.repeat() }));
+  settings.update((value) => ({ ...value, volume: player.volume(), rate: player.rate(), shuffle: value.rememberPlayModes && player.shuffle(), repeat: value.rememberPlayModes ? player.repeat() : "off" }));
   void saveSettings();
 }
 
@@ -178,6 +180,7 @@ export async function initialize() {
     },
     sourceContext: () => JSON.stringify([settings().apiBase, settings().audioQuality, account.currentCredentials()]),
     historySeconds: () => settings().historySeconds,
+    uniqueQueueAdditions: () => settings().uniqueQueueAdditions,
     autoRadio: () => settings().autoRadio,
     skipSilence: () => settings().skipSilence,
     fetchRadio: async (track) => { const result = await api.fetchNext(track.id); addTracks(result.tracks, false); return result.tracks; },
@@ -235,9 +238,9 @@ export async function initialize() {
     setColorScheme(preferences.theme === "black" ? "dark" : preferences.theme);
     batch(() => {
       player.volume.set(preferences.volume); player.rate.set(preferences.rate);
-      player.shuffle.set(preferences.shuffle); player.repeat.set(preferences.repeat);
+      player.shuffle.set(preferences.rememberPlayModes && preferences.shuffle); player.repeat.set(preferences.rememberPlayModes ? preferences.repeat : "off");
     });
-    if (savedPlayer) {
+    if (savedPlayer && preferences.persistQueue) {
       const saved = JSON.parse(savedPlayer) as { queue: Track[]; index: number; position: number; title?: string };
       player.restoreQueue(saved.queue, saved.index, saved.position, saved.title);
     }
@@ -252,6 +255,9 @@ export function updateSettings(patch: Partial<Settings>) {
   const value = settings();
   api.setApiOrigin(value.apiBase);
   setColorScheme(value.theme === "black" ? "dark" : value.theme);
+  if (patch.persistQueue === false) void Storage.removeItem("metrolist.player").catch(showError);
+  if (patch.persistQueue === true) void savePlayer();
+  if (patch.rememberPlayModes !== undefined) savePlayerPreferences();
   if (patch.volume !== undefined) player.setVolume(patch.volume);
   if (patch.rate !== undefined) player.setRate(patch.rate);
   if (patch.skipSilence !== undefined && platform.os === "android") player.applySkipSilence(patch.skipSilence);
@@ -594,15 +600,21 @@ export function isLiked(id: string) {
   const local = tracks().find(track => track.id === id)?.source === "audio";
   return account.signedIn() && !local ? account.isCloudLiked(id) : likedIds().includes(id);
 }
-export function toggleLike(track: Track) {
+export async function setTrackLiked(track: Track, liked: boolean) {
   if (account.signedIn() && track.source === "youtube") {
-    void account.setLike(track.id, !account.isCloudLiked(track.id)).catch(showError);
-    return;
+    await account.setLike(track.id, liked);
+  } else {
+    addTracks([track], false);
+    if (liked) addLibraryTracks([track], false);
+    likedIds.update(ids => liked ? [track.id, ...ids.filter(id => id !== track.id)] : ids.filter(id => id !== track.id));
+    void saveLibrary();
   }
-  addTracks([track], false);
-  if (!isLiked(track.id)) addLibraryTracks([track], false);
-  likedIds.update((ids) => ids.includes(track.id) ? ids.filter((id) => id !== track.id) : [track.id, ...ids]);
-  void saveLibrary();
+  if (liked && settings().downloadOnLike && !downloads().some(item => item.id === track.id) && !track.url?.startsWith("file:") && !track.url?.startsWith("local:")) {
+    void downloadTrack(track).catch(showError);
+  }
+}
+export function toggleLike(track: Track) {
+  void setTrackLiked(track, !isLiked(track.id)).catch(showError);
 }
 
 function makePlaylist(name: string, tracks: Track[] = []): Playlist {

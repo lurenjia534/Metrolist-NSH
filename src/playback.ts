@@ -37,6 +37,7 @@ interface PlaybackOptions {
   resolveStream: (track: Track, request?: { refresh?: boolean }) => Promise<StreamInfo>;
   sourceContext?: () => string;
   historySeconds?: () => number;
+  uniqueQueueAdditions?: () => boolean;
   autoRadio?: () => boolean;
   skipSilence?: () => boolean;
   fetchRadio?: (track: Track) => Promise<Track[]>;
@@ -623,38 +624,39 @@ export function cycleRepeat() {
   prepareUpcoming();
   options?.onPreferences?.();
 }
-export function addTracksToQueue(tracks: Track[]) {
+function enqueue(tracks: Track[], next: boolean) {
   if (!tracks.length) return;
-  const start = queue().length;
   batch(() => {
-    queue.update(items => [...items, ...tracks]);
-    if (currentIndex() < 0) currentIndex.set(0);
-  });
-  for (let index = start; index < queue().length; index++) {
-    if (index !== currentIndex()) shuffleBag.splice(Math.floor(Math.random() * (shuffleBag.length + 1)), 0, index);
-  }
-  changed();
-}
-export function playNextTracks(tracks: Track[]) {
-  if (!tracks.length) return;
-  const index = currentIndex() + 1;
-  batch(() => {
+    if (options?.uniqueQueueAdditions?.()) {
+      const ids = new Set(tracks.map(track => track.id));
+      const current = currentTrack();
+      const remove = queue().flatMap((track, index) => index !== currentIndex() && ids.has(track.id) ? [index] : []);
+      if (remove.length) removeEntries(remove);
+      tracks = tracks.filter(track => ids.delete(track.id) && track.id !== current?.id);
+    }
+    const index = next ? currentIndex() + 1 : queue().length;
+    const remap = (item: number) => item >= index ? item + tracks.length : item;
+    shuffleBag = shuffleBag.map(remap);
+    visited = visited.map(remap);
     queue.update(items => [...items.slice(0, index), ...tracks, ...items.slice(index)]);
-    if (currentIndex() < 0) currentIndex.set(0);
+    if (currentIndex() < 0 && tracks.length) currentIndex.set(0);
+    const added = tracks.map((_, offset) => index + offset).filter(item => item !== currentIndex());
+    if (next) shuffleBag.push(...added.reverse());
+    else for (const item of added) shuffleBag.splice(Math.floor(Math.random() * (shuffleBag.length + 1)), 0, item);
   });
-  const remap = (item: number) => item >= index ? item + tracks.length : item;
-  shuffleBag = shuffleBag.map(remap);
-  visited = visited.map(remap);
-  // The shuffle bag pops from its end; a batch must play in its displayed order.
-  shuffleBag.push(...tracks.map((_, offset) => index + offset).filter(item => item !== currentIndex()).reverse());
   changed();
 }
+export function addTracksToQueue(tracks: Track[]) { enqueue(tracks, false); }
+export function playNextTracks(tracks: Track[]) { enqueue(tracks, true); }
 export function addToQueue(track: Track) { addTracksToQueue([track]); }
 export function playNext(track: Track) { playNextTracks([track]); }
 export function removeFromQueue(index: number) {
   removeQueueEntries([index]);
 }
 export function removeQueueEntries(indices: number[]) {
+  if (removeEntries(indices)) changed();
+}
+function removeEntries(indices: number[]) {
   const removed = new Set(indices);
   const selected = currentIndex();
   const resume = playRequested || playing();
@@ -668,8 +670,8 @@ export function removeQueueEntries(indices: number[]) {
       items.push(track);
     }
   });
-  if (items.length === queue().length) return;
-  if (!items.length) { clearQueue(); return; }
+  if (items.length === queue().length) return false;
+  if (!items.length) { clearQueue(); return false; }
   // On removal, the next surviving occurrence takes over, or the last if there is no successor.
   const next = selected < 0 ? -1 : retained.get(selected) ?? Math.min(beforeCurrent, items.length - 1);
   const remap = (list: number[]) => list.filter(index => retained.has(index)).map(index => retained.get(index)!);
@@ -685,7 +687,7 @@ export function removeQueueEntries(indices: number[]) {
       updateMediaSession();
     }
   }
-  changed();
+  return true;
 }
 function reorderQueue(from: number, to: number) {
   const items = [...queue()];

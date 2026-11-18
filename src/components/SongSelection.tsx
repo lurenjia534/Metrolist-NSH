@@ -54,8 +54,7 @@ export function SelectionActions(props: {
     void action(async () => {
       for (const track of tracks) {
         if (s.isLiked(track.id) === liked) continue;
-        if (account.signedIn() && track.source === "youtube") await account.setLike(track.id, liked);
-        else s.toggleLike(track);
+        await s.setTrackLiked(track, liked);
       }
       props.onClear();
     }, liked ? "已喜欢所选歌曲" : "已取消喜欢所选歌曲");
