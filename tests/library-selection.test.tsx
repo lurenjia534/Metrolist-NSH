@@ -76,7 +76,7 @@ test("batch play-next and add-to-playlist preserve displayed order and repeated 
 
 test("history batch removal keeps listening statistics, likes and library membership", async () => {
   const app = await open("../App.tsx", { width: 1440, height: 1100, platform: "linux", storage, network });
-  await app.press("id:nav-history"); await app.waitFor("id:page-history");
+  await app.waitFor("id:nav-history"); await app.press("id:nav-history"); await app.waitFor("id:page-history");
   await app.type("id:song-collection-filter", "Alpha");
   await app.press("id:collection-select"); await app.press("id:selection-all");
   await app.press("id:selection-actions"); await app.press("id:selection-remove");
