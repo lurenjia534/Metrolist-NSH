@@ -1,6 +1,7 @@
-import { Text, View, Scroll, List, Clipboard, signal, computed, effect, cleanup, createAnimatedValue, createMotion, windowSize, reduceMotion, colorScheme, type ListRef, type JSX, type Motion, type MotionSpec } from "nsh";
+import { host, platform, Text, View, Scroll, List, Clipboard, signal, computed, effect, cleanup, createAnimatedValue, createMotion, windowSize, reduceMotion, colorScheme, type ListRef, type JSX, type Motion, type MotionSpec } from "nsh";
 import { Button, Dialog, Tab, Tabs, Toolbar } from "nsh/base";
 import * as s from "../store";
+import { currentCredentials } from "../account";
 import * as p from "../playback";
 import * as nav from "../navigation";
 import * as together from "../together";
@@ -405,7 +406,21 @@ function Transport(props: { onHeight: (height: number) => void }) {
       </View>
     </View>
     <If when={p.remoteControlled()}><Text class="text-center text-xs text-muted-foreground">由主持人控制 · {together.room()?.roomCode}</Text></If>
-    <If when={p.playbackError()}><View role="alert" class="gap-2.5 rounded-(--radius-card) border border-border bg-card p-3"><Text class="line-clamp-4 text-xs text-destructive">{p.playbackError()}</Text><Pill label="重试播放" icon="refresh" onPress={() => void action(p.retryPlayback)} /></View></If>
+    <If when={p.playbackError()}><View role="alert" class="gap-2.5 rounded-(--radius-card) border border-border bg-card p-3">
+      <Text class="line-clamp-4 text-xs text-destructive">{p.playbackError()}</Text>
+      <If when={platform.os === "android" && track()?.source === "youtube" && ["official-player", "player-restricted"].includes(p.playbackErrorCode())}>
+        <Pill testID="official-watch" primary label="在应用内用 YouTube Music 播放" icon="play" onPress={() => void action(() =>
+          host.call("app.youtube.watch", { videoId: track()!.id, authUser: currentCredentials()?.authUser || "" }))} />
+      </If>
+      <If when={track()?.source === "youtube" && p.playbackErrorCode() === "track-unavailable"}>
+        <Pill testID="find-recording" label="查找其他发行版本" icon="search" onPress={() => {
+          const song = track()!;
+          nav.fullPlayer.set(false);
+          nav.performSearch(`${song.title} ${song.artist}`, "songs");
+        }} />
+      </If>
+      <Pill label="重试播放" icon="refresh" onPress={() => void action(p.retryPlayback)} />
+    </View></If>
   </View>;
 }
 
