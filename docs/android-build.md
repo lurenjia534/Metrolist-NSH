@@ -81,15 +81,17 @@ python scripts/build-android.py \
 
 也支持 `ANDROID_HOME` / `ANDROID_SDK_ROOT`、`JAVA_HOME`、`NSH_BIN` 和 `NSH_KEYSTORE_PASSWORD`。密码不输出到命令行。
 
-Linux 缺少 SDK 时，脚本从 Google 官方仓库获取 `build-tools;35.0.1` 与 `platforms;android-35`；macOS / Windows 可先用 Android SDK Manager 安装。NSH Java 源码与原生库都固定为 `f4d68f7`。
+Linux 缺少 SDK 时，脚本从 Google 官方仓库获取 `build-tools;35.0.1` 与 `platforms;android-35`；macOS / Windows 可先用 Android SDK Manager 安装。
 
-Media3、OkHttp、Kotlin 和其依赖固定在 `android/media3-dependencies.json`，包含官方 Google Maven / Maven Central 地址和摘要。NSH CLI、Android/Web 组件与 Java 源码固定在 `scripts/nsh-toolchain.json`。发布构建读取这两份清单，不临时解析“最新版本”。安装器和 Android 构建优先使用本仓库的 `nsh-runtime-f4d68f7` 固定工具链 Release；只有镜像资产返回 HTTP 404 时才从上游稳定版 `v0.5.0` 引导，随后仍校验固定摘要。`NSH_DOWNLOAD_BASE` 可指定同一固定版本的其他镜像；不同版本的 Java 与 JNI 库不能混用。
+Media3、OkHttp、Kotlin 和其依赖固定在 `android/media3-dependencies.json`，包含官方 Google Maven / Maven Central 地址和摘要。NSH CLI、Android/Web 组件与基础源码使用 `scripts/nsh-toolchain.json` 中的 `f4d68f7`。安装器和 Android 构建优先使用本仓库的 `nsh-runtime-f4d68f7` 固定工具链 Release；只有镜像资产返回 HTTP 404 时才从上游稳定版 `v0.5.0` 引导，随后仍校验固定摘要。`NSH_DOWNLOAD_BASE` 可指定同一固定版本的其他镜像。
+
+Android 键盘动画编译自 `android/nsh-java-sources.json` 固定的上游文件，构建时校验 SHA-256。[NSH #2053](https://github.com/longbridge/nsh/pull/2053)
 
 ### 资源与字节码
 
 1. 用匹配的官方 NSH Android 运行时打出当前 TSX 的基础 APK。
 2. 合并 Media3 AAR 的多语言字符串资源和本项目 Manifest；由 AAPT2 生成最终资源表及对应的 `R.java`。
-3. 将官方 NSH Java、项目 host / 播放器 / 前台服务和生成的 `R.java` 一起编译，使用完整依赖 classpath。
+3. 在 `AppActivity.java` 中接入 `MetrolistHost` 的生命周期、Intent 与返回行为，再将 NSH Java、项目 host / 播放器 / 前台服务和生成的 `R.java` 一起编译。
 4. D8 处理应用与所有运行时依赖，将生成的 `classes*.dex` 装入最终 APK。不会只复制 AAR 的 `classes.jar` 而遗漏它的资源 ID。
 5. 执行 16 KiB ZIP 对齐和 APK 签名，检查签名以及每个架构 ELF `PT_LOAD` 的 16 KiB 对齐。
 6. 输出 APK、SHA-256 和 `build-info.json`，记录实际 Git 状态、引擎版本、缓冲设置、架构和关键源码摘要。
