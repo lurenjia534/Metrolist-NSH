@@ -618,6 +618,14 @@ export function setRate(value: number) {
   updateMediaSession();
   options?.onPreferences?.();
 }
+export function shuffled(tracks: Track[]) {
+  const result = [...tracks];
+  for (let index = result.length - 1; index > 0; index--) {
+    const other = Math.floor(Math.random() * (index + 1));
+    [result[index], result[other]] = [result[other], result[index]];
+  }
+  return result;
+}
 export function toggleShuffle() { shuffle.update((value) => !value); resetShuffle(); prepareUpcoming(); options?.onPreferences?.(); }
 export function cycleRepeat() {
   repeat.set(repeat() === "off" ? "all" : repeat() === "all" ? "one" : "off");
