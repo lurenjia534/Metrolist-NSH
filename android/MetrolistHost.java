@@ -43,6 +43,7 @@ public final class MetrolistHost implements AutoCloseable {
     private File exportFile;
     private String exportContent;
     private MetrolistLogin login;
+    private MetrolistWatchPlayer watchPlayer;
     private final MetrolistSpotify spotify;
 
     public MetrolistHost(Activity activity, NshView view) {
@@ -66,6 +67,14 @@ public final class MetrolistHost implements AutoCloseable {
         });
         view.handle("app.audio.cancelPreload", (data, reply) -> {
             if (MetrolistAudio.current() != null) MetrolistAudio.current().cancelPreload();
+            reply.resolve(null);
+        });
+        view.handle("app.youtube.watch", (data, reply) -> {
+            Map<String, Object> args = arguments(data);
+            if (watchPlayer == null) {
+                MetrolistMediaService.pause();
+                watchPlayer = new MetrolistWatchPlayer(activity, string(args, "videoId"), string(args, "authUser"), () -> watchPlayer = null);
+            }
             reply.resolve(null);
         });
         view.handle("auth.available", (data, reply) -> reply.resolve(object("available", true, "method", "webview")));
@@ -295,6 +304,7 @@ public final class MetrolistHost implements AutoCloseable {
     }
     @Override public void close() {
         spotify.close();
+        if (watchPlayer != null) watchPlayer.close();
         for (Download download : downloads.values()) download.cancel();
         io.shutdown();
         MetrolistAudio.detach(view);

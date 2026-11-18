@@ -183,7 +183,7 @@ export async function initialize() {
       const downloaded = downloadJobs().find((job) => job.id === track.id && job.status === "completed"
         && (track.source === "audio" || settings().audioQuality === "auto" || job.quality === settings().audioQuality));
       if (downloaded?.url) return { ...await api.resolvePlayback({ ...track, source: "audio", url: downloaded.url }), quality: downloaded.quality };
-      return api.resolvePlayback(track, settings().audioQuality, request);
+      return api.resolvePlayback(track, settings().audioQuality, { ...request, media3: platform.os === "android" });
     },
     sourceContext: () => JSON.stringify([settings().apiBase, settings().audioQuality, account.currentCredentials()]),
     historySeconds: () => settings().historySeconds,

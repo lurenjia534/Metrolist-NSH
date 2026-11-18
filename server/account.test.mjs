@@ -329,8 +329,10 @@ test('account-private songs with cipher-only formats cannot silently use an anon
     return Response.json({ playabilityStatus: { status: 'OK' }, videoDetails: { isPrivate: true },
       streamingData: { adaptiveFormats: [{ mimeType: 'audio/mp4', signatureCipher: 'fixture-cipher' }] } });
   } });
-  assert.equal(response.status, 502);
-  assert.match((await response.json()).error, /私有歌曲/);
+  assert.equal(response.status, 422);
+  const failure = await response.json();
+  assert.equal(failure.code, 'official-player');
+  assert.match(failure.error, /私有歌曲/);
   // visionOS first, then the account's own player; neither has a direct format.
   assert.equal(calls, 2);
 });

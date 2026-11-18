@@ -181,7 +181,9 @@ export async function playbackRequest(url, init, options, stage) {
 
 export async function innertube(endpoint, body, options = {}) {
   // Playback bootstraps its own visitor (streaming.mjs); both share the cache.
-  let visitorData = endpoint === 'player' ? options.account?.visitorData : await sessionVisitor(options);
+  let visitorData = endpoint === 'player'
+    ? (options.account ? options.account.visitorData : getAnonymousVisitor(options)?.visitorData)
+    : await sessionVisitor(options);
   if (body.continuation?.startsWith('nsh:')) {
     const state = JSON.parse(atob(body.continuation.slice(4)));
     body = { ...body, continuation: state.token };
@@ -615,6 +617,23 @@ export async function explore(params = {}) {
     tab === 'all' ? innertube('browse', { browseId: ids.moods }, params) : Promise.resolve(null),
   ]);
   return { tab, sections: sections(data), moods: moodCategories(moods || (tab === 'moods' ? data : {})), continuation: continuation(data) };
+}
+
+// YouTube Music pairs a song and its video inside a single queue wrapper.
+export async function counterpartId(videoId, options) {
+  const data = await innertube('next', { videoId, enablePersistentPlaylistPanel: true }, options);
+  const panel = find(data, 'playlistPanelRenderer');
+  for (const row of panel?.contents || []) {
+    const wrapper = row.playlistPanelVideoWrapperRenderer;
+    const primary = wrapper?.primaryRenderer?.playlistPanelVideoRenderer?.videoId;
+    if (!primary) continue;
+    for (const entry of wrapper.counterpart || []) {
+      const other = entry.counterpartRenderer?.playlistPanelVideoRenderer?.videoId;
+      if (!other || other === primary) continue;
+      if (primary === videoId) return other;
+      if (other === videoId) return primary;
+    }
+  }
 }
 
 export async function next(id, params = {}) {

@@ -1,11 +1,12 @@
 import { host, platform } from "nsh";
 import { api as nativeGateway } from "../server/index.mjs";
 import { currentCredentials, useAccountForBrowse } from "./account";
+import { isTrack } from "./model";
 import type { AudioQuality, BrowseEndpoint, BrowseResponse, ExploreResponse, ExploreTab, HomeResponse, LyricMatch, Lyrics, PlayEndpoint, SearchResponse, SearchType, StreamInfo, Track } from "./model";
 
 let origin = "";
 export interface SessionCredentials { cookie: string; visitorData?: string; dataSyncId?: string; authUser?: string }
-export interface ResolveOptions { refresh?: boolean }
+export interface ResolveOptions { refresh?: boolean; media3?: boolean }
 const streamCache = new Map<string, StreamInfo>();
 const streamRequests = new Map<string, { promise: Promise<StreamInfo>; refresh: boolean }>();
 
@@ -82,7 +83,7 @@ export const fetchLyrics = (track: Track) =>
 export function fetchStream(id: string, quality: AudioQuality = "auto", options: ResolveOptions = {}): Promise<StreamInfo> {
   const credentials = currentCredentials();
   const requestOrigin = origin;
-  const params = { id, quality, ...(platform.os === "android" ? {} : { container: "mp4" }) };
+  const params = { id, quality, ...(platform.os === "android" ? {} : { container: "mp4" }), ...(options.media3 ? { playback: "media3" } : {}) };
   const url = apiUrl("stream", params);
   const key = JSON.stringify([url, credentials?.cookie, credentials?.authUser, credentials?.dataSyncId, credentials?.visitorData]);
   const pending = streamRequests.get(key);
@@ -109,7 +110,28 @@ export async function resolvePlayback(track: Track, quality: AudioQuality = "aut
     return { url: local.url, duration: track.duration };
   }
   if (track.source === "audio" && track.url) return { url: track.url, duration: track.duration };
-  return fetchStream(track.id, quality, options);
+  try { return await fetchStream(track.id, quality, options); }
+  catch (error) {
+    if (!options.media3 || !(error instanceof ApiRequestError) || error.code !== "track-unavailable" ||
+        !track.title || !track.artist || !track.album || !track.duration) throw error;
+    const result = await fetchSearch(`${track.title} ${track.artist}`, "songs");
+    const normalize = (value: string) => value.normalize("NFKC").trim().toLocaleLowerCase();
+    const recordings = result.items.filter(isTrack).filter(candidate =>
+      candidate.id !== track.id && normalize(candidate.title) === normalize(track.title) &&
+      normalize(candidate.artist) === normalize(track.artist) && normalize(candidate.album) === normalize(track.album) &&
+      (!track.artistId || !candidate.artistId || track.artistId === candidate.artistId) &&
+      !!candidate.explicit === !!track.explicit && Math.abs(candidate.duration - track.duration) <= 2);
+    const ids = [...new Set(recordings.map(candidate => candidate.id))];
+    if (ids.length !== 1) throw error;
+    try {
+      const source = await fetchStream(ids[0], quality, options);
+      return { ...source, title: track.title, artist: track.artist, artwork: track.artwork,
+        cacheKey: source.cacheKey || `${ids[0]}:${source.formatId || quality}` };
+    } catch (alternateError) {
+      if (alternateError instanceof ApiRequestError && alternateError.stage === "player" && alternateError.status === 422) throw error;
+      throw alternateError;
+    }
+  }
 }
 
 export async function resolveStream(track: Track, quality: AudioQuality = "auto", options: ResolveOptions = {}): Promise<string> {

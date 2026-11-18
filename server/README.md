@@ -169,14 +169,16 @@ IDs means repeated copies of the same song can be edited independently. Creating
 a playlist with a description sets it through the original edit action after
 the create endpoint returns the new playlist ID.
 
-An account audio request first uses authenticated `WEB_REMIX`. If it returns a
-direct audio URL, metadata identifies `client: "WEB_REMIX"` and
-`authenticated: true`. A public song with cipher-only WEB_REMIX formats can use
-the existing anonymous VISIONOS path. InnertubeX marks VISIONOS as not supporting
-login; it never receives Google credentials here. A private song requiring
-player-script deciphering or a missing token returns its actual failure. No
-successful private-song playback has been claimed or verified with a real
-account in this workspace.
+Audio resolution starts with the visitor-backed player and uses the YouTube Music
+web player for content-specific failures. Account credentials go to WEB_REMIX.
+Android playback sends `playback=media3`. This also accepts an authorized
+progressive MP4 carrying audio. Downloads continue to request audio-only files.
+
+When a recording is unavailable, Android checks the song/video pair declared in
+YouTube Music's queue. It can also use a unique catalog recording with the same
+title, artist, album and explicit flag and a duration within two seconds. The
+queue retains the original song ID. For a song that requires the official
+player, Android offers its watch page in the app's signed-in WebView.
 
 ### Node-managed downloads
 

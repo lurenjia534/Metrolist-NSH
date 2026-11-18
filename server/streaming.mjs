@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The visitor-backed VISIONOS_0_1 direct-audio path from Metrolist / InnertubeX.
-import { ApiError, artwork, getAnonymousVisitor, innertube, playbackRequest, rememberAnonymousVisitor, upstreamError, WEB_USER_AGENT } from './catalog.mjs';
+import { ApiError, artwork, counterpartId, getAnonymousVisitor, innertube, playbackRequest, rememberAnonymousVisitor, upstreamError, WEB_USER_AGENT } from './catalog.mjs';
 import { accountIdentity } from './auth.mjs';
 
 const YOUTUBE_ORIGIN = 'https://www.youtube.com';
@@ -47,9 +47,22 @@ async function watchVisitor(videoId, options = {}) {
   finally { state.visitorRequest = null; }
 }
 
-function directAudioFormats(player) {
-  return (player.streamingData?.adaptiveFormats || []).filter(format =>
-    format.mimeType?.startsWith('audio/') && format.url && !new URL(format.url).searchParams.has('n'));
+function playerFormats(player, options) {
+  const streams = player.streamingData;
+  const direct = format => format.url && !new URL(format.url).searchParams.has('n');
+  const audio = (streams?.adaptiveFormats || []).filter(format => format.mimeType?.startsWith('audio/') && direct(format));
+  if (audio.length || options.playback !== 'media3') return audio;
+  // Progressive MP4 carries both tracks. Media3 selects its audio renderer.
+  return (streams?.formats || []).filter(format => format.mimeType?.startsWith('video/mp4') &&
+    (format.audioQuality || format.audioChannels || /mp4a/i.test(format.mimeType)) && direct(format));
+}
+
+function playerFailure(player) {
+  const status = player.playabilityStatus;
+  const unavailable = (status?.status === 'UNPLAYABLE' || status?.status === 'ERROR') && !player.videoDetails?.isPrivate;
+  return new ApiError(status?.reason || '该曲目目前无法播放。', 422, {
+    code: unavailable ? 'track-unavailable' : 'player-restricted', stage: 'player',
+  });
 }
 
 function audioPlayerRecord(player, formats, client) {
@@ -86,39 +99,52 @@ async function visionPlayer(videoId, options = {}) {
   }, options, 'player');
   const player = await response.json();
   if (player.playabilityStatus?.status !== 'OK') {
-    throw new ApiError(player.playabilityStatus?.reason || '该曲目目前无法播放。');
+    throw playerFailure(player);
   }
-  const formats = directAudioFormats(player);
-  if (!formats.length) throw new ApiError('YouTube 没有为这首曲目返回可直接播放的纯音频格式。');
+  const formats = playerFormats(player, options);
+  if (!formats.length) throw new ApiError('当前播放器需要通过 YouTube Music 播放这首歌曲。', 422, { code: 'official-player', stage: 'player' });
   return audioPlayerRecord(player, formats, 'VISIONOS_0_1');
 }
 
 async function requestAudioPlayer(videoId, options = {}) {
-  if (!options.account) return visionPlayer(videoId, options);
-  // Signed in, the account's own player is the fallback for what visionOS cannot play
-  // (private uploads); it is not a second request for every song.
-  let visionFailure;
   try { return await visionPlayer(videoId, options); }
-  catch (error) { visionFailure = error; }
+  catch (error) {
+    if (!options.account && !['track-unavailable', 'player-restricted', 'official-player'].includes(error.code)) throw error;
+  }
   const player = await innertube('player', {
     videoId, contentCheckOk: true, racyCheckOk: true,
     playbackContext: { contentPlaybackContext: { html5Preference: 'HTML5_PREF_WANTS' } },
   }, options);
   if (player.playabilityStatus?.status !== 'OK') {
-    throw new ApiError(player.playabilityStatus?.reason || '当前账号无法播放这首歌曲。');
+    throw playerFailure(player);
   }
-  const formats = directAudioFormats(player);
+  const formats = playerFormats(player, options);
   if (formats.length) return audioPlayerRecord(player, formats, 'WEB_REMIX');
-  if (player.videoDetails?.isPrivate) {
-    throw new ApiError('账号已授权，但这首私有歌曲需要 YouTube 的播放器解密或令牌；当前纯音频路径没有返回可用音源。');
+  throw new ApiError(player.videoDetails?.isPrivate
+    ? '请使用当前账号在 YouTube Music 播放这首私有歌曲。'
+    : '这首歌曲需要使用 YouTube Music 播放器播放。', 422, { code: 'official-player', stage: 'player' });
+}
+
+async function resolveRecording(videoId, options) {
+  try { return await requestAudioPlayer(videoId, options); }
+  catch (error) {
+    if (error.code !== 'track-unavailable' || options.playback !== 'media3') throw error;
+    const alternate = await counterpartId(videoId, options);
+    if (!alternate) throw error;
+    try {
+      const record = await requestAudioPlayer(alternate, options);
+      return { ...record, counterpart: alternate };
+    } catch (alternateError) {
+      if (alternateError.stage === 'player' && alternateError.status === 422) throw error;
+      throw alternateError;
+    }
   }
-  throw visionFailure;
 }
 
 async function playerRecord(videoId, options = {}) {
   const state = resolverState(options);
   const identity = await accountIdentity(options.account);
-  const key = `${identity}:${videoId}`;
+  const key = `${identity}:${videoId}:${options.playback === 'media3' ? 'media3' : 'audio'}`;
   const refresh = options.refresh === true || options.refresh === '1';
   const pending = state.requests.get(key);
   if (refresh) state.records.delete(key);
@@ -126,7 +152,7 @@ async function playerRecord(videoId, options = {}) {
   if (cached?.expiresAt > Date.now() + 60000) return cached;
   if (pending && (!refresh || pending.refresh)) return pending.promise;
   const entry = { refresh, promise: null };
-  entry.promise = requestAudioPlayer(videoId, options).then(record => {
+  entry.promise = resolveRecording(videoId, options).then(record => {
     const value = { ...record, identity };
     if (state.requests.get(key) === entry) state.records.set(key, value);
     return value;
@@ -195,24 +221,27 @@ export function chooseAudioFormat(formats, quality = 'auto', container = '') {
 }
 
 export async function resolveWorkerAudio(videoId, options = {}) {
-  const { player, formats, expiresAt, nonce, client, identity } = await playerRecord(videoId, options);
+  const { player, formats, expiresAt, nonce, client, identity, counterpart } = await playerRecord(videoId, options);
   const quality = options.quality || 'auto';
-  const format = chooseAudioFormat(formats, quality, options.container || '');
+  const format = formats[0].mimeType.startsWith('video/')
+    ? [...formats].sort((a, b) => Number(a.bitrate || 0) - Number(b.bitrate || 0))[0]
+    : chooseAudioFormat(formats, quality, options.container || '');
   const url = new URL(format.url);
   url.searchParams.set('cpn', nonce);
   const details = player.videoDetails || {};
   const audioConfig = player.playerConfig?.audioConfig || {};
   return {
     url: url.href, headers: audioRequestHeaders(client), expiresAt, quality, container: options.container || '',
-    cacheKey: `${identity === 'anonymous' ? '' : `${identity}:`}${videoId}:${format.itag}:${format.contentLength || ''}`,
+    cacheKey: `${identity === 'anonymous' ? '' : `${identity}:`}${counterpart || videoId}:${format.itag}:${format.contentLength || ''}`,
     mimeType: format.mimeType.split(';')[0], codecs: format.mimeType.match(/codecs="([^"]+)"/)?.[1],
     bitrate: Number(format.bitrate || format.averageBitrate), formatId: String(format.itag),
     sampleRate: Number(format.audioSampleRate), contentLength: Number(format.contentLength),
     duration: Number(details.lengthSeconds || Number(format.approxDurationMs) / 1000),
-    title: details.title || '', artist: details.author || '', artwork: artwork(details.thumbnail),
+    title: counterpart ? '' : details.title || '', artist: counterpart ? '' : details.author || '', artwork: counterpart ? '' : artwork(details.thumbnail),
+    ...(counterpart ? { counterpartId: counterpart } : {}),
     loudnessDb: audioConfig.loudnessDb ?? format.loudnessDb,
     perceptualLoudnessDb: audioConfig.perceptualLoudnessDb,
-    client, authenticated: client === 'WEB_REMIX',
+    client, authenticated: client === 'WEB_REMIX' && !!options.account,
   };
 }
 

@@ -90,6 +90,8 @@ public final class MetrolistAudio {
                 .setAudioAttributes(new AudioAttributes.Builder().setUsage(C.USAGE_MEDIA)
                         .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
                 .setHandleAudioBecomingNoisy(true).setWakeMode(C.WAKE_MODE_NETWORK).build();
+        player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, true).build());
         player.addListener(new Player.Listener() {
             @Override public void onEvents(Player value, Player.Events events) { publish(true); }
             @Override public void onPositionDiscontinuity(Player.PositionInfo oldPosition, Player.PositionInfo newPosition, int reason) {

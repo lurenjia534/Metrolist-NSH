@@ -36,7 +36,7 @@ test("Android starts the service engine with source headers and format cache ide
     mimeType: "audio/webm", formatId: "251", expiresAt: stream.expiresAt,
     position: 0, volume: 0.7, rate: 1, playWhenReady: true,
   });
-  expect(app.requests().find(request => request.url.includes("/api/stream"))!.url).toBe("https://gateway.test/api/stream?id=video&quality=auto");
+  expect(app.requests().find(request => request.url.includes("/api/stream"))!.url).toBe("https://gateway.test/api/stream?id=video&quality=auto&playback=media3");
   expect(read(app)).toMatchObject({ playing: false, buffering: true });
   await app.host.send("audio.state", state(opened(app)[0].requestId));
   expect(read(app)).toMatchObject({ playing: true, buffering: false, buffered: 50 });
@@ -193,4 +193,47 @@ test("a five-second listening threshold records at the crossing without waiting 
   expect(JSON.parse(app.storage()["metrolist.library"] || "{}").listenEvents || []).toHaveLength(0);
   await app.host.send("audio.state", state(id, { position: 5 }));
   expect(JSON.parse(app.storage()["metrolist.library"]).listenEvents[0].seconds).toBe(5);
+});
+
+for (const code of ["official-player", "track-unavailable"]) {
+  test(`Android full player recovers from ${code} for the current recording`, async () => {
+    const profile = { id: "2:watch-fixture", name: "Watch account", channelId: "watch-channel", verifiedAt: 1 };
+    const signedIn = { profile, credentials: { cookie: "SAPISID=fixture-watch", authUser: "2", dataSyncId: "watch-fixture" },
+      library: { playlists: [], liked: [], songs: [], albums: [], artists: [] }, lastSynced: 0 };
+    const app = await open("../App.tsx", { platform: "android", width: 390, height: 844, storage: {
+      ...storage, "metrolist.accounts": JSON.stringify({ accounts: [signedIn], activeId: profile.id, syncEnabled: false, useAccountForBrowse: true }),
+      "metrolist.player": JSON.stringify({ queue: [video], index: 0, position: 0, title: "我的收藏" }),
+    }, host: { handlers: { ...handlers, "auth.available": { available: true, method: "webview" }, "app.youtube.watch": null } }, network: {
+      ...network, "GET https://gateway.test/api/account": { body: profile },
+      "GET https://gateway.test/api/stream?id=video&quality=auto*": { status: 422, body: { code, stage: "player", error: "无法直接播放" } },
+      "GET https://gateway.test/api/search?*": { body: { items: [video] } },
+    } });
+    await app.waitFor("id:mini-play-pause");
+    await app.press("id:mini-play-pause");
+    await app.press("id:open-player");
+    if (code === "official-player") {
+      await app.waitFor("id:official-watch"); await app.press("id:official-watch");
+      expect(calls(app, "app.youtube.watch").map(call => call.data)).toEqual([{ videoId: video.id, authUser: "2" }]);
+      expect(opened(app)).toHaveLength(0);
+    } else {
+      await app.waitFor("id:find-recording"); await app.press("id:find-recording");
+      await app.waitFor("id:page-search");
+      await app.waitUntil(() => app.requests().some(request => request.url.includes("/api/search?")));
+      const url = new URL(app.requests().find(request => request.url.includes("/api/search?"))!.url);
+      expect(url.searchParams.get("q")).toBe(`${video.title} ${video.artist}`);
+      expect(url.searchParams.get("type")).toBe("songs");
+    }
+  });
+}
+
+test("Android plays a unique matching catalog recording while preserving the original library identity", async () => {
+  const replacement = { ...video, id: "album-recording", duration: 61 };
+  const app = await open("./runtime-fixture.tsx", { width: 390, height: 844, platform: "android", storage, host: { handlers }, network: {
+    ...network, "GET https://gateway.test/api/stream?id=video&quality=auto*": { status: 422, body: { code: "track-unavailable", stage: "player", error: "Unavailable" } },
+    "GET https://gateway.test/api/search?*": { body: { items: [video, { ...replacement, id: "live", album: "Live" }, replacement] } },
+    "GET https://gateway.test/api/stream?id=album-recording*": { body: { ...stream, cacheKey: "alternate-140", title: "Other metadata" } },
+  } });
+  await app.press("Start video");
+  await app.waitUntil(() => opened(app).length === 1);
+  expect(calls(app, "app.audio.open")[0].data).toMatchObject({ track: { id: "video", title: "Video song" }, cacheKey: "alternate-140" });
 });

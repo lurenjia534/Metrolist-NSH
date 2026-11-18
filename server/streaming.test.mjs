@@ -422,3 +422,75 @@ test('the audio proxy reads googlevideo in bounded ranges for whole and open-end
   assert.equal((await seek.arrayBuffer()).byteLength, length - start);
   assert.deepEqual(ranges, [`bytes=${start}-${start + RANGE_CHUNK_BYTES - 1}`, `bytes=${start + RANGE_CHUNK_BYTES}-${length - 1}`]);
 });
+
+const unavailable = () => Response.json({ playabilityStatus: { status: 'UNPLAYABLE', reason: 'This video is not available' } });
+const account = { cookie: 'SAPISID=playback-fixture', visitorData: 'account-visitor', authUser: '1' };
+
+test('Media3 plays the audio track of a private authorized MP4 without exposing it as an audio download', async () => {
+  const fetch = async (_url, init) => {
+    if (!init.headers.Authorization) return unavailable();
+    return Response.json({ playabilityStatus: { status: 'OK' }, videoDetails: { isPrivate: true },
+      streamingData: { adaptiveFormats: [{ mimeType: 'audio/mp4', signatureCipher: 'fixture' }],
+        formats: [formats[3], { itag: 18, mimeType: 'video/mp4; codecs="avc1, mp4a.40.2"', url: 'https://audio.test/authorized' }] } });
+  };
+  const media = await resolveWorkerAudio('private-recording', { playback: 'media3', fetch, account });
+  assert.equal(media.mimeType, 'video/mp4');
+  assert.equal(media.formatId, '18');
+  assert.equal(media.authenticated, true);
+  await assert.rejects(resolveWorkerAudio('private-recording', { fetch, account }), { code: 'official-player' });
+});
+
+test('an unavailable anonymous client can play the same ID via the music web player', async () => {
+  const fetch = async (url, init) => {
+    if (new URL(url).pathname === '/watch') return new Response('{"VISITOR_DATA":"guest-session"}');
+    if (init.headers['X-YouTube-Client-Name'] === '101') return unavailable();
+    assert.equal(init.headers['X-Goog-Visitor-Id'], 'guest-session');
+    assert.equal(init.headers.Authorization, undefined);
+    assert.equal(JSON.parse(init.body).videoId, 'original');
+    return playerResponse('original');
+  };
+  const media = await resolveWorkerAudio('original', { playback: 'media3', fetch });
+  assert.equal(media.client, 'WEB_REMIX');
+  assert.equal(media.authenticated, false);
+});
+
+function wrapper(primary, alternate) {
+  return { playlistPanelVideoWrapperRenderer: {
+    primaryRenderer: { playlistPanelVideoRenderer: { videoId: primary } },
+    counterpart: [{ counterpartRenderer: { playlistPanelVideoRenderer: { videoId: alternate } } }],
+  } };
+}
+
+for (const [primary, alternate] of [['unavailable', 'recording'], ['recording', 'unavailable']]) {
+  test(`Media3 resolves the official pair ${primary} -> ${alternate} in the active session`, async () => {
+    const lookedUp = [];
+    const fetch = async (url, init) => {
+      const id = JSON.parse(init.body).videoId;
+      if (new URL(url).pathname.endsWith('/next')) {
+        assert.equal(id, 'unavailable');
+        assert.ok(init.headers.Authorization);
+        return Response.json({ playlistPanelRenderer: { contents: [
+          wrapper('unrelated', 'another-song'), wrapper(primary, alternate),
+        ] } });
+      }
+      lookedUp.push(id);
+      return id === 'unavailable' ? unavailable() : playerResponse(id);
+    };
+    const media = await resolveWorkerAudio('unavailable', { playback: 'media3', account, fetch });
+    assert.deepEqual(lookedUp, ['unavailable', 'unavailable', 'recording']);
+    assert.equal(media.counterpartId, 'recording');
+    assert.equal(media.title, '');
+    assert.ok(media.cacheKey.includes(':recording:'));
+  });
+}
+
+test('no official pair keeps the original failure and does not play a recommendation', async () => {
+  const fetch = async (url, init) => {
+    assert.equal(JSON.parse(init.body).videoId, 'unavailable');
+    return new URL(url).pathname.endsWith('/next')
+      ? Response.json({ playlistPanelRenderer: { contents: [wrapper('x', 'y')] } })
+      : unavailable();
+  };
+  await assert.rejects(resolveWorkerAudio('unavailable', { playback: 'media3', account, fetch }),
+    { code: 'track-unavailable', message: 'This video is not available' });
+});
