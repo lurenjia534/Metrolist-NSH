@@ -107,9 +107,13 @@ async function visionPlayer(videoId, options = {}) {
 }
 
 async function requestAudioPlayer(videoId, options = {}) {
-  try { return await visionPlayer(videoId, options); }
-  catch (error) {
-    if (!options.account && !['track-unavailable', 'player-restricted', 'official-player'].includes(error.code)) throw error;
+  if (options.uploaded === '1') {
+    if (!options.account) throw new ApiError('请登录上传这首歌曲的账号。', 401);
+  } else {
+    try { return await visionPlayer(videoId, options); }
+    catch (error) {
+      if (!options.account && !['track-unavailable', 'player-restricted', 'official-player'].includes(error.code)) throw error;
+    }
   }
   const player = await innertube('player', {
     videoId, contentCheckOk: true, racyCheckOk: true,
@@ -128,7 +132,7 @@ async function requestAudioPlayer(videoId, options = {}) {
 async function resolveRecording(videoId, options) {
   try { return await requestAudioPlayer(videoId, options); }
   catch (error) {
-    if (error.code !== 'track-unavailable' || options.playback !== 'media3') throw error;
+    if (options.uploaded === '1' || error.code !== 'track-unavailable' || options.playback !== 'media3') throw error;
     const alternate = await counterpartId(videoId, options);
     if (!alternate) throw error;
     try {
@@ -144,7 +148,7 @@ async function resolveRecording(videoId, options) {
 async function playerRecord(videoId, options = {}) {
   const state = resolverState(options);
   const identity = await accountIdentity(options.account);
-  const key = `${identity}:${videoId}:${options.playback === 'media3' ? 'media3' : 'audio'}`;
+  const key = `${identity}:${options.uploaded === '1' ? 'upload:' : ''}${videoId}:${options.playback === 'media3' ? 'media3' : 'audio'}`;
   const refresh = options.refresh === true || options.refresh === '1';
   const pending = state.requests.get(key);
   if (refresh) state.records.delete(key);

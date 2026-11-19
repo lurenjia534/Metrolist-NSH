@@ -7,6 +7,7 @@ import { setTrackLiked } from "../store";
 import * as cloud from "../cloudActions";
 import { isTrack, type CatalogItem, type Collection } from "../model";
 import { Label, Pill, Chip, Tool, Field, Art, Section, SectionTitle, CommandMenu, Empty, Modal, Toggle, Press, palette as c, narrow, action, say, type CommandItem } from "../ui";
+import { UploadButton, requestDeleteUpload } from "../components/CloudLibrary";
 import { Icon } from "../icons";
 
 const musicUrl = "https://music.youtube.com";
@@ -14,6 +15,7 @@ const androidReleasesUrl = "https://github.com/lurenjia534/Metrolist-NSH/release
 const libraryTypes: { type: a.CloudType; title: string; icon: string }[] = [
   { type: "playlists", title: "歌单", icon: "queue" }, { type: "liked", title: "喜欢的歌曲", icon: "heart" },
   { type: "songs", title: "歌曲", icon: "music" }, { type: "albums", title: "专辑", icon: "album" },
+  { type: "uploads", title: "已上传", icon: "upload" },
   { type: "artists", title: "已订阅歌手", icon: "artist" },
 ];
 const sessionLabels = { none: "尚未登录", saved: "正在恢复账号连接", verifying: "正在检查账号连接…", connected: "已连接 YouTube Music", error: "账号连接需要更新" };
@@ -93,6 +95,7 @@ export function AccountPage() {
     const entries: CommandItem[] = [{ label: isTrack(item) ? "立即播放" : "打开详情", icon: isTrack(item) ? "play" : "right", run: () => openItem(item) }];
     if (isTrack(item)) {
       entries.push({ label: a.isCloudLiked(item.id) ? "从云端喜欢中移除" : "在 YouTube Music 喜欢", icon: "heart", active: a.isCloudLiked(item.id), disabled: !!a.mutation(), run: () => void action(() => setTrackLiked(item, !a.isCloudLiked(item.id))) });
+      if (item.uploadEntityId) entries.push({ label: "删除已上传歌曲", icon: "trash", danger: true, run: () => requestDeleteUpload(item) });
       if (a.cloudType() === "songs") entries.push({ label: "从云端音乐库移除", icon: "bookmark", disabled: !!a.mutation(), run: () => void action(() => a.setSavedSong(item.id, false)) });
     } else if (item.type === "artist") entries.push({ label: "取消 YouTube Music 订阅", icon: "artist", disabled: !!a.mutation(), run: () => void action(() => a.setSubscription(item.browseId, false, item.params)) });
     else if (item.type === "playlist") {
@@ -132,6 +135,7 @@ export function AccountPage() {
       <Section title="账号偏好"><Toggle testID="account-use-browse" label="使用账号浏览音乐" description="首页推荐与音乐目录使用当前 YouTube Music 账号。" value={a.useAccountForBrowse()} onChange={a.setUseAccountForBrowse} /><Toggle testID="account-auto-sync" label="登录后同步音乐库" description="登录后读取云端歌单、收藏和订阅，按账号保存在此设备。" value={a.syncEnabled()} onChange={a.setSyncEnabled} /><Label size={12} color={c().faint}>{a.lastSynced() ? `上次完整同步：${new Date(a.lastSynced()).toLocaleString()}` : "尚未完成一次完整音乐库同步"}</Label></Section>
 
       <View style={{ gap: 16 }}><SectionTitle title="YouTube Music 音乐库" subtitle="当前账号的云端内容" action="新建云端歌单" icon="plus" onPress={create} disabled={!!a.mutation()} /><Scroll horizontal scrollbar={false} style={{ flexShrink: 0 }} contentStyle={{ gap: 10 }}><Each of={libraryTypes}>{item => <Chip label={`${item().title} · ${a.cloudLibrary()[item().type].length}`} icon={item().icon} selected={a.cloudType() === item().type} onPress={() => chooseType(item().type)} />}</Each></Scroll>
+        <If when={a.cloudType() === "uploads"}><UploadButton /></If>
         <If when={a.cloudLoading()}><Label color={c().sub} size={13}>正在读取云端{libraryTypes.find(item => item.type === a.cloudType())?.title}…</Label></If>
         <If when={a.cloudItems().length > 0} else={<Empty icon={libraryTypes.find(item => item.type === a.cloudType())?.icon || "library"} title={a.syncing() || a.cloudLoading() ? "正在加载音乐库" : "此分类暂时没有内容"} description={a.lastSynced() ? "在 YouTube Music 收藏内容，或在这里搜索歌曲并添加到云端音乐库。" : "点按同步音乐库，读取当前账号的收藏与歌单。"}><Pill label="刷新此分类" icon="refresh" disabled={a.cloudLoading()} onPress={() => void action(() => a.loadCloudLibrary())} /></Empty>}>
           <View style={{ gap: 4 }}><Each of={a.cloudItems().slice(0, visibleCount())}>{item => <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}><Press label={item().title} onPress={() => openItem(item())} style={{ flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 14, padding: 10 }}><Art src={item().artwork} size={52} radius={(item() as Collection).type === "artist" ? 28 : 8} icon={(item() as Collection).type || "music"} /><View style={{ flex: 1, minWidth: 0, gap: 6 }}><Label weight="600" lines={1}>{item().title}</Label><Label size={12} color={c().sub} lines={1}>{isTrack(item()) ? (item() as a.CloudTrack).artist : (item() as Collection).subtitle}</Label></View></Press><CommandMenu label={`${item().title} 云端操作`} items={menu(item())} /></View>}</Each></View>

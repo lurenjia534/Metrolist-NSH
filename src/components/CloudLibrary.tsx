@@ -10,8 +10,19 @@ import { Label, Pill, Chip, Tool, Art, Press, Field, Empty, CommandMenu, Modal, 
 
 const types: { id: account.CloudType; name: string; icon: string }[] = [
   { id: "playlists", name: "歌单", icon: "queue" }, { id: "liked", name: "喜欢", icon: "heart" },
+  { id: "uploads", name: "已上传", icon: "upload" },
   { id: "songs", name: "歌曲", icon: "music" }, { id: "albums", name: "专辑", icon: "album" }, { id: "artists", name: "订阅", icon: "artist" },
 ];
+
+export function UploadButton() {
+  return <Pill testID="cloud-upload-song" icon="upload" primary label={account.uploadProgress() || "上传歌曲"} disabled={!!account.uploadProgress()}
+    onPress={() => void action(async () => { if (await account.uploadSong()) say("上传完成，歌曲将在 YouTube Music 处理后出现"); })} />;
+}
+
+const pendingDelete = signal<{ track: Track; accountId: string } | null>(null);
+export function requestDeleteUpload(track: Track) {
+  pendingDelete.set({ track, accountId: account.activeId() });
+}
 
 export function CloudLibrary() {
   const query = signal("");
@@ -27,11 +38,12 @@ export function CloudLibrary() {
       </View>
       <Scroll horizontal scrollbar={false} style={{ height: 52, flexShrink: 0 }} contentStyle={{ flexDirection: "row", gap: 8, paddingVertical: 2 }}><Each of={types}>{type => <Chip testID={`cloud-type-${type().id}`} label={type().name} icon={type().icon} selected={account.cloudType() === type().id} onPress={() => void action(() => account.loadCloudLibrary(type().id))} />}</Each></Scroll>
       <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}><Field testID="cloud-search" value={query()} onChange={query.set} placeholder="在云端音乐库中查找" /><Tool icon={grid() ? "list" : "grid"} label="切换显示方式" onPress={() => s.updateSettings({ libraryView: grid() ? "list" : "grid" })} /><If when={account.cloudType() === "playlists"}><Tool testID="cloud-create" icon="plus" label="新建云端歌单" onPress={() => cloud.createCloudPlaylist()} /></If></View>
+      <If when={account.cloudType() === "uploads"}><View style={{ flexDirection: "row", gap: 8 }}><UploadButton /><Tool icon="refresh" label="刷新已上传歌曲" onPress={() => void action(() => account.loadCloudLibrary("uploads"))} /></View></If>
       <If when={account.error()}><View style={{ gap: 12, padding: 16, borderRadius: 14, backgroundColor: c().selected }}><Label size={13} color={c().danger}>{account.error()}</Label><Pill label="重新加载" icon="refresh" onPress={() => void action(() => account.loadCloudLibrary())} /></View></If>
       <If when={account.cloudLoading()}><Label size={13} color={c().accent}>正在读取 YouTube Music…</Label></If>
-      <If when={tracks().length > 0}><View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}><Pill label={`播放 · ${tracks().length}`} primary icon="play" disabled={p.remoteControlled()} onPress={() => void action(() => p.playList(tracks(), 0, types.find(type => type.id === account.cloudType())!.name))} /><Pill label="加入本机歌单" icon="plus" onPress={() => nav.addToPlaylist(tracks())} /></View><Each of={tracks()}>{(track, index) => <TrackRow track={track()} list={tracks()} index={index()} />}</Each></If>
+      <If when={tracks().length > 0}><View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}><Pill label={`播放 · ${tracks().length}`} primary icon="play" disabled={p.remoteControlled()} onPress={() => void action(() => p.playList(tracks(), 0, types.find(type => type.id === account.cloudType())!.name))} /><Pill label="加入本机歌单" icon="plus" onPress={() => nav.addToPlaylist(tracks())} /></View><Each of={tracks()}>{(track, index) => <View style={{ flexDirection: "row", alignItems: "center" }}><View style={{ flex: 1, minWidth: 0 }}><TrackRow track={track()} list={tracks()} index={index()} /></View><If when={account.cloudType() === "uploads" && !!track().uploadEntityId}><Tool label="删除已上传歌曲" icon="trash" onPress={() => requestDeleteUpload(track())} /></If></View>}</Each></If>
       <View style={{ flexDirection: grid() ? "row" : "column", flexWrap: grid() ? "wrap" : "nowrap", gap: grid() ? 16 : 4 }}><Each of={items().filter(item => !isTrack(item)) as Collection[]}>{item => <View style={{ gap: 4 }}><If when={grid()} else={<Press label={item().title} onPress={() => nav.browse(item())} style={{ flexDirection: "row", minHeight: 76, alignItems: "center", gap: 14 }}><Art src={item().artwork} size={56} radius={item().type === "artist" ? 32 : 8} /><View style={{ flex: 1, minWidth: 0, gap: 6 }}><Label lines={1} weight="600">{item().title}</Label><Label size={12} color={c().sub}>{item().subtitle}</Label></View></Press>}><MusicCard item={item()} /></If><If when={item().type === "playlist" && item().editable}><CommandMenu label={`管理 ${item().title}`} icon="more" items={[{ label: "重命名云端歌单", icon: "edit", run: () => cloud.renameCloudPlaylist(item()) }, { label: "删除云端歌单", icon: "trash", danger: true, run: () => void action(() => account.deleteCloudPlaylist(cloud.playlistId(item())), "云端歌单已删除") }]} /></If></View>}</Each></View>
-      <If when={!account.cloudLoading() && !items().length && !account.error()}><Empty icon={account.cloudType() === "artists" ? "artist" : "library"} title={query() ? "没有匹配的内容" : "这里还没有内容"} description={query() ? "试试歌曲、歌手或歌单的其他关键词。" : "在搜索中找到喜欢的音乐，将它保存到 YouTube Music。"}><If when={account.cloudType() === "playlists"}><Pill label="新建云端歌单" icon="plus" onPress={() => cloud.createCloudPlaylist()} /></If></Empty></If>
+      <If when={!account.cloudLoading() && !items().length && !account.error()}><Empty icon={account.cloudType() === "artists" ? "artist" : "library"} title={query() ? "没有匹配的内容" : "这里还没有内容"} description={query() ? "试试歌曲、歌手或歌单的其他关键词。" : account.cloudType() === "uploads" ? "上传音频后，可以在登录同一账号的设备上收听。" : "在搜索中找到喜欢的音乐，将它保存到 YouTube Music。"}><If when={account.cloudType() === "playlists"}><Pill label="新建云端歌单" icon="plus" onPress={() => cloud.createCloudPlaylist()} /></If></Empty></If>
       <If when={account.cloudContinuation()}><Pill label={account.cloudLoading() ? "加载中…" : "加载更多"} disabled={account.cloudLoading()} onPress={() => void action(account.loadMoreCloudLibrary)} /></If>
     </If>
   </View>;
@@ -76,6 +88,14 @@ export function CloudDialogs() {
     } finally { saving.set(false); }
   });
   return <>
+    <Modal open={!!pendingDelete() && pendingDelete()?.accountId === account.activeId()} title="删除已上传歌曲" close={() => pendingDelete.set(null)}>
+      <Label>从 YouTube Music 账号中删除《{pendingDelete()?.track.title}》？</Label>
+      <Pill label="删除" icon="trash" disabled={!!account.mutation()} onPress={() => void action(async () => {
+        const target = pendingDelete();
+        if (target?.accountId === account.activeId()) await account.deleteUpload(target.track);
+        pendingDelete.set(null);
+      })} />
+    </Modal>
     <Modal open={cloud.cloudDialog() === "create" || cloud.cloudDialog() === "rename"} title={cloud.cloudDialog() === "rename" ? "重命名云端歌单" : "新建 YouTube Music 歌单"} close={close}><Field testID="cloud-playlist-name" autoFocus value={cloud.cloudDraft()} onChange={cloud.cloudDraft.set} placeholder="歌单名称" onSubmit={() => void save()} /><If when={cloud.cloudDialog() === "create"}><Field value={cloud.cloudDescription()} onChange={cloud.cloudDescription.set} placeholder="简介（可选）" /><View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}><Each of={[{ id: "PRIVATE", name: "私密" }, { id: "UNLISTED", name: "不公开列出" }, { id: "PUBLIC", name: "公开" }]}>{privacy => <Chip label={privacy().name} selected={cloud.cloudPrivacy() === privacy().id} onPress={() => cloud.cloudPrivacy.set(privacy().id)} />}</Each></View><If when={cloud.cloudSelection().length}><Label size={13} color={c().sub}>同时添加 {cloud.cloudSelection().length} 首歌曲</Label></If></If><Pill testID="cloud-save-playlist" primary icon="check" label={saving() ? "正在保存…" : "保存到 YouTube Music"} disabled={saving() || !cloud.cloudDraft().trim()} onPress={() => void save()} /></Modal>
     <Modal open={cloud.cloudDialog() === "add"} title="加入 YouTube Music 歌单" close={close}><Label size={13} color={c().sub}>{cloud.cloudSelection().length} 首歌曲 · {account.currentAccount()?.name}</Label><If when={account.cloudLoading()}><Label color={c().accent}>正在读取歌单…</Label></If><Each of={account.cloudLibrary().playlists.filter(item => !isTrack(item) && item.editable) as Collection[]}>{playlist => <Press label={playlist().title} disabled={!!account.mutation()} onPress={() => void action(async () => { await account.addToCloudPlaylist(cloud.playlistId(playlist()), cloud.cloudSelection().map(track => track.id)); close(); }, "已加入云端歌单")} style={{ minHeight: 68, flexDirection: "row", alignItems: "center", gap: 14 }}><Art src={playlist().artwork} size={48} /><Label style={{ flex: 1 }} lines={2}>{playlist().title}</Label></Press>}</Each><If when={account.cloudContinuation()}><Pill label="加载更多歌单" disabled={account.cloudLoading()} onPress={() => void action(account.loadMoreCloudLibrary)} /></If><Pill label="新建歌单并加入" primary icon="plus" onPress={() => cloud.createCloudPlaylist(cloud.cloudSelection())} /></Modal>
   </>;

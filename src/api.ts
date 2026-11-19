@@ -6,7 +6,7 @@ import type { AudioQuality, BrowseEndpoint, BrowseResponse, ExploreResponse, Exp
 
 let origin = "";
 export interface SessionCredentials { cookie: string; visitorData?: string; dataSyncId?: string; authUser?: string }
-export interface ResolveOptions { refresh?: boolean; media3?: boolean }
+export interface ResolveOptions { refresh?: boolean; media3?: boolean; uploaded?: boolean }
 const streamCache = new Map<string, StreamInfo>();
 const streamRequests = new Map<string, { promise: Promise<StreamInfo>; refresh: boolean }>();
 
@@ -83,7 +83,7 @@ export const fetchLyrics = (track: Track) =>
 export function fetchStream(id: string, quality: AudioQuality = "auto", options: ResolveOptions = {}): Promise<StreamInfo> {
   const credentials = currentCredentials();
   const requestOrigin = origin;
-  const params = { id, quality, ...(platform.os === "android" ? {} : { container: "mp4" }), ...(options.media3 ? { playback: "media3" } : {}) };
+  const params = { id, quality, ...(options.uploaded ? { uploaded: 1 } : {}), ...(platform.os === "android" ? {} : { container: "mp4" }), ...(options.media3 ? { playback: "media3" } : {}) };
   const url = apiUrl("stream", params);
   const key = JSON.stringify([url, credentials?.cookie, credentials?.authUser, credentials?.dataSyncId, credentials?.visitorData]);
   const pending = streamRequests.get(key);
@@ -110,9 +110,9 @@ export async function resolvePlayback(track: Track, quality: AudioQuality = "aut
     return { url: local.url, duration: track.duration };
   }
   if (track.source === "audio" && track.url) return { url: track.url, duration: track.duration };
-  try { return await fetchStream(track.id, quality, options); }
+  try { return await fetchStream(track.id, quality, { ...options, uploaded: track.isUploaded }); }
   catch (error) {
-    if (!options.media3 || !(error instanceof ApiRequestError) || error.code !== "track-unavailable" ||
+    if (track.isUploaded || !options.media3 || !(error instanceof ApiRequestError) || error.code !== "track-unavailable" ||
         !track.title || !track.artist || !track.album || !track.duration) throw error;
     const result = await fetchSearch(`${track.title} ${track.artist}`, "songs");
     const normalize = (value: string) => value.normalize("NFKC").trim().toLocaleLowerCase();

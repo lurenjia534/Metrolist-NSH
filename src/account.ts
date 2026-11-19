@@ -6,7 +6,7 @@ export interface AccountCredentials { cookie: string; visitorData?: string; data
 export interface AccountProfile { name: string; email?: string; channelHandle?: string; channelId?: string; avatar?: string }
 export interface AccountSummary extends AccountProfile { id: string; verifiedAt: number }
 export interface YouTubeChannel extends AccountProfile { pageId?: string; dataSyncId?: string; signinUrl?: string; authUser: string; selected?: boolean }
-export type CloudType = "playlists" | "liked" | "songs" | "albums" | "artists";
+export type CloudType = "playlists" | "liked" | "songs" | "albums" | "artists" | "uploads";
 export type CloudLibrary = Record<CloudType, CatalogItem[]>;
 export interface CloudPlaylist extends Collection { playlistId?: string; editable?: boolean }
 export interface CloudTrack extends Track { setVideoId?: string }
@@ -15,8 +15,8 @@ interface CloudResponse { type: CloudType; items: CatalogItem[]; continuation?: 
 interface SavedAccount { profile: AccountSummary; credentials: AccountCredentials; library: CloudLibrary; lastSynced: number; likedIds?: string[]; subscribedIds?: string[] }
 interface PlaylistResult { ok: boolean; playlistId: string; browseId?: string; title?: string }
 
-const cloudTypes: CloudType[] = ["playlists", "liked", "songs", "albums", "artists"];
-const emptyLibrary = (): CloudLibrary => ({ playlists: [], liked: [], songs: [], albums: [], artists: [] });
+const cloudTypes: CloudType[] = ["playlists", "liked", "songs", "albums", "artists", "uploads"];
+const emptyLibrary = (): CloudLibrary => ({ playlists: [], liked: [], songs: [], albums: [], artists: [], uploads: [] });
 export const accounts = signal<AccountSummary[]>([]);
 export const activeId = signal("");
 export const currentAccount = computed(() => accounts().find((account) => account.id === activeId()));
@@ -88,6 +88,7 @@ export async function initializeAccounts() {
   if (value) {
     const data = JSON.parse(value);
     savedAccounts = data.accounts;
+    for (const account of savedAccounts) account.library = { ...emptyLibrary(), ...account.library };
     useAccountForBrowse.set(data.useAccountForBrowse ?? true); syncEnabled.set(data.syncEnabled ?? true);
     display(savedAccounts.find((item) => item.profile.id === data.activeId));
     if (signedIn()) { sessionStatus.set("saved"); void refreshAccount().then(() => syncEnabled() ? syncLibrary() : undefined).catch(fail); }
@@ -371,3 +372,45 @@ export function deleteCloudPlaylist(playlistId: string) { return change<Playlist
 export function addToCloudPlaylist(playlistId: string, videoIds: string[]) { return change<PlaylistResult>("playlist", "account/playlist", { action: "add", playlistId, videoIds }); }
 export function removeFromCloudPlaylist(playlistId: string, videoId: string, setVideoId: string) { return change<PlaylistResult>("playlist", "account/playlist", { action: "remove", playlistId, videoId, setVideoId }); }
 export function moveInCloudPlaylist(playlistId: string, setVideoId: string, successorSetVideoId?: string) { return change<PlaylistResult>("playlist", "account/playlist", { action: "move", playlistId, setVideoId, successorSetVideoId }); }
+
+export const uploadProgress = signal("");
+export async function uploadSong() {
+  const account = selected();
+  if (!account || uploadProgress()) return false;
+  uploadProgress.set("选择音频…");
+  try {
+    const [picked] = await Picker.pickFiles({ filters: [{ name: "音频", extensions: ["mp3", "m4a", "flac", "ogg", "opus", "wma"] }] });
+    if (!picked || selected() !== account) return false;
+    const file = picked.file;
+    const { session, chunkSize } = await accountRequest<{ session: string; chunkSize: number }>("account/upload/start", account.credentials, {
+      method: "POST", body: JSON.stringify({ name: file.name, size: file.size }),
+    });
+    for (let offset = 0; offset < file.size; offset += chunkSize) {
+      if (selected() !== account) throw new Error("账号已切换，上传已停止。");
+      const end = Math.min(offset + chunkSize, file.size);
+      uploadProgress.set(`正在上传 · ${Math.floor(offset / file.size * 100)}%`);
+      await accountRequest(`account/upload/chunk?offset=${offset}&final=${end === file.size ? 1 : 0}`, account.credentials, {
+        method: "POST", headers: { "X-Metrolist-Upload": session },
+        body: await file.slice(offset, end).arrayBuffer(),
+      });
+    }
+    if (selected() === account && cloudType() === "uploads") {
+      void refreshProcessedUpload(account).catch(reason => { if (selected() === account) fail(reason); });
+    }
+    return true;
+  } finally { uploadProgress.set(""); }
+}
+
+async function refreshProcessedUpload(account: SavedAccount) {
+  const known = new Set(account.library.uploads.map(item => item.id));
+  for (const delay of [0, 2000, 5000, 10000]) {
+    if (delay) await new Promise<void>(resolve => setTimeout(resolve, delay));
+    if (selected() !== account || cloudType() !== "uploads") return;
+    await loadCloudLibrary("uploads");
+    if (account.library.uploads.some(item => !known.has(item.id))) return;
+  }
+}
+
+export function deleteUpload(track: Track) {
+  return change("deleteUpload", "account/upload/delete", { entityId: track.uploadEntityId }, "uploads", { id: track.id, present: false });
+}

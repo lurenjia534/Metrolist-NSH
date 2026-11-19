@@ -53,7 +53,7 @@ for (const device of [
   expect(app.shows("id:account-name")).toBe(true);
   expect(app.texts().includes(profile.name)).toBe(true);
   expect(app.requests().some(request => request.url === "https://gateway.test/api/account")).toBe(true);
-  await app.press(`id:${device.nav}-library`); await app.press("id:library-cloud"); await app.waitFor("id:cloud-library");
+  await app.press(`id:${device.nav}-library`); await app.waitFor("id:library-cloud"); await app.press("id:library-cloud"); await app.waitFor("id:cloud-library");
   expect(app.enabled("id:cloud-sync")).toBe(true);
   await app.press("id:cloud-create");
   expect(app.enabled("id:cloud-save-playlist")).toBe(false);
@@ -71,7 +71,7 @@ for (const device of [
   await app.press(`id:app-dialog >> label:${newTitle}`); await app.waitFor("id:app-dialog", { state: "gone" });
   expect(mutations(app).find(input => input.action === "add")).toEqual({ action: "add", playlistId: "fixture-created", videoIds: [alpha.id] });
 
-  await app.press(`id:${device.nav}-library`); await app.press("id:library-cloud");
+  await app.press(`id:${device.nav}-library`); await app.waitFor("id:library-cloud"); await app.press("id:library-cloud");
   await app.press(`id:cloud-library >> label:${owned.title}`); await app.waitFor("id:page-collection");
   await app.press("label:编辑云端歌曲");
   expect(app.count("id:track-cloud-alpha")).toBe(2);
@@ -87,4 +87,36 @@ for (const device of [
   expect(data.rows().map(row => row.setVideoId)).toEqual(["set-alpha-first", "set-beta"]);
   expect(app.count("id:track-cloud-alpha")).toBe(1);
   expect(app.requests().filter(request => request.url.includes("/api/account/")).every(request => Object.entries(request.headers).some(([key, value]) => key.toLowerCase() === "x-metrolist-account" && JSON.parse(decodeURIComponent(value)).dataSyncId === "cloud-fixture"))).toBe(true);
+});
+
+for (const platform of ["web", "android", "ios", "linux"] as const) test(`${platform} picks a song, sends every chunk and deletes the selected cloud entity`, async () => {
+  const mobile = platform === "ios" || platform === "android";
+  const song = { ...alpha, isUploaded: true, uploadEntityId: "private-entity" };
+  let uploaded = false;
+  const session = "https://upload.youtube.com/upload/usermusic/http?upload_id=fixture";
+  const gateway = "https://gateway.test/api/account/";
+  const app = await open("../App.tsx", { width: mobile ? 390 : 1440, height: mobile ? 844 : 940, platform, storage, host: { handlers: { "auth.available": { available: true }, "app.audio.snapshot": null, "app.audio.settings": null } }, network: {
+    ...fixture().network,
+    [`GET ${gateway}library?type=uploads`]: () => ({ body: { type: "uploads", items: uploaded ? [song] : [] } }),
+    [`POST ${gateway}upload/start`]: { body: { session, chunkSize: 3 } },
+    [`POST ${gateway}upload/chunk?offset=0&final=0`]: { body: { ok: true } },
+    [`POST ${gateway}upload/chunk?offset=3&final=1`]: () => { uploaded = true; return { body: { ok: true } }; },
+    [`POST ${gateway}upload/delete`]: () => { uploaded = false; return { body: { ok: true } }; },
+  } });
+  await app.waitFor("id:page-home");
+  await app.press(mobile ? "id:nav-mobile-library" : "id:nav-library");
+  await app.waitFor("id:library-cloud");
+  await app.press("id:library-cloud");
+  await app.press("id:cloud-type-uploads");
+  app.onPick(() => [{ name: "my-song.flac", type: "audio/flac", data: new Uint8Array([65, 66, 67, 68, 69]) }]);
+  await app.press("id:cloud-upload-song");
+  await app.waitFor("id:track-cloud-alpha");
+  const requests = app.requests().filter(req => req.url.startsWith(gateway + "upload/"));
+  expect(JSON.parse(requests[0].body!)).toEqual({ name: "my-song.flac", size: 5 });
+  expect(requests.slice(1).map(req => req.body)).toEqual(["ABC", "DE"]);
+  await app.press("label:删除已上传歌曲");
+  await app.press("id:app-dialog >> label:删除");
+  await app.waitFor("id:track-cloud-alpha", { state: "gone" });
+  const deletion = app.requests().find(req => req.url === gateway + "upload/delete")!;
+  expect(JSON.parse(deletion.body!)).toEqual({ entityId: "private-entity" });
 });

@@ -1,12 +1,12 @@
 // Google / YouTube Music account APIs, following Metrolist and InnertubeX.
 // SPDX-License-Identifier: GPL-3.0-only
-import { ApiError, innertube, find, text, artwork, items, continuation, acceptLanguage, freshVisitorData, WEB_USER_AGENT } from './catalog.mjs';
+import { ApiError, CLIENT_VERSION, innertube, find, text, artwork, items, continuation, acceptLanguage, freshVisitorData, WEB_USER_AGENT } from './catalog.mjs';
 import { normalizeAccount, authenticationHeaders, sapisid } from './auth.mjs';
 
 const ACCOUNT_ORIGIN = 'https://music.youtube.com';
 const LIBRARY_IDS = {
   playlists: 'FEmusic_liked_playlists', liked: 'VLLM', songs: 'FEmusic_liked_videos',
-  albums: 'FEmusic_liked_albums', artists: 'FEmusic_library_corpus_artists',
+  albums: 'FEmusic_liked_albums', artists: 'FEmusic_library_corpus_artists', uploads: 'FEmusic_library_privately_owned_tracks',
 };
 
 function requireAccount(account) {
@@ -100,7 +100,7 @@ export async function accountLibrary(account, params = {}) {
   const data = await innertube('browse', params.continuation ? { continuation: params.continuation } : {
     browseId: LIBRARY_IDS[type],
   }, { ...params, account: requireAccount(account) });
-  return { type, items: items(data), continuation: continuation(data) };
+  return { type, items: items(data, type === 'uploads'), continuation: continuation(data, data, params.continuation) };
 }
 
 function mutationResult(data) {
@@ -181,4 +181,71 @@ export async function accountPlaylist(account, input, options = {}) {
     await mutate('browse/edit_playlist', { playlistId, actions }, account, options);
   }
   return { ok: true, playlistId, browseId: `VL${playlistId}`, ...(input.title ? { title: input.title } : {}) };
+}
+
+const uploadOrigin = 'https://upload.youtube.com';
+const uploadChunkSize = 8 * 1024 * 1024;
+
+function uploadSessionUrl(value) {
+  const url = new URL(value || '/', uploadOrigin);
+  if (!value || url.origin !== uploadOrigin || url.username || url.password ||
+      !(url.pathname === '/' || url.pathname.startsWith('/upload/'))) {
+    throw new ApiError('无效的 YouTube Music 上传会话。', 400);
+  }
+  return url.href;
+}
+
+async function uploadRequest(account, url, headers, body, options) {
+  const response = await (options.fetch || fetch)(url, {
+    method: 'POST', redirect: 'error', body,
+    headers: {
+      ...await authenticationHeaders(requireAccount(account)), ...headers,
+      'X-Goog-Api-Format-Version': '1', 'X-YouTube-Client-Name': '67',
+      'X-YouTube-Client-Version': CLIENT_VERSION, Origin: ACCOUNT_ORIGIN, 'X-Origin': ACCOUNT_ORIGIN,
+      Referer: ACCOUNT_ORIGIN + '/', 'User-Agent': WEB_USER_AGENT,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+  });
+  if (response.status === 409) throw new ApiError('这首歌已经上传过了。', 409);
+  if (!response.ok) throw new ApiError(`YouTube Music 上传失败（HTTP ${response.status}）。`, response.status);
+  return response;
+}
+
+export async function startSongUpload(account, { name, size }, options = {}) {
+  requireAccount(account);
+  if (typeof name !== 'string' || !/\.(flac|m4a|mp3|ogg|opus|wma)$/i.test(name)) {
+    throw new ApiError('请选择 FLAC、M4A、MP3、OGG、Opus 或 WMA 音频。', 400);
+  }
+  if (!Number.isSafeInteger(size) || size <= 0 || size >= 300 * 1024 * 1024) {
+    throw new ApiError('请选择非空且小于 300 MiB 的音频文件。', 400);
+  }
+  const response = await uploadRequest(account, `${uploadOrigin}/upload/usermusic/http?authuser=${account.authUser}`, {
+    'X-Goog-Upload-Command': 'start', 'X-Goog-Upload-Protocol': 'resumable',
+    'X-Goog-Upload-Header-Content-Length': String(size),
+  }, 'filename=' + encodeURIComponent(name), options);
+  const granularity = Number(response.headers.get('X-Goog-Upload-Chunk-Granularity')) || 1;
+  const chunkSize = Math.max(1, Math.floor(uploadChunkSize / granularity)) * granularity;
+  return { session: uploadSessionUrl(response.headers.get('X-Goog-Upload-URL')), chunkSize };
+}
+
+export async function sendUploadChunk(account, request, options = {}) {
+  requireAccount(account);
+  if (request.method !== 'POST') throw new ApiError('上传需要 POST 请求。', 405);
+  const url = uploadSessionUrl(request.headers.get('X-Metrolist-Upload'));
+  const offset = Number(options.offset);
+  if (!Number.isSafeInteger(offset) || offset < 0) throw new ApiError('无效的上传位置。', 400);
+  const response = await uploadRequest(account, url, {
+    'X-Goog-Upload-Command': options.final === '1' ? 'upload, finalize' : 'upload',
+    'X-Goog-Upload-Offset': String(offset),
+  }, await request.arrayBuffer(), options);
+  if (options.final === '1' && response.headers.get('X-Goog-Upload-Status') === 'active') {
+    throw new ApiError('YouTube Music 尚未完成上传。');
+  }
+  return { ok: true };
+}
+
+export async function deleteSongUpload(account, { entityId }, options = {}) {
+  if (!entityId) throw new ApiError('缺少上传歌曲的实体 ID。', 400);
+  await mutate('music/delete_privately_owned_entity', { entityId }, account, options);
+  return { ok: true };
 }

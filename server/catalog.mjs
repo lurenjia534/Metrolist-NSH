@@ -331,12 +331,24 @@ export function libraryTokens(row) {
   return result;
 }
 
-function responsiveItem(row) {
+function responsiveItem(row, uploads = false) {
   const columns = row.flexColumns?.map(column => column.musicResponsiveListItemFlexColumnRenderer.text) || [];
   const title = text(columns[0]);
   const subtitle = text(columns[1]);
   const endpoint = row.navigationEndpoint || columns[0]?.runs?.[0]?.navigationEndpoint;
   const browse = endpoint?.browseEndpoint;
+  const entityId = find(row.menu, 'musicDeletePrivatelyOwnedEntityCommand')?.entityId;
+  if (uploads || entityId) {
+    const id = row.playlistItemData?.videoId || find(row, 'queueTarget')?.videoId ||
+      find(row, 'watchEndpoint')?.videoId;
+    if (!id || !title) return null;
+    return { id, title, artist: subtitle, album: text(columns[2]),
+      artistId: columns[1]?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId,
+      albumId: columns[2]?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId,
+      duration: seconds(text(row.fixedColumns?.[0]?.musicResponsiveListItemFixedColumnRenderer?.text)),
+      artwork: artwork(row.thumbnail), source: 'youtube', type: 'song', isUploaded: true,
+      uploadEntityId: entityId, setVideoId: row.playlistItemData?.playlistSetVideoId };
+  }
   if (browse) return collectionActions(collection(endpoint, title, subtitle, artwork(row.thumbnail)), row);
   const id = row.playlistItemData?.videoId || endpoint?.watchEndpoint?.videoId ||
     row.overlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchEndpoint?.videoId;
@@ -413,13 +425,13 @@ function panelItem(row) {
 }
 
 /** Only content renderers produce items; action menus cannot accidentally add songs. */
-export function items(root) {
+export function items(root, uploads = false) {
   const result = [];
   const seen = new Set();
   function visit(node, inheritedArtist = '') {
     if (!node || typeof node !== 'object') return;
     let item;
-    if (node.musicResponsiveListItemRenderer) item = responsiveItem(node.musicResponsiveListItemRenderer);
+    if (node.musicResponsiveListItemRenderer) item = responsiveItem(node.musicResponsiveListItemRenderer, uploads);
     else if (node.musicTwoRowItemRenderer) item = twoRowItem(node.musicTwoRowItemRenderer);
     else if (node.musicMultiRowListItemRenderer) item = multiRowItem(node.musicMultiRowListItemRenderer);
     else if (node.playlistPanelVideoRenderer) item = panelItem(node.playlistPanelVideoRenderer);
@@ -432,7 +444,8 @@ export function items(root) {
       return;
     }
     const key = item?.setVideoId || item?.id;
-    if (item && !seen.has(key)) {
+    if (item && (!uploads || item.type === 'song') && !seen.has(key)) {
+      if (uploads) item.isUploaded = true;
       if (item.source === 'youtube' && !item.artist) item.artist = inheritedArtist;
       seen.add(key);
       result.push(item);

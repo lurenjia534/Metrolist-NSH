@@ -14,6 +14,8 @@ export interface Track {
   albumId?: string;
   explicit?: boolean;
   setVideoId?: string;
+  isUploaded?: boolean;
+  uploadEntityId?: string;
 }
 
 export interface Collection {
