@@ -97,7 +97,10 @@ queries remain empty; the gateway does not substitute other music.
 | `POST /api/account/login` | `{cookie,visitorData?,dataSyncId?,authUser?}` | `{account,session:{visitorData,dataSyncId,authUser}}` |
 | `GET /api/account` | Account header | Profile `{id,name,email,channelHandle,avatar,channelId?}` |
 | `GET /api/account/channels` | Account header | `{accounts:[{name,byline,avatar,channelHandle,email?,pageId?,dataSyncId?,signinUrl?,authUser,selected}]}` |
-| `GET /api/account/library` | `type=playlists/liked/songs/albums/artists`, `continuation?` | `{type,items,continuation?}` |
+| `GET /api/account/library` | `type=playlists/liked/songs/albums/artists/uploads`, `continuation?` | `{type,items,continuation?}` |
+| `POST /api/account/upload/start` | Account header and JSON `{name,size}` | Returns a YouTube upload session and chunk size |
+| `POST /api/account/upload/chunk` | Account header, session in `X-Metrolist-Upload`, binary body, byte `offset` and `final=0/1` | Advances or finalizes the selected upload |
+| `POST /api/account/upload/delete` | Account header and JSON `{entityId}` | Deletes that upload from YouTube Music |
 | `POST /api/account/like` | `{id,liked,kind:"song"/"playlist"}` | `{ok,id,liked}` |
 | `POST /api/account/subscribe` | `{id,subscribed,params?}` | `{ok,id,subscribed}` |
 | `POST /api/account/song` | `{id,saved}` | `{ok,id,saved}`; refreshes the song's library feedback token |

@@ -385,3 +385,93 @@ test('a login whose page lacks the session fields asks as a real browser and fal
   // The page was asked for with the web client's full user agent, never a bare "Mozilla/5.0".
   assert.match(seen.find(call => call.href.startsWith('https://music.youtube.com/?'))?.agent || seen[0].agent, /Firefox\/140\.0/);
 });
+
+test('personal upload sends ordered bytes and finalizes once under the selected account', async () => {
+  const contents = new Uint8Array([0, 255, 17, 23, 0, 1]);
+  const session = 'https://upload.youtube.com/upload/usermusic/http?upload_id=fixture';
+  const received = [];
+  const env = { fetch: async (url, init) => {
+    assert.equal(init.headers['X-Goog-AuthUser'], '1');
+    assert.equal(init.headers.Cookie, accountB.cookie);
+    if (init.headers['X-Goog-Upload-Command'] === 'start') {
+      assert.equal(new URL(url).searchParams.get('authuser'), '1');
+      assert.equal(new URLSearchParams(init.body).get('filename'), '一 & 二.OpUs');
+      assert.equal(init.headers['X-Goog-Upload-Header-Content-Length'], String(contents.length));
+      return new Response(null, { headers: { 'X-Goog-Upload-URL': session } });
+    }
+    assert.equal(url, session);
+    assert.equal(Number(init.headers['X-Goog-Upload-Offset']), received.length);
+    received.push(...new Uint8Array(init.body));
+    assert.equal(init.headers['X-Goog-Upload-Command'], received.length === contents.length ? 'upload, finalize' : 'upload');
+    return new Response(null, { headers: { 'X-Goog-Upload-Status': received.length === contents.length ? 'final' : 'active' } });
+  } };
+  const start = await api(request('account/upload/start', accountB, { name: '一 & 二.OpUs', size: contents.length }), env);
+  assert.equal(start.status, 200);
+  assert.equal((await start.json()).session, session);
+  for (const offset of [0, 3]) {
+    const response = await api(new Request(`https://metrolist.test/api/account/upload/chunk?offset=${offset}&final=${offset ? 1 : 0}`, {
+      method: 'POST', headers: { ...accountHeader(accountB), 'X-Metrolist-Upload': session }, body: contents.slice(offset, offset + 3),
+    }), env);
+    assert.equal(response.status, 200);
+  }
+  assert.deepEqual(received, [...contents]);
+});
+
+test('upload boundaries, rejected sessions and duplicate songs are reported to the caller', async () => {
+  const noNetwork = { fetch() { throw new Error('unexpected network request'); } };
+  for (const [name, size, account, status] of [
+    ['x.wav', 4, accountA, 400], ['x.mp3', 0, accountA, 400], ['x.flac', 300 * 1024 * 1024, accountA, 400],
+    ['x.WMA', 20, undefined, 401],
+  ]) {
+    assert.equal((await api(request('account/upload/start', account, { name, size }), noNetwork)).status, status);
+  }
+  const chunk = (session) => new Request('https://metrolist.test/api/account/upload/chunk?offset=0&final=1', {
+    method: 'POST', headers: { ...accountHeader(accountA), 'X-Metrolist-Upload': session }, body: new Uint8Array([8]),
+  });
+  assert.equal((await api(chunk('https://other.example/upload/anything'), noNetwork)).status, 400);
+  const duplicate = await api(chunk('https://upload.youtube.com/?upload_id=fixture'), { fetch: () => new Response(null, { status: 409 }) });
+  assert.equal(duplicate.status, 409);
+});
+
+test('upload library preserves playable IDs, unlinked album names, paging and cloud deletion IDs', async () => {
+  const row = songRow('private-video');
+  delete row.musicResponsiveListItemRenderer.playlistItemData;
+  row.musicResponsiveListItemRenderer.flexColumns.push(...['Artist', 'Album'].map(simpleText => ({ musicResponsiveListItemFlexColumnRenderer: { text: { simpleText } } })));
+  row.musicResponsiveListItemRenderer.menu = {
+    queueAddEndpoint: { queueTarget: { videoId: 'private-video' } },
+    musicDeletePrivatelyOwnedEntityCommand: { entityId: 't_po_fixture' },
+  };
+  const calls = [];
+  const env = { fetch: async (url, init) => {
+    const body = JSON.parse(init.body);
+    calls.push(body);
+    assert.equal(init.headers.Cookie.includes('fixture-A'), true);
+    if (endpointOf(url) === 'music/delete_privately_owned_entity') return Response.json({});
+    return Response.json({ contents: [row], ...(!body.continuation ? { nextContinuationData: { continuation: 'page-two' } } : {}) });
+  } };
+  const first = await (await api(request('account/library?type=uploads', accountA), env)).json();
+  assert.equal(calls[0].browseId, 'FEmusic_library_privately_owned_tracks');
+  assert.equal(first.items[0].id, 'private-video');
+  assert.equal(first.items[0].artist, 'Artist');
+  assert.equal(first.items[0].album, 'Album');
+  assert.equal(first.items[0].isUploaded, true);
+  await api(request('account/library?type=uploads&continuation=' + encodeURIComponent(first.continuation), accountA), env);
+  assert.equal(calls[1].continuation, 'page-two');
+  const deletion = await api(request('account/upload/delete', accountA, { entityId: first.items[0].uploadEntityId }), env);
+  assert.equal(deletion.status, 200);
+  assert.equal(calls[2].entityId, 't_po_fixture');
+});
+
+test('uploaded recordings always use the account player and never substitute a public recording', async () => {
+  let calls = 0;
+  const env = { fetch: async (url, init) => {
+    calls++;
+    assert.equal(endpointOf(url), 'player');
+    assert.equal(init.headers.Cookie.includes('fixture-B'), true);
+    return Response.json({ playabilityStatus: { status: 'UNPLAYABLE', reason: 'unavailable' } });
+  } };
+  const path = 'stream?id=my-recording&uploaded=1&playback=media3';
+  assert.equal((await api(request(path), env)).status, 401);
+  assert.equal((await api(request(path, accountB), env)).ok, false);
+  assert.equal(calls, 1);
+});

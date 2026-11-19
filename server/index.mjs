@@ -2,12 +2,12 @@
 import { ApiError, CLIENT_VERSION, home, search, browse, next, lyrics, lyricMatches, suggestions, explore } from './catalog.mjs';
 import { resolveWorkerAudio, streamMetadata, proxyAudio, audioRequestHeaders } from './streaming.mjs';
 import { accountFromRequest } from './auth.mjs';
-import { loginAccount, accountInfo, accountChannels, accountLibrary, accountLike, accountSubscribe, accountSaveSong, accountPlaylist } from './account.mjs';
+import { loginAccount, accountInfo, accountChannels, accountLibrary, accountLike, accountSubscribe, accountSaveSong, accountPlaylist, startSongUpload, sendUploadChunk, deleteSongUpload } from './account.mjs';
 
 export const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, HEAD, POST, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Range, X-Metrolist-Account',
+  'Access-Control-Allow-Headers': 'Content-Type, Range, X-Metrolist-Account, X-Metrolist-Upload',
   'Access-Control-Expose-Headers': 'Content-Range, Accept-Ranges, Content-Length, Content-Type, Retry-After',
 };
 
@@ -49,6 +49,9 @@ export async function api(request, env = {}) {
       case '/api/account/like': return json(await accountLike(params.account, await input(), params));
       case '/api/account/subscribe': return json(await accountSubscribe(params.account, await input(), params));
       case '/api/account/song': return json(await accountSaveSong(params.account, await input(), params));
+      case '/api/account/upload/start': return json(await startSongUpload(params.account, await input(), params));
+      case '/api/account/upload/chunk': return json(await sendUploadChunk(params.account, request, params));
+      case '/api/account/upload/delete': return json(await deleteSongUpload(params.account, await input(), params));
       case '/api/account/playlist': return json(await accountPlaylist(params.account, await input(), params));
       case '/api/stream': {
         if (!params.id) throw new ApiError('A video id is required', 400);

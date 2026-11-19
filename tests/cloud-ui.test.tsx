@@ -88,3 +88,33 @@ for (const device of [
   expect(app.count("id:track-cloud-alpha")).toBe(1);
   expect(app.requests().filter(request => request.url.includes("/api/account/")).every(request => Object.entries(request.headers).some(([key, value]) => key.toLowerCase() === "x-metrolist-account" && JSON.parse(decodeURIComponent(value)).dataSyncId === "cloud-fixture"))).toBe(true);
 });
+
+test("the uploads collection picks a song, sends every chunk and deletes the selected cloud entity", async () => {
+  const song = { ...alpha, isUploaded: true, uploadEntityId: "private-entity" };
+  let uploaded = false;
+  const session = "https://upload.youtube.com/upload/usermusic/http?upload_id=fixture";
+  const gateway = "https://gateway.test/api/account/";
+  const app = await open("../App.tsx", { width: 1440, height: 940, platform: "web", storage, network: {
+    ...fixture().network,
+    [`GET ${gateway}library?type=uploads`]: () => ({ body: { type: "uploads", items: uploaded ? [song] : [] } }),
+    [`POST ${gateway}upload/start`]: { body: { session, chunkSize: 3 } },
+    [`POST ${gateway}upload/chunk?offset=0&final=0`]: { body: { ok: true } },
+    [`POST ${gateway}upload/chunk?offset=3&final=1`]: () => { uploaded = true; return { body: { ok: true } }; },
+    [`POST ${gateway}upload/delete`]: () => { uploaded = false; return { body: { ok: true } }; },
+  } });
+  await app.waitFor("id:page-home");
+  await app.press("id:nav-library");
+  await app.press("id:library-cloud");
+  await app.press("id:cloud-type-uploads");
+  app.onPick(() => [{ name: "my-song.flac", type: "audio/flac", data: new Uint8Array([65, 66, 67, 68, 69]) }]);
+  await app.press("id:cloud-upload-song");
+  await app.waitFor("id:track-cloud-alpha");
+  const requests = app.requests().filter(req => req.url.startsWith(gateway + "upload/"));
+  expect(JSON.parse(requests[0].body!)).toEqual({ name: "my-song.flac", size: 5 });
+  expect(requests.slice(1).map(req => req.body)).toEqual(["ABC", "DE"]);
+  await app.press("label:删除已上传歌曲");
+  await app.press("id:app-dialog >> label:删除");
+  await app.waitFor("id:track-cloud-alpha", { state: "gone" });
+  const deletion = app.requests().find(req => req.url === gateway + "upload/delete")!;
+  expect(JSON.parse(deletion.body!)).toEqual({ entityId: "private-entity" });
+});
